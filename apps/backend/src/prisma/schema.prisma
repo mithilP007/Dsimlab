@@ -1,0 +1,260 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// better-auth Models
+model User {
+  id            String    @id @default(uuid())
+  email         String    @unique
+  emailVerified Boolean
+  name          String
+  image         String?
+  role          String    @default("STUDENT_COLLEGE") // STUDENT_COLLEGE, INDIVIDUAL, INSTRUCTOR, ADMIN
+  institution   String?
+  planType      String?
+  classId       String?
+  class         Class?    @relation("ClassStudents", fields: [classId], references: [id], onDelete: SetNull)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([classId])
+  @@index([role])
+
+  sessions      Session[]
+  accounts      Account[]
+  
+  // Instructor relations
+  managedClasses Class[]  @relation("ClassInstructor")
+  
+  // Student relations
+  simulations   SimulationState[]
+  auditLogs     AuditLog[]
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  expiresAt DateTime
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Account {
+  id           String    @id @default(uuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accountId    String
+  providerId   String
+  accessToken  String?
+  refreshToken String?
+  expiresAt    DateTime?
+  password     String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+model Verification {
+  id         String   @id @default(uuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+// Simulation Models
+model Class {
+  id           String            @id @default(uuid())
+  name         String
+  inviteCode   String            @unique
+  instructorId String
+  instructor   User              @relation("ClassInstructor", fields: [instructorId], references: [id], onDelete: Cascade)
+  scenarioId   String
+  scenario     Scenario          @relation(fields: [scenarioId], references: [id])
+  students     User[]            @relation("ClassStudents")
+  simulations  SimulationState[]
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+}
+
+model Scenario {
+  id                     String   @id @default(uuid())
+  name                   String
+  description            String
+  industry               String
+  startRound             Int      @default(1)
+  maxRounds              Int      @default(10)
+  budgetPerRound         Float    @default(5000.0)
+  baselineOrganicTraffic Int      @default(1000)
+  targetKPI              String   @default("revenue") // revenue, clicks, conversions
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  classes                Class[]
+}
+
+model SimulationState {
+  id               String           @id @default(uuid())
+  userId           String
+  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  classId          String
+  class            Class            @relation(fields: [classId], references: [id], onDelete: Cascade)
+  currentRound     Int              @default(1)
+  status           String           @default("INITIALIZED") // INITIALIZED, DECISION_OPEN, LOCKED, PROCESSING, RESULTS_READY, SCORE_LOCKED, COMPLETED
+  isCompleted      Boolean          @default(false)
+  cumulativeSpend  Float            @default(0.0)
+  cumulativeRevenue Float           @default(0.0)
+  score            Float            @default(0.0)
+  instructorApproved Boolean        @default(false)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  decisions        Decision[]
+  metrics          DailyMetric[]
+  scoreBreakdowns  ScoreBreakdown[]
+  certificates     Certificate[]
+  snapshots        RoundSnapshot[]
+
+  @@index([userId, status])
+  @@index([classId, isCompleted])
+}
+
+model Decision {
+  id                 String          @id @default(uuid())
+  simulationId       String
+  simulation         SimulationState @relation(fields: [simulationId], references: [id], onDelete: Cascade)
+  round              Int
+  createdAt          DateTime        @default(now())
+  
+  // SEO Decisions (JSON fields for target keywords/strategy)
+  seoTargetKeywords  String          // JSON array of strings
+  seoContentQuality  Float           @default(5.0) // 1-10 content quality score
+  seoBacklinkBudget  Float           @default(0.0)
+  
+  // Google Ads Campaigns (JSON list of campaign configurations)
+  googleCampaigns    String          // JSON array: { name, budget, keywords: { word: string, bid: number }[] }
+  
+  // Meta Ads Campaigns (JSON list of campaigns)
+  metaCampaigns      String          // JSON array: { name, budget, audienceInterest: string, bidType: string, bidAmount: number, placement: string, creativeQuality: number }
+  
+  submitted          Boolean         @default(false)
+
+  @@unique([simulationId, round])
+}
+
+model DailyMetric {
+  id                 String          @id @default(uuid())
+  simulationId       String
+  simulation         SimulationState @relation(fields: [simulationId], references: [id], onDelete: Cascade)
+  round              Int
+  day                Int             // Day 1 to 30 of simulation round
+  createdAt          DateTime        @default(now())
+
+  // Organic (SEO) metrics
+  organicImpressions Int             @default(0)
+  organicClicks      Int             @default(0)
+  organicCTR         Float           @default(0.0)
+  organicConversions Int             @default(0)
+
+  // Paid Google Ads metrics
+  googleImpressions  Int             @default(0)
+  googleClicks       Int             @default(0)
+  googleCost         Float           @default(0.0)
+  googleConversions  Int             @default(0)
+
+  // Paid Meta Ads metrics
+  metaImpressions    Int             @default(0)
+  metaClicks         Int             @default(0)
+  metaCost           Float           @default(0.0)
+  metaConversions    Int             @default(0)
+
+  // Financials
+  revenue            Float           @default(0.0)
+
+  @@index([simulationId, round])
+}
+
+model MarketEvent {
+  id                 String          @id @default(uuid())
+  simulationId       String
+  round              Int
+  name               String
+  description        String
+  type               String          // ALGORITHM_UPDATE, SEASONAL_SPIKE, COMPETITOR_PRICE_DROP
+  impactMultiplier   Float           @default(1.0)
+  createdAt          DateTime        @default(now())
+}
+
+model ScoreBreakdown {
+  id                 String          @id @default(uuid())
+  simulationId       String
+  simulation         SimulationState @relation(fields: [simulationId], references: [id], onDelete: Cascade)
+  round              Int
+  seoScore           Float           @default(0.0)
+  googleAdsScore     Float           @default(0.0)
+  metaAdsScore       Float           @default(0.0)
+  budgetScore        Float           @default(0.0)
+  revenueScore       Float           @default(0.0)
+
+  // Phase 3 Aligned Scoring Fields
+  strategicAlignment Float           @default(0.0)
+  efficiencyRoi      Float           @default(0.0)
+  budgetDiscipline   Float           @default(0.0)
+  riskManagement     Float           @default(0.0)
+  adaptability       Float           @default(0.0)
+  strategicConsistency Float         @default(0.0)
+
+  compositeIndex     Float           @default(0.0)
+  percentileRank     Float           @default(0.0)
+  createdAt          DateTime        @default(now())
+
+  @@unique([simulationId, round])
+  @@index([simulationId, round])
+}
+
+model Certificate {
+  id                 String          @id @default(uuid())
+  simulationId       String
+  simulation         SimulationState @relation(fields: [simulationId], references: [id], onDelete: Cascade)
+  userId             String
+  recipientName      String
+  issueDate          DateTime        @default(now())
+  verificationHash   String          @unique
+  verificationId     String?         @unique
+  compositeScore     Float
+  pdfUrl             String
+  band               String          @default("COMPETENT")
+  skills             String          @default("[]")
+  createdAt          DateTime        @default(now())
+}
+
+model AuditLog {
+  id                 String          @id @default(uuid())
+  userId             String
+  user               User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  action             String
+  details            String
+  ipAddress          String?
+  createdAt          DateTime        @default(now())
+}
+
+model RoundSnapshot {
+  id           String          @id @default(uuid())
+  simulationId String
+  simulation   SimulationState @relation(fields: [simulationId], references: [id], onDelete: Cascade)
+  round        Int
+  data         String          // Serialized JSON of RoundSnapshot
+  createdAt    DateTime        @default(now())
+
+  @@unique([simulationId, round])
+  @@index([simulationId, round])
+}
