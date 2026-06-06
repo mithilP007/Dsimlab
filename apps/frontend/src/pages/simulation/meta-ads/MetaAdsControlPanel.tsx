@@ -233,7 +233,7 @@ export function MetaAdsControlPanel() {
               iconBg="bg-amber-900/40"
             />
             <KpiTile
-              label="Est. Conversions"
+              label="Est. Leads / Day"
               value={estimatedConversions.toLocaleString()}
               sub={`$${dailyBudget}/day`}
               icon={TrendingUp}

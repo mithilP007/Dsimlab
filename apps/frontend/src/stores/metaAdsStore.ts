@@ -67,17 +67,14 @@ export const PLACEMENT_META: Record<PlacementKey, PlacementMeta> = {
 // ─── Default audiences ────────────────────────────────────────────────────────
 
 const DEFAULT_AUDIENCES: MetaAudience[] = [
-  // Core
   { name: "Footwear & Apparel Shoppers",    type: "core",      selected: true,  size: 42.3, description: "People interested in shoes, fashion, and athletic wear" },
   { name: "Sports & Fitness Enthusiasts",   type: "core",      selected: false, size: 28.6, description: "Active users interested in running, gym, and outdoor sports" },
   { name: "Luxury Goods Buyers",            type: "core",      selected: false, size: 11.2, description: "High-income users browsing premium lifestyle products" },
   { name: "Parents (Kids 0–12)",            type: "core",      selected: false, size: 19.8, description: "Parents who frequently shop for children's products" },
   { name: "Young Adults (18–24)",           type: "core",      selected: true,  size: 35.1, description: "College-age audience with high social media engagement" },
   { name: "Eco-Conscious Consumers",        type: "core",      selected: false, size: 8.7,  description: "Users who prefer sustainable and ethical brands" },
-  // Custom
   { name: "Website Visitors (30-day)",      type: "custom",    selected: false, size: 0.8,  description: "Users who visited your site in the last 30 days" },
   { name: "Email List Upload",              type: "custom",    selected: false, size: 0.3,  description: "Customers from your CRM email database" },
-  // Lookalike
   { name: "Lookalike: Top Buyers (1%)",     type: "lookalike", selected: false, size: 2.1,  description: "Matches your best customers — highest intent" },
   { name: "Lookalike: Site Visitors (5%)",  type: "lookalike", selected: false, size: 10.5, description: "Broader match to recent website visitors" },
 ]
@@ -93,9 +90,9 @@ const DEFAULT_CREATIVE: MetaCreative = {
   mediaQuality: 80,
 }
 
-// ─── Estimates ────────────────────────────────────────────────────────────────
+// ─── Helper function ─────────────────────────────────────────────────────────
 
-function computeStrength(c: MetaCreative): number {
+export function computeStrength(c: MetaCreative): number {
   let score = 0
   score += Math.min(40, (c.primaryText.length / 125) * 40)
   score += Math.min(20, (c.headline.length / 40) * 20)
@@ -117,35 +114,108 @@ function computeEstimates(
   placements: MetaPlacements,
   dailyBudget: number,
   creatives: MetaCreative[],
+  objective: MetaObjective,
 ): Estimates {
   const activePlacements = Object.values(placements).filter(Boolean).length
   const selectedAudiences = audiences.filter((a) => a.selected)
 
   if (activePlacements === 0 || selectedAudiences.length === 0 || dailyBudget === 0) {
-    return { estimatedReach: 0, estimatedImpressions: 0, estimatedCpc: 0, estimatedCtr: 0, estimatedConversions: 0 }
+    return {
+      estimatedReach: 0,
+      estimatedImpressions: 0,
+      estimatedCpc: 0,
+      estimatedCtr: 0,
+      estimatedConversions: 0,
+    }
   }
 
-  const avgCpm =
-    (Object.entries(placements) as [PlacementKey, boolean][])
-      .filter(([, v]) => v)
-      .reduce((s, [k]) => s + PLACEMENT_META[k].estimatedCpm, 0) / activePlacements
+  // 1. Objective-driven base CPM and conversion rate (CVR)
+  let baseCpm = 9.80
+  let baseCvr = 0.015
+  if (objective === "sales") {
+    baseCpm = 16.50
+    baseCvr = 0.048
+  } else if (objective === "conversions") {
+    baseCpm = 14.00
+    baseCvr = 0.038
+  } else if (objective === "traffic") {
+    baseCpm = 8.50
+    baseCvr = 0.018
+  } else if (objective === "engagement") {
+    baseCpm = 6.00
+    baseCvr = 0.007
+  } else if (objective === "awareness") {
+    baseCpm = 4.50
+    baseCvr = 0.003
+  }
 
-  const totalAudienceSize = selectedAudiences.reduce((s, a) => s + a.size, 0) // millions
+  // 2. Placements factor
+  // Sum CPM and quality weights
+  let totalCpm = 0
+  let totalQuality = 0
+  const placementEntries = Object.entries(placements) as [PlacementKey, boolean][]
+  placementEntries.forEach(([key, active]) => {
+    if (active) {
+      // Scale placement CPM relative to objective base CPM
+      const scale = baseCpm / 9.80
+      totalCpm += PLACEMENT_META[key].estimatedCpm * scale
+      
+      // Rate quality
+      if (key === "feed") totalQuality += 1.25
+      else if (key === "stories") totalQuality += 1.05
+      else if (key === "reels") totalQuality += 1.15
+      else if (key === "marketplace") totalQuality += 0.90
+      else if (key === "rightColumn") totalQuality += 0.50
+      else if (key === "audienceNetwork") totalQuality += 0.40
+      else if (key === "messenger") totalQuality += 0.60
+    }
+  })
+
+  const avgCpm = totalCpm / activePlacements
+  const placementQuality = totalQuality / activePlacements
+
+  // 3. Creative Strength Multiplier
   const avgCreativeStrength = creatives.length
     ? creatives.reduce((s, c) => s + computeStrength(c), 0) / creatives.length
-    : 0
+    : 50
+  const creativeMultiplier = 0.5 + (avgCreativeStrength / 100) * 1.0
 
+  // 4. Audience Quality Factor
+  let audienceQuality = 1.0
+  const totalAudienceSize = selectedAudiences.reduce((s, a) => s + a.size, 0) // millions
+  if (selectedAudiences.length > 0) {
+    let sumQuality = 0
+    selectedAudiences.forEach((a) => {
+      if (a.type === "custom" || a.name.includes("1%")) sumQuality += 1.6
+      else if (a.type === "lookalike") sumQuality += 1.2
+      else sumQuality += 0.9
+    })
+    audienceQuality = sumQuality / selectedAudiences.length
+  }
+
+  // 5. Calculate Final Estimates
   const impressions = Math.round((dailyBudget / avgCpm) * 1000)
-  const reach = Math.round(Math.min(totalAudienceSize * 1_000_000, impressions * 0.7))
-  const ctr = parseFloat((1.2 + (avgCreativeStrength / 100) * 1.8).toFixed(2))
+  const reach = Math.round(Math.min(totalAudienceSize * 1_000_000, impressions * 0.75))
+  
+  // Base CTR = 1.2% for Meta feed ads
+  const ctr = parseFloat(Math.min(10, Math.max(0.1, 1.2 * creativeMultiplier * placementQuality * audienceQuality)).toFixed(2))
   const clicks = Math.round(impressions * (ctr / 100))
   const cpc = clicks > 0 ? parseFloat((dailyBudget / clicks).toFixed(2)) : 0
-  const conversions = Math.round(clicks * 0.032)
 
-  return { estimatedReach: reach, estimatedImpressions: impressions, estimatedCpc: cpc, estimatedCtr: ctr, estimatedConversions: conversions }
+  // Conversions (Leads)
+  const finalCvr = baseCvr * creativeMultiplier * placementQuality * audienceQuality
+  const conversions = Math.round(clicks * finalCvr)
+
+  return {
+    estimatedReach: reach,
+    estimatedImpressions: impressions,
+    estimatedCpc: cpc,
+    estimatedCtr: ctr,
+    estimatedConversions: conversions,
+  }
 }
 
-// ─── Store ────────────────────────────────────────────────────────────────────
+// ─── Store Interface ──────────────────────────────────────────────────────────
 
 interface MetaAdsState {
   campaignName: string
@@ -176,15 +246,21 @@ interface MetaAdsState {
   resetCampaign: () => void
 }
 
+// ─── Store ────────────────────────────────────────────────────────────────────
+
 let idCounter = 2
 
 const defaultPlacements: MetaPlacements = {
-  feed: true, stories: true, reels: false,
-  marketplace: false, rightColumn: false,
-  audienceNetwork: false, messenger: false,
+  feed: true,
+  stories: true,
+  reels: false,
+  marketplace: false,
+  rightColumn: false,
+  audienceNetwork: false,
+  messenger: false,
 }
 
-const initial = computeEstimates(DEFAULT_AUDIENCES, defaultPlacements, 30, [DEFAULT_CREATIVE])
+const initial = computeEstimates(DEFAULT_AUDIENCES, defaultPlacements, 30, [DEFAULT_CREATIVE], "sales")
 
 export const useMetaAdsStore = create<MetaAdsState>((set, get) => ({
   campaignName: "Footwear Meta Ads Campaign",
@@ -200,7 +276,10 @@ export const useMetaAdsStore = create<MetaAdsState>((set, get) => ({
 
   setCampaignName: (name) => set({ campaignName: name }),
 
-  setObjective: (objective) => set({ objective }),
+  setObjective: (objective) => {
+    set({ objective })
+    get().calculateEstimates()
+  },
 
   setDailyBudget: (budget) => {
     set({ dailyBudget: budget, totalBudget: budget * 30 })
@@ -244,7 +323,7 @@ export const useMetaAdsStore = create<MetaAdsState>((set, get) => ({
 
   calculateEstimates: () => {
     const s = get()
-    const est = computeEstimates(s.audiences, s.placements, s.dailyBudget, s.creatives)
+    const est = computeEstimates(s.audiences, s.placements, s.dailyBudget, s.creatives, s.objective)
     set(est)
   },
 
@@ -252,7 +331,7 @@ export const useMetaAdsStore = create<MetaAdsState>((set, get) => ({
 
   resetCampaign: () => {
     const pl = { ...defaultPlacements }
-    const est = computeEstimates(DEFAULT_AUDIENCES, pl, 30, [DEFAULT_CREATIVE])
+    const est = computeEstimates(DEFAULT_AUDIENCES, pl, 30, [DEFAULT_CREATIVE], "sales")
     set({
       campaignName: "Footwear Meta Ads Campaign",
       objective: "sales",
@@ -268,5 +347,4 @@ export const useMetaAdsStore = create<MetaAdsState>((set, get) => ({
   },
 }))
 
-export { computeStrength }
 export default useMetaAdsStore

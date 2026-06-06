@@ -119,7 +119,7 @@ const DEFAULT_AD_COPY: AdCopy = {
 
 // ─── Score helper ─────────────────────────────────────────────────────────────
 
-function computeStrength(ad: Omit<AdCopy, "strength">): AdStrength {
+export function computeStrength(ad: Omit<AdCopy, "strength">): AdStrength {
   let score = 0
   if (ad.headline1.length >= 20) score++
   if (ad.headline2.length >= 15) score++
@@ -139,26 +139,89 @@ interface Estimates {
   estimatedClicks: number
   estimatedCtr: number
   budgetSpent: number
+  estimatedConversions: number
 }
 
 function computeEstimates(
   keywords: SelectedKeyword[],
   dailyBudget: number,
   audiences: AudienceSegment[],
+  adCopies: AdCopy[],
 ): Estimates {
   if (keywords.length === 0) {
-    return { estimatedCpc: 0, estimatedImpressions: 0, estimatedClicks: 0, estimatedCtr: 0, budgetSpent: 0 }
+    return {
+      estimatedCpc: 0,
+      estimatedImpressions: 0,
+      estimatedClicks: 0,
+      estimatedCtr: 0,
+      budgetSpent: 0,
+      estimatedConversions: 0,
+    }
   }
 
+  // 1. Average Keyword Bid
   const avgBid = keywords.reduce((s, k) => s + k.bid, 0) / keywords.length
-  const audienceBoost = audiences.filter((a) => a.selected).length * 0.05 + 1
-  const cpc = parseFloat((avgBid * audienceBoost).toFixed(2))
+
+  // 2. Keyword Match Type & Intent CVR
+  // Exact match = highest CVR (4.5%), Phrase = 3.0%, Broad = 1.5%
+  const totalBaseCvr = keywords.reduce((sum, kw) => {
+    let kwCvr = 0.015
+    if (kw.matchType === "exact") kwCvr = 0.045
+    else if (kw.matchType === "phrase") kwCvr = 0.03
+    return sum + kwCvr
+  }, 0)
+  const avgBaseCvr = totalBaseCvr / keywords.length
+
+  // 3. Bid Quality relative to Suggested Bid
+  let totalBidQuality = 0
+  keywords.forEach((kw) => {
+    const poolItem = KEYWORD_POOL.find((k) => k.keyword === kw.keyword)
+    const suggested = poolItem ? poolItem.suggestedBid : 1.0
+    const ratio = kw.bid / suggested
+    const kwQuality = ratio >= 1 ? Math.min(1.2, ratio) : Math.max(0.4, ratio)
+    totalBidQuality += kwQuality
+  })
+  const avgBidQuality = totalBidQuality / keywords.length
+
+  // 4. Ad Strength multiplier
+  const bestAd = adCopies.reduce((best, ad) => {
+    if (ad.strength === "excellent") return "excellent"
+    if (ad.strength === "average" && best !== "excellent") return "average"
+    return best
+  }, "poor")
+  const adMultiplier = bestAd === "excellent" ? 1.35 : bestAd === "average" ? 1.0 : 0.6
+
+  // 5. Audience targeting multiplier
+  const activeAudiences = audiences.filter((a) => a.selected)
+  const audienceMultiplier = Math.min(1.5, 1 + activeAudiences.length * 0.08)
+
+  // 6. Calculate CPC
+  const cpc = parseFloat(Math.max(0.15, avgBid * (1 / avgBidQuality) * (2 - audienceMultiplier * 0.5)).toFixed(2))
+
+  // 7. Calculate Clicks
   const clicks = Math.floor(dailyBudget / cpc)
-  const impressions = Math.floor(clicks / (0.04 + keywords.length * 0.003))
-  const ctr = impressions > 0 ? parseFloat(((clicks / impressions) * 100).toFixed(2)) : 0
+
+  // 8. Calculate CTR
+  const ctr = parseFloat(Math.min(15, Math.max(0.5, 3.5 * avgBidQuality * adMultiplier * audienceMultiplier)).toFixed(2))
+
+  // 9. Calculate Impressions
+  const impressions = ctr > 0 ? Math.floor(clicks / (ctr / 100)) : 0
+
+  // 10. Budget Spent
   const budgetSpent = parseFloat((clicks * cpc).toFixed(2))
 
-  return { estimatedCpc: cpc, estimatedImpressions: impressions, estimatedClicks: clicks, estimatedCtr: ctr, budgetSpent }
+  // 11. Conversions (Leads)
+  const finalCvr = avgBaseCvr * avgBidQuality * adMultiplier * audienceMultiplier
+  const conversions = Math.round(clicks * finalCvr)
+
+  return {
+    estimatedCpc: cpc,
+    estimatedImpressions: impressions,
+    estimatedClicks: clicks,
+    estimatedCtr: ctr,
+    budgetSpent,
+    estimatedConversions: conversions,
+  }
 }
 
 // ─── Store interface ──────────────────────────────────────────────────────────
@@ -178,6 +241,7 @@ interface GoogleAdsState {
   estimatedImpressions: number
   estimatedClicks: number
   estimatedCtr: number
+  estimatedConversions: number
   decisionsMade: boolean
 
   // Actions
@@ -200,7 +264,7 @@ interface GoogleAdsState {
 
 // ─── Store ────────────────────────────────────────────────────────────────────
 
-const initialEstimates = computeEstimates(DEFAULT_KEYWORDS, 50, DEFAULT_AUDIENCES)
+const initialEstimates = computeEstimates(DEFAULT_KEYWORDS, 50, DEFAULT_AUDIENCES, [DEFAULT_AD_COPY])
 
 export const useGoogleAdsStore = create<GoogleAdsState>((set, get) => ({
   campaignName:         "Footwear Summer Sale 2025",
@@ -217,6 +281,7 @@ export const useGoogleAdsStore = create<GoogleAdsState>((set, get) => ({
   estimatedImpressions: initialEstimates.estimatedImpressions,
   estimatedClicks:      initialEstimates.estimatedClicks,
   estimatedCtr:         initialEstimates.estimatedCtr,
+  estimatedConversions: initialEstimates.estimatedConversions,
   decisionsMade:        false,
 
   setCampaignName: (name) => set({ campaignName: name }),
@@ -230,14 +295,14 @@ export const useGoogleAdsStore = create<GoogleAdsState>((set, get) => ({
     set((state) => {
       if (state.selectedKeywords.find((k) => k.keyword === keyword)) return state
       const next = [...state.selectedKeywords, { keyword, bid, matchType }]
-      const est = computeEstimates(next, state.dailyBudget, state.audiences)
+      const est = computeEstimates(next, state.dailyBudget, state.audiences, state.adCopies)
       return { selectedKeywords: next, ...est }
     }),
 
   removeKeyword: (keyword) =>
     set((state) => {
       const next = state.selectedKeywords.filter((k) => k.keyword !== keyword)
-      const est = computeEstimates(next, state.dailyBudget, state.audiences)
+      const est = computeEstimates(next, state.dailyBudget, state.audiences, state.adCopies)
       return { selectedKeywords: next, ...est }
     }),
 
@@ -246,33 +311,39 @@ export const useGoogleAdsStore = create<GoogleAdsState>((set, get) => ({
       const next = state.selectedKeywords.map((k) =>
         k.keyword === keyword ? { ...k, bid: Math.max(0.01, bid) } : k,
       )
-      const est = computeEstimates(next, state.dailyBudget, state.audiences)
+      const est = computeEstimates(next, state.dailyBudget, state.audiences, state.adCopies)
       return { selectedKeywords: next, ...est }
     }),
 
-  updateMatchType: (keyword, matchType) =>
+  updateMatchType: (keyword, matchType) => {
     set((state) => ({
       selectedKeywords: state.selectedKeywords.map((k) =>
-        k.keyword === keyword ? { ...k, matchType } : k,
+        k.keyword === keyword ? { ...k, matchType } : k
       ),
-    })),
+    }))
+    get().calculateEstimates()
+  },
 
-  addAdCopy: (ad) =>
+  addAdCopy: (ad) => {
     set((state) => ({
       adCopies: [...state.adCopies, { ...ad, strength: computeStrength(ad) }],
-    })),
+    }))
+    get().calculateEstimates()
+  },
 
-  removeAdCopy: (index) =>
+  removeAdCopy: (index) => {
     set((state) => ({
       adCopies: state.adCopies.filter((_, i) => i !== index),
-    })),
+    }))
+    get().calculateEstimates()
+  },
 
   toggleAudience: (audienceName) =>
     set((state) => {
       const next = state.audiences.map((a) =>
         a.name === audienceName ? { ...a, selected: !a.selected } : a,
       )
-      const est = computeEstimates(state.selectedKeywords, state.dailyBudget, next)
+      const est = computeEstimates(state.selectedKeywords, state.dailyBudget, next, state.adCopies)
       return { audiences: next, ...est }
     }),
 
@@ -292,14 +363,14 @@ export const useGoogleAdsStore = create<GoogleAdsState>((set, get) => ({
 
   calculateEstimates: () =>
     set((state) => {
-      const est = computeEstimates(state.selectedKeywords, state.dailyBudget, state.audiences)
+      const est = computeEstimates(state.selectedKeywords, state.dailyBudget, state.audiences, state.adCopies)
       return est
     }),
 
   markDecisionsMade: () => set({ decisionsMade: true, campaignStatus: "active" }),
 
   resetCampaign: () => {
-    const est = computeEstimates(DEFAULT_KEYWORDS, 50, DEFAULT_AUDIENCES)
+    const est = computeEstimates(DEFAULT_KEYWORDS, 50, DEFAULT_AUDIENCES, [DEFAULT_AD_COPY])
     set({
       campaignName:         "Footwear Summer Sale 2025",
       dailyBudget:          50,
@@ -315,6 +386,7 @@ export const useGoogleAdsStore = create<GoogleAdsState>((set, get) => ({
       estimatedImpressions: est.estimatedImpressions,
       estimatedClicks:      est.estimatedClicks,
       estimatedCtr:         est.estimatedCtr,
+      estimatedConversions: est.estimatedConversions,
       decisionsMade:        false,
     })
   },
