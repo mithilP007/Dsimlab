@@ -82,6 +82,12 @@ interface CampaignState {
   // Decisions
   decisionsMade: boolean
 
+  // Real world SEO inputs
+  metaTitle: string
+  metaDescription: string
+  h1Header: string
+  bodyContent: string
+
   // ─── Actions ───────────────────────────────────────────────────────────────
   toggleKeyword: (keywordId: string) => void
   setOnPageScore: (score: number) => void
@@ -91,6 +97,11 @@ interface CampaignState {
   toggleBacklink: (backlinkId: string) => void
   markDecisionsMade: () => void
   resetCampaign: () => void
+
+  setMetaTitle: (title: string) => void
+  setMetaDescription: (desc: string) => void
+  setH1Header: (header: string) => void
+  setBodyContent: (content: string) => void
 }
 
 // ─── Score calculation helper ────────────────────────────────────────────────
@@ -116,13 +127,18 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
   selectedBacklinks: [],
   decisionsMade: false,
 
+  metaTitle: "",
+  metaDescription: "",
+  h1Header: "",
+  bodyContent: "",
+
   toggleKeyword: (keywordId) =>
     set((state) => {
       const exists = state.selectedKeywords.includes(keywordId)
       if (!exists && state.selectedKeywords.length >= 10) return state
       const next = exists
-        ? state.selectedKeywords.filter((k) => k !== keywordId)
-        : [...state.selectedKeywords, keywordId]
+          ? state.selectedKeywords.filter((k) => k !== keywordId)
+          : [...state.selectedKeywords, keywordId]
       return { selectedKeywords: next }
     }),
 
@@ -188,6 +204,11 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
 
   markDecisionsMade: () => set({ decisionsMade: true }),
 
+  setMetaTitle: (title) => set({ metaTitle: title }),
+  setMetaDescription: (desc) => set({ metaDescription: desc }),
+  setH1Header: (header) => set({ h1Header: header }),
+  setBodyContent: (content) => set({ bodyContent: content }),
+
   resetCampaign: () =>
     set({
       selectedKeywords: ["kw1", "kw9", "kw13"],
@@ -198,6 +219,10 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
       budgetSpent: 0,
       selectedBacklinks: [],
       decisionsMade: false,
+      metaTitle: "",
+      metaDescription: "",
+      h1Header: "",
+      bodyContent: "",
     }),
 }))
 
