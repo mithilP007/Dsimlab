@@ -20,6 +20,12 @@ import {
   ChevronLeft,
   ChevronRight,
   Trophy,
+  Shield,
+  Users,
+  School,
+  Settings,
+  Bell,
+  Clock,
 } from "lucide-react"
 
 interface NavItem {
@@ -69,10 +75,27 @@ const navConfig: NavGroup[] = [
     ]
   },
   {
+    groupName: "Updates",
+    items: [
+      { name: "Notifications", href: "/notifications", icon: Bell },
+      { name: "Activity Feed", href: "/activity", icon: Clock }
+    ]
+  },
+  {
     groupName: "Instructor Panel",
     role: "instructor",
     items: [
       { name: "Instructor Panel", href: "/instructor", icon: GraduationCap }
+    ]
+  },
+  {
+    groupName: "Admin Panel",
+    role: "admin",
+    items: [
+      { name: "Admin Dashboard", href: "/admin", icon: Shield },
+      { name: "User Management", href: "/admin/users", icon: Users },
+      { name: "Class Overview", href: "/admin/classes", icon: School },
+      { name: "System Settings", href: "/admin/settings", icon: Settings }
     ]
   }
 ]

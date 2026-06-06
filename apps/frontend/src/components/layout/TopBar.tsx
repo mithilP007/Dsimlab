@@ -19,10 +19,11 @@ import {
 import { INDUSTRIES } from "@/lib/constants"
 import { useAuthStore } from "@/stores/authStore"
 import type { UserRole } from "@/types"
-import { ChevronDown, Calendar, GraduationCap, User } from "lucide-react"
+import { ChevronDown, Calendar, GraduationCap, User, Shield } from "lucide-react"
+import { NotificationBell } from "@/components/notifications/NotificationBell"
 
 export function TopBar() {
-  const { user, setUser } = useAuthStore()
+  const { user, setUser, logout } = useAuthStore()
   const [currency, setCurrency] = useState<"USD" | "INR">("USD")
   const [selectedIndustry, setSelectedIndustry] = useState<string>("E-commerce")
 
@@ -81,6 +82,8 @@ export function TopBar() {
         {/* Vertical divider */}
         <div className="h-5 w-[1px] bg-neutral-200 hidden xs:block" />
 
+        <NotificationBell />
+
         {/* User Account Menu & Role Switcher */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -126,9 +129,19 @@ export function TopBar() {
               <GraduationCap className="h-3.5 w-3.5" />
               <span>Instructor Role</span>
             </DropdownMenuItem>
+            <DropdownMenuItem
+              className="cursor-pointer text-xs flex items-center gap-2"
+              onClick={() => handleRoleChange("admin")}
+            >
+              <Shield className="h-3.5 w-3.5" />
+              <span>Admin Role</span>
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             
-            <DropdownMenuItem className="text-red-600 focus:text-red-700 cursor-pointer text-xs">
+            <DropdownMenuItem
+              className="text-red-600 focus:text-red-700 cursor-pointer text-xs"
+              onClick={logout}
+            >
               Sign Out
             </DropdownMenuItem>
           </DropdownMenuContent>

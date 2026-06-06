@@ -66,3 +66,20 @@ export function StudentGuard({ children, fallbackPath = "/" }: GuardProps) {
 
   return children as React.ReactElement
 }
+
+/**
+ * Guard wrapper for admin-only access.
+ */
+export function AdminGuard({ children, fallbackPath = "/" }: GuardProps) {
+  const { user, isAuthenticated } = useAuthStore()
+
+  if (!isAuthenticated || !user) {
+    return createElement(Navigate, { to: "/login", replace: true })
+  }
+
+  if (user.role !== "admin") {
+    return createElement(Navigate, { to: fallbackPath, replace: true })
+  }
+
+  return children as React.ReactElement
+}
