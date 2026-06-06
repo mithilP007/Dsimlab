@@ -1,3 +1,4 @@
+import { useEffect } from "react"
 import { BrowserRouter, Routes, Route, Navigate } from "react-router"
 import { AppShell } from "@/components/layout/AppShell"
 import { IndividualDashboard } from "@/pages/dashboard/IndividualDashboard"
@@ -28,8 +29,30 @@ import { AdminGuard } from "@/hooks/useRoleGuard"
 import { NotificationPanel } from "@/components/notifications/NotificationPanel"
 import { ActivityFeed } from "@/components/notifications/ActivityFeed"
 
+/**
+ * SessionBootstrap – silently re-validates the Better-Auth session cookie
+ * on every page load. Runs once when the app mounts.
+ */
+function SessionBootstrap() {
+  const { refreshSession } = useAuthStore()
+  useEffect(() => {
+    refreshSession()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  return null
+}
+
 function ProtectedLayout() {
-  const { isAuthenticated } = useAuthStore()
+  const { isAuthenticated, isLoadingSession } = useAuthStore()
+
+  // While we are checking the server session, render nothing
+  if (isLoadingSession) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh" }}>
+        <span style={{ color: "#94a3b8", fontSize: "1rem" }}>Verifying session…</span>
+      </div>
+    )
+  }
 
   if (!isAuthenticated) {
     return <Navigate to="/landing" replace />
@@ -52,6 +75,7 @@ function DashboardRoot() {
 export function AppRouter() {
   return (
     <BrowserRouter>
+      <SessionBootstrap />
       <Routes>
         {/* Public landing and auth views */}
         <Route path="/landing" element={<LandingPage />} />

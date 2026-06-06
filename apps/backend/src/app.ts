@@ -7,6 +7,7 @@ import path from 'path';
 import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
 import { auth } from './auth/better-auth';
+import { prisma } from './db/client';
 import { logger } from './utils/logger';
 import { AppError } from './utils/errors';
 import { config } from './config';
@@ -199,6 +200,53 @@ app.ready().then(() => {
   } catch (err) {
     logger.error(err, 'Failed to export OpenAPI JSON');
   }
+});
+
+// Custom register routes matching frontend API requirements
+app.post('/api/auth/register/individual', async (request, reply) => {
+  const body = request.body as any;
+  const webRequest = new Request(`${request.protocol}://${request.hostname}/api/auth/sign-up/email`, {
+    method: 'POST',
+    headers: new Headers({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({
+      email: body.email,
+      password: body.password,
+      name: body.name,
+      role: 'INDIVIDUAL',
+    }),
+  });
+  const webResponse = await auth.handler(webRequest);
+  webResponse.headers.forEach((value, key) => { reply.header(key, value); });
+  reply.status(webResponse.status);
+  return reply.send(await webResponse.text());
+});
+
+app.post('/api/auth/register/student', async (request, reply) => {
+  const body = request.body as any;
+  // Look up class by join code first
+  const targetClass = await prisma.class.findUnique({
+    where: { inviteCode: body.classJoinCode },
+  });
+  if (!targetClass) {
+    reply.status(400);
+    return reply.send({ success: false, error: 'Invalid class join code.' });
+  }
+
+  const webRequest = new Request(`${request.protocol}://${request.hostname}/api/auth/sign-up/email`, {
+    method: 'POST',
+    headers: new Headers({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({
+      email: body.email,
+      password: body.password,
+      name: body.name,
+      role: 'STUDENT_COLLEGE',
+      classId: targetClass.id,
+    }),
+  });
+  const webResponse = await auth.handler(webRequest);
+  webResponse.headers.forEach((value, key) => { reply.header(key, value); });
+  reply.status(webResponse.status);
+  return reply.send(await webResponse.text());
 });
 
 // Better Auth Web Request Integration

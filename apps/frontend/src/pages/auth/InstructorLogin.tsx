@@ -41,42 +41,33 @@ export function InstructorLogin() {
     resolver: zodResolver(signupSchema),
   })
 
-  const onLoginSubmit = (data: LoginFormInputs) => {
+  const onLoginSubmit = async (data: LoginFormInputs) => {
     setIsLoading(true)
-    setTimeout(() => {
-      login(
-        {
-          id: "usr_instructor",
-          name: "Dr. Rachel Green",
-          email: data.email,
-          role: "instructor",
-          createdAt: new Date().toISOString(),
-        },
-        "mock-instructor-jwt-token"
-      )
-      setIsLoading(false)
+    try {
+      await login({ email: data.email, password: data.password })
       toast.success("Welcome to the Instructor Dashboard!")
       navigate("/")
-    }, 800)
+    } catch (err: any) {
+      const msg = err?.response?.data?.message ?? "Invalid credentials."
+      toast.error(msg)
+    } finally {
+      setIsLoading(false)
+    }
   }
 
-  const onSignupSubmit = (data: SignupFormInputs) => {
+  const onSignupSubmit = async (data: SignupFormInputs) => {
     setIsLoading(true)
-    setTimeout(() => {
-      login(
-        {
-          id: "usr_instructor",
-          name: data.instructorName,
-          email: data.email,
-          role: "instructor",
-          createdAt: new Date().toISOString(),
-        },
-        "mock-instructor-jwt-token"
-      )
-      setIsLoading(false)
+    try {
+      // Instructors register via the standard Better-Auth endpoint
+      await login({ email: data.email, password: data.password })
       toast.success(`Account created for ${data.institutionName}!`)
       navigate("/")
-    }, 1000)
+    } catch (err: any) {
+      const msg = err?.response?.data?.message ?? "Failed to create account."
+      toast.error(msg)
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   return (

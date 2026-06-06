@@ -1,4 +1,6 @@
 import { create } from "zustand"
+import apiClient from "@/lib/api"
+import { toast } from "sonner"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -243,6 +245,7 @@ interface GoogleAdsState {
   estimatedCtr: number
   estimatedConversions: number
   decisionsMade: boolean
+  isSubmitting: boolean
 
   // Actions
   setCampaignName: (name: string) => void
@@ -260,6 +263,12 @@ interface GoogleAdsState {
   calculateEstimates: () => void
   markDecisionsMade: () => void
   resetCampaign: () => void
+
+  /**
+   * Submit Google Ads campaign configurations to the backend for the current round.
+   * POST /api/v1/google-ads/decision
+   */
+  submitDecisions: () => Promise<void>
 }
 
 // ─── Store ────────────────────────────────────────────────────────────────────
@@ -283,6 +292,7 @@ export const useGoogleAdsStore = create<GoogleAdsState>((set, get) => ({
   estimatedCtr:         initialEstimates.estimatedCtr,
   estimatedConversions: initialEstimates.estimatedConversions,
   decisionsMade:        false,
+  isSubmitting:         false,
 
   setCampaignName: (name) => set({ campaignName: name }),
 
@@ -368,6 +378,38 @@ export const useGoogleAdsStore = create<GoogleAdsState>((set, get) => ({
     }),
 
   markDecisionsMade: () => set({ decisionsMade: true, campaignStatus: "active" }),
+
+  submitDecisions: async () => {
+    const { selectedKeywords, dailyBudget, campaignName } = get()
+
+    if (selectedKeywords.length === 0) {
+      toast.error("Add at least one keyword before submitting Google Ads decisions.")
+      return
+    }
+
+    set({ isSubmitting: true })
+    try {
+      await apiClient.post("/v1/google-ads/decision", {
+        campaigns: [
+          {
+            name: campaignName,
+            budget: dailyBudget,
+            keywords: selectedKeywords.map((kw) => ({
+              word: kw.keyword,
+              bid: kw.bid,
+            })),
+          },
+        ],
+      })
+      set({ decisionsMade: true, campaignStatus: "active" })
+      toast.success("Google Ads decisions saved to the simulation!")
+    } catch (err: any) {
+      const msg = err?.response?.data?.message ?? "Failed to save Google Ads decisions."
+      toast.error(msg)
+    } finally {
+      set({ isSubmitting: false })
+    }
+  },
 
   resetCampaign: () => {
     const est = computeEstimates(DEFAULT_KEYWORDS, 50, DEFAULT_AUDIENCES, [DEFAULT_AD_COPY])

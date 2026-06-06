@@ -1,4 +1,6 @@
 import { create } from "zustand"
+import apiClient from "@/lib/api"
+import { toast } from "sonner"
 import type { Class, Scenario, ScoreBreakdown } from "@/types"
 
 export interface ClassInfo {
@@ -23,79 +25,203 @@ export interface PerformanceDimension {
   fullMark: number
 }
 
+// ─── Instructor-side class detail ─────────────────────────────────────────────
+
+export interface LiveClassDetail {
+  id: string
+  name: string
+  inviteCode: string
+  scenario: Scenario
+  students: Array<{
+    id: string
+    name: string
+    email: string
+    simulations: Array<{
+      currentRound: number
+      isCompleted: boolean
+      status: string
+    }>
+  }>
+}
+
+// ─── Report row shape from /api/v1/report/class/:classId ─────────────────────
+
+export interface ClassReportRow {
+  studentId: string
+  studentName: string
+  studentEmail: string
+  currentRound: number
+  isCompleted: boolean
+  totalRevenue: number
+  totalSpend: number
+  googleAdsSpend: number
+  metaAdsSpend: number
+  averageCompositeScore: number
+  averagePercentileRank: number
+}
+
 interface InstructorState {
   classes: Class[]
+  liveClasses: LiveClassDetail[]
   scenarios: Scenario[]
   grades: ScoreBreakdown[]
-  addClass: (newClass: Class) => void
-  addScenario: (newScenario: Scenario) => void
-  setGrades: (grades: ScoreBreakdown[]) => void
+  classReport: ClassReportRow[]
+  isLoading: boolean
 
-  // New mock data state for College Student Dashboard
-  classInfo: ClassInfo
+  // College-student dashboard state (loaded from /api/v1/class by student)
+  classInfo: ClassInfo | null
   leaderboard: LeaderboardStudent[]
   studentPerformance: PerformanceDimension[]
   feedbackCount: number
+
+  // ─── Actions ───────────────────────────────────────────────────────────────
+
+  /** Instructor: list all classes */
+  fetchClasses: () => Promise<void>
+
+  /** Instructor: create a new class */
+  createClass: (name: string, scenarioId: string) => Promise<void>
+
+  /** Instructor: load single class detail with student roster */
+  fetchClassDetail: (classId: string) => Promise<void>
+
+  /** Instructor: generate class-wide performance report */
+  fetchClassReport: (classId: string) => Promise<void>
+
+  addClass: (newClass: Class) => void
+  addScenario: (newScenario: Scenario) => void
+  setGrades: (grades: ScoreBreakdown[]) => void
   incrementFeedbackCount: () => void
 }
 
 export const useInstructorStore = create<InstructorState>((set) => ({
-  classes: [
-    {
-      id: "c_1",
-      name: "MKT 410: Advanced Digital Marketing",
-      instructorId: "usr_instructor",
-      studentsCount: 24,
-      studentIds: ["s_1", "s_2", "s_3"],
-      createdAt: new Date().toISOString(),
-    },
-  ],
-  scenarios: [
-    {
-      id: "sc_1",
-      title: "E-Commerce Launch Sprint",
-      description: "Optimize ROI for a direct-to-consumer online fashion retail startup.",
-      industry: "E-commerce",
-      difficulty: "medium" as const,
-      startingBudget: 5000,
-      targetRevenue: 12000,
-      durationDays: 30,
-    },
-  ],
-  grades: [
-    { id: "g_1", scenarioId: "sc_1", userId: "Student A", roiScore: 82, seoScore: 92, adsScore: 95, budgetManagementScore: 90, overallScore: 90 },
-    { id: "g_2", scenarioId: "sc_1", userId: "Student B", roiScore: 78, seoScore: 88, adsScore: 91, budgetManagementScore: 88, overallScore: 86 },
-    { id: "g_3", scenarioId: "sc_1", userId: "Student C (You)", roiScore: 76, seoScore: 85, adsScore: 89, budgetManagementScore: 95, overallScore: 86 },
-    { id: "g_4", scenarioId: "sc_1", userId: "Student D", roiScore: 70, seoScore: 80, adsScore: 85, budgetManagementScore: 82, overallScore: 79 },
-    { id: "g_5", scenarioId: "sc_1", userId: "Student E", roiScore: 68, seoScore: 78, adsScore: 82, budgetManagementScore: 80, overallScore: 77 },
-  ],
+  classes: [],
+  liveClasses: [],
+  scenarios: [],
+  grades: [],
+  classReport: [],
+  isLoading: false,
+  classInfo: null,
+  leaderboard: [],
+  studentPerformance: [],
+  feedbackCount: 0,
+
+  // ─── Fetch Classes ─────────────────────────────────────────────────────────
+
+  fetchClasses: async () => {
+    set({ isLoading: true })
+    try {
+      const { data } = await apiClient.get("/v1/class")
+      const liveClasses: LiveClassDetail[] = data.classes ?? []
+
+      // Map to the legacy Class type for backwards compatibility
+      const classes: Class[] = liveClasses.map((c) => ({
+        id: c.id,
+        name: c.name,
+        instructorId: "",
+        studentsCount: c.students?.length ?? 0,
+        studentIds: c.students?.map((s) => s.id) ?? [],
+        createdAt: "",
+      }))
+
+      set({ liveClasses, classes })
+    } catch (err: any) {
+      const msg = err?.response?.data?.message ?? "Failed to load classes."
+      toast.error(msg)
+    } finally {
+      set({ isLoading: false })
+    }
+  },
+
+  // ─── Create Class ──────────────────────────────────────────────────────────
+
+  createClass: async (name, scenarioId) => {
+    set({ isLoading: true })
+    try {
+      const { data } = await apiClient.post("/v1/class", { name, scenarioId })
+      const newClass = data.class as LiveClassDetail
+      set((state) => ({
+        liveClasses: [newClass, ...state.liveClasses],
+        classes: [
+          {
+            id: newClass.id,
+            name: newClass.name,
+            instructorId: "",
+            studentsCount: 0,
+            studentIds: [],
+            createdAt: "",
+          },
+          ...state.classes,
+        ],
+      }))
+      toast.success(`Class "${name}" created! Invite code: ${newClass.inviteCode}`)
+    } catch (err: any) {
+      const msg = err?.response?.data?.message ?? "Failed to create class."
+      toast.error(msg)
+    } finally {
+      set({ isLoading: false })
+    }
+  },
+
+  // ─── Fetch Class Detail ────────────────────────────────────────────────────
+
+  fetchClassDetail: async (classId) => {
+    set({ isLoading: true })
+    try {
+      const { data } = await apiClient.get(`/v1/class/${classId}`)
+      const detail = data.class as LiveClassDetail
+      set((state) => {
+        const idx = state.liveClasses.findIndex((c) => c.id === classId)
+        if (idx !== -1) {
+          const updated = [...state.liveClasses]
+          updated[idx] = detail
+          return { liveClasses: updated }
+        }
+        return { liveClasses: [...state.liveClasses, detail] }
+      })
+    } catch (err: any) {
+      const msg = err?.response?.data?.message ?? "Failed to load class detail."
+      toast.error(msg)
+    } finally {
+      set({ isLoading: false })
+    }
+  },
+
+  // ─── Class Report ──────────────────────────────────────────────────────────
+
+  fetchClassReport: async (classId) => {
+    set({ isLoading: true })
+    try {
+      const { data } = await apiClient.get(`/v1/report/class/${classId}`)
+      const rows: ClassReportRow[] = data.report ?? []
+
+      // Build a leaderboard from report data for the college-student dashboard
+      const leaderboard: LeaderboardStudent[] = rows
+        .sort((a, b) => b.averageCompositeScore - a.averageCompositeScore)
+        .map((row, idx) => ({
+          rank: idx + 1,
+          name: row.studentName,
+          seoScore: Math.round(row.averageCompositeScore * 0.5),
+          adsScore: Math.round(row.averageCompositeScore * 0.5),
+          totalScore: Math.round(row.averageCompositeScore),
+        }))
+
+      set({ classReport: rows, leaderboard })
+    } catch (err: any) {
+      const msg = err?.response?.data?.message ?? "Failed to load class report."
+      toast.error(msg)
+    } finally {
+      set({ isLoading: false })
+    }
+  },
+
+  // ─── Legacy actions ────────────────────────────────────────────────────────
+
   addClass: (newClass) =>
     set((state) => ({ classes: [...state.classes, newClass] })),
   addScenario: (newScenario) =>
     set((state) => ({ scenarios: [...state.scenarios, newScenario] })),
   setGrades: (grades) => set({ grades }),
-
-  // Mock data implementation
-  classInfo: {
-    className: "MKT 410: Advanced Digital Marketing",
-    instructorName: "Dr. Rachel Green",
-    daysRemaining: 12,
-  },
-  leaderboard: [
-    { rank: 1, name: "Student A", seoScore: 92, adsScore: 95, totalScore: 187 },
-    { rank: 2, name: "Student B", seoScore: 88, adsScore: 91, totalScore: 179 },
-    { rank: 3, name: "Student C (You)", seoScore: 85, adsScore: 89, totalScore: 174, isCurrentUser: true },
-    { rank: 4, name: "Student D", seoScore: 80, adsScore: 85, totalScore: 165 },
-    { rank: 5, name: "Student E", seoScore: 78, adsScore: 82, totalScore: 160 },
-    { rank: 6, name: "Student F", seoScore: 75, adsScore: 80, totalScore: 155 },
-  ],
-  studentPerformance: [
-    { subject: "SEO Score", student: 85, average: 75, fullMark: 100 },
-    { subject: "Ads Score", student: 89, average: 78, fullMark: 100 },
-    { subject: "Budget Discipline", student: 95, average: 82, fullMark: 100 },
-    { subject: "Adaptability", student: 80, average: 70, fullMark: 100 },
-    { subject: "ROI Performance", student: 90, average: 76, fullMark: 100 },
-  ],
-  feedbackCount: 4,
-  incrementFeedbackCount: () => set((state) => ({ feedbackCount: state.feedbackCount + 1 })),
+  incrementFeedbackCount: () =>
+    set((state) => ({ feedbackCount: state.feedbackCount + 1 })),
 }))

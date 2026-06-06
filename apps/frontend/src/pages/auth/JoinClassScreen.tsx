@@ -29,7 +29,7 @@ type AccountFormInputs = z.infer<typeof accountSchema>
 
 export function JoinClassScreen() {
   const navigate = useNavigate()
-  const { login } = useAuthStore()
+  const { register: signUp } = useAuthStore()
   const [step, setStep] = useState(1)
   const [validatedCode, setValidatedCode] = useState("")
   const [isLoading, setIsLoading] = useState(false)
@@ -58,23 +58,18 @@ export function JoinClassScreen() {
     if (!isValid) return
 
     setIsLoading(true)
-    const { name, email } = accountForm.getValues()
-
-    setTimeout(() => {
-      login(
-        {
-          id: "usr_student_college",
-          name: name,
-          email: email,
-          role: "student-college",
-          createdAt: new Date().toISOString(),
-        },
-        "mock-student-jwt-token"
-      )
-      setIsLoading(false)
+    const { name, email, password } = accountForm.getValues()
+    // The validated code is used as the classId for the backend
+    try {
+      await signUp({ name, email, password, role: "student-college", classId: validatedCode })
       toast.success(`Successfully joined class sandbox ${validatedCode}!`)
       navigate("/")
-    }, 1000)
+    } catch (err: any) {
+      const msg = err?.response?.data?.message ?? "Failed to create account."
+      toast.error(msg)
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   return (

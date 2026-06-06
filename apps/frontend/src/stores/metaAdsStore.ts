@@ -1,4 +1,6 @@
 import { create } from "zustand"
+import apiClient from "@/lib/api"
+import { toast } from "sonner"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -232,6 +234,7 @@ interface MetaAdsState {
   estimatedCtr: number
   estimatedConversions: number
   decisionsMade: boolean
+  isSubmitting: boolean
 
   setCampaignName: (name: string) => void
   setObjective: (objective: MetaObjective) => void
@@ -244,6 +247,12 @@ interface MetaAdsState {
   calculateEstimates: () => void
   markDecisionsMade: () => void
   resetCampaign: () => void
+
+  /**
+   * Submit Meta Ads campaign configurations to the backend for the current round.
+   * POST /api/v1/meta-ads/decision
+   */
+  submitDecisions: () => Promise<void>
 }
 
 // ─── Store ────────────────────────────────────────────────────────────────────
@@ -273,6 +282,7 @@ export const useMetaAdsStore = create<MetaAdsState>((set, get) => ({
   placements: { ...defaultPlacements },
   ...initial,
   decisionsMade: false,
+  isSubmitting: false,
 
   setCampaignName: (name) => set({ campaignName: name }),
 
@@ -328,6 +338,50 @@ export const useMetaAdsStore = create<MetaAdsState>((set, get) => ({
   },
 
   markDecisionsMade: () => set({ decisionsMade: true }),
+
+  submitDecisions: async () => {
+    const { campaignName, dailyBudget, audiences, placements, creatives } = get()
+    const selectedAudiences = audiences.filter((a) => a.selected)
+
+    if (selectedAudiences.length === 0) {
+      toast.error("Select at least one audience before submitting Meta Ads decisions.")
+      return
+    }
+
+    // Pick the primary placement
+    const primaryPlacement = Object.entries(placements)
+      .filter(([, active]) => active)
+      .map(([key]) => key)[0] ?? "feed"
+
+    // Use best creative quality score
+    const bestCreativeQuality = creatives.length
+      ? Math.round(creatives.reduce((s, c) => s + computeStrength(c), 0) / creatives.length / 10)
+      : 5
+
+    set({ isSubmitting: true })
+    try {
+      await apiClient.post("/v1/meta-ads/decision", {
+        campaigns: [
+          {
+            name: campaignName,
+            budget: dailyBudget,
+            audienceInterest: selectedAudiences.map((a) => a.name).join(", "),
+            bidType: "LOWEST_COST",
+            bidAmount: 0,
+            placement: primaryPlacement,
+            creativeQuality: Math.max(1, Math.min(10, bestCreativeQuality)),
+          },
+        ],
+      })
+      set({ decisionsMade: true })
+      toast.success("Meta Ads decisions saved to the simulation!")
+    } catch (err: any) {
+      const msg = err?.response?.data?.message ?? "Failed to save Meta Ads decisions."
+      toast.error(msg)
+    } finally {
+      set({ isSubmitting: false })
+    }
+  },
 
   resetCampaign: () => {
     const pl = { ...defaultPlacements }

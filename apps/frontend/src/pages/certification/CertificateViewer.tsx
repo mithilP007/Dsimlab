@@ -60,7 +60,7 @@ export function CertificateViewer({ certificateId, onBack }: CertificateViewerPr
     },
   }
 
-  const config = tierConfig[certificate.type] || tierConfig.completion
+  const config = tierConfig[certificate.type ?? "completion"] ?? tierConfig.completion
 
   return (
     <div className="space-y-6 text-left animate-in fade-in duration-300">
@@ -138,7 +138,7 @@ export function CertificateViewer({ certificateId, onBack }: CertificateViewerPr
               This official document certifies that
             </p>
             <h1 className="font-serif text-3xl font-extrabold tracking-tight text-neutral-900 border-b border-neutral-200 pb-2 max-w-md mx-auto">
-              {certificate.studentName.replace(" (You)", "")}
+              {(certificate.studentName ?? certificate.recipientName).replace(" (You)", "")}
             </h1>
             <p className="text-[11px] font-medium text-neutral-500 pt-2 italic">
               has completed all round campaign cycles and verified criteria standards for the award
@@ -151,17 +151,17 @@ export function CertificateViewer({ certificateId, onBack }: CertificateViewerPr
           {/* Course and Score Meta info */}
           <div className="space-y-1.5 relative z-10 max-w-lg mx-auto">
             <p className="text-[11px] font-bold text-neutral-700">
-              Class Course: <span className="font-extrabold text-neutral-950">{certificate.className}</span>
+              Class Course: <span className="font-extrabold text-neutral-950">{certificate.className ?? "DM Simulation"}</span>
             </p>
             
             <div className="flex items-center justify-center gap-3.5 pt-1 text-[10px] font-bold text-neutral-500">
               <span className="flex items-center gap-1">
                 <CheckCircle className="h-3.5 w-3.5 text-emerald-500" />
-                Score achieved: <strong className="text-neutral-900 font-extrabold">{certificate.score}%</strong>
+                Score achieved: <strong className="text-neutral-900 font-extrabold">{certificate.score ?? certificate.compositeScore}%</strong>
               </span>
               <span className="h-1.5 w-1.5 rounded-full bg-neutral-300" />
               <span>
-                Class Standing Rank: <strong className="text-neutral-900 font-extrabold">#{certificate.rank}</strong>
+                Class Standing Rank: <strong className="text-neutral-900 font-extrabold">#{certificate.rank ?? "—"}</strong>
               </span>
             </div>
           </div>

@@ -31,23 +31,18 @@ export function LoginScreen() {
     resolver: zodResolver(loginSchema),
   })
 
-  const onSubmit = (data: LoginFormInputs) => {
+  const onSubmit = async (data: LoginFormInputs) => {
     setIsLoading(true)
-    setTimeout(() => {
-      login(
-        {
-          id: "usr_student",
-          name: "Alex Sandbox",
-          email: data.email,
-          role: "individual",
-          createdAt: new Date().toISOString(),
-        },
-        "mock-jwt-token"
-      )
-      setIsLoading(false)
+    try {
+      await login({ email: data.email, password: data.password })
       toast.success("Welcome back to SimpLab!")
       navigate("/")
-    }, 800)
+    } catch (err: any) {
+      const msg = err?.response?.data?.message ?? "Invalid email or password."
+      toast.error(msg)
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   return (

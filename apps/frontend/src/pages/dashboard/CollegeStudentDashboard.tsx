@@ -96,12 +96,12 @@ export function CollegeStudentDashboard() {
               </div>
               <div>
                 <h2 className="text-xl font-extrabold text-neutral-900 tracking-tight">
-                  {classInfo.className}
+                  {classInfo?.className ?? "Loading class info…"}
                 </h2>
                 <div className="flex flex-wrap items-center gap-2 mt-0.5">
                   <span className="flex items-center gap-1 text-xs text-neutral-500 font-semibold uppercase tracking-wider">
                     <GraduationCap className="h-3.5 w-3.5 text-neutral-400" />
-                    Instructor: {classInfo.instructorName}
+                    Instructor: {classInfo?.instructorName ?? "—"}
                   </span>
                   <Badge variant="outline" className="text-[10px] py-0 px-2 font-bold text-neutral-500 border-neutral-250">
                     College Student Console
@@ -113,7 +113,7 @@ export function CollegeStudentDashboard() {
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-2 p-2.5 px-4 rounded-xl bg-red-50/70 border border-red-100 text-red-700 text-xs font-bold shadow-sm">
               <Calendar className="h-4 w-4 text-red-500 shrink-0" />
-              <span>{classInfo.daysRemaining} days remaining</span>
+              <span>{classInfo?.daysRemaining ?? "—"} days remaining</span>
             </div>
           </div>
         </div>

@@ -35,7 +35,7 @@ const PLANS: Plan[] = [
 
 export function SignupIndividual() {
   const navigate = useNavigate()
-  const { login } = useAuthStore()
+  const { register: signUp } = useAuthStore()
   const [step, setStep] = useState(1)
   const [selectedPlanId, setSelectedPlanId] = useState("30")
   const [isLoading, setIsLoading] = useState(false)
@@ -61,26 +61,20 @@ export function SignupIndividual() {
     setStep((prev) => Math.max(prev - 1, 1))
   }
 
-  const handleCompleteSignup = () => {
+  const handleCompleteSignup = async () => {
     setIsLoading(true)
-    const { name, email } = getValues()
+    const { name, email, password } = getValues()
     const selectedPlan = PLANS.find((p) => p.id === selectedPlanId)
-
-    setTimeout(() => {
-      login(
-        {
-          id: "usr_student",
-          name: name,
-          email: email,
-          role: "individual",
-          createdAt: new Date().toISOString(),
-        },
-        "mock-jwt-token"
-      )
-      setIsLoading(false)
+    try {
+      await signUp({ name, email, password, role: "individual" })
       toast.success(`Registered successfully! Active Plan: ${selectedPlan?.name}`)
       navigate("/")
-    }, 1000)
+    } catch (err: any) {
+      const msg = err?.response?.data?.message ?? "Registration failed. Please try again."
+      toast.error(msg)
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   const selectedPlan = PLANS.find((p) => p.id === selectedPlanId) || PLANS[2]
