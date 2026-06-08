@@ -1,4 +1,6 @@
 import { create } from "zustand"
+import apiClient from "@/lib/api"
+import { toast } from "sonner"
 
 // ─── Keyword Data ────────────────────────────────────────────────────────────
 
@@ -88,6 +90,9 @@ interface CampaignState {
   h1Header: string
   bodyContent: string
 
+  // Submission state
+  isSubmitting: boolean
+
   // ─── Actions ───────────────────────────────────────────────────────────────
   toggleKeyword: (keywordId: string) => void
   setOnPageScore: (score: number) => void
@@ -102,6 +107,12 @@ interface CampaignState {
   setMetaDescription: (desc: string) => void
   setH1Header: (header: string) => void
   setBodyContent: (content: string) => void
+
+  /**
+   * Persist SEO decisions to the backend for the current simulation round.
+   * POST /api/v1/seo/decision
+   */
+  submitSeoDecisions: () => Promise<void>
 }
 
 // ─── Score calculation helper ────────────────────────────────────────────────
@@ -118,7 +129,8 @@ function computeTotalScore(
 // ─── Store ───────────────────────────────────────────────────────────────────
 
 export const useCampaignStore = create<CampaignState>((set, get) => ({
-  selectedKeywords: ["kw1", "kw9", "kw13"], // 3 pre-selected
+  selectedKeywords: ["kw1", "kw9", "kw13"],
+  isSubmitting: false,
   onPageScore: 0,
   technicalScore: 0,
   backlinkScore: 0,
@@ -209,6 +221,36 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
   setH1Header: (header) => set({ h1Header: header }),
   setBodyContent: (content) => set({ bodyContent: content }),
 
+  submitSeoDecisions: async () => {
+    const {
+      selectedKeywords,
+      totalSeoScore,
+      budgetSpent,
+    } = get()
+
+    if (selectedKeywords.length === 0) {
+      toast.error("Select at least one keyword before submitting.")
+      return
+    }
+
+    set({ isSubmitting: true })
+    try {
+      await apiClient.post("/v1/seo/decision", {
+        seoTargetKeywords: selectedKeywords,
+        // Map our 0-100 score to the backend's 1-10 quality scale
+        seoContentQuality: Math.max(1, Math.round(totalSeoScore / 10)),
+        seoBacklinkBudget: budgetSpent,
+      })
+      set({ decisionsMade: true })
+      toast.success("SEO decisions saved to the simulation!")
+    } catch (err: any) {
+      const msg = err?.response?.data?.message ?? "Failed to save SEO decisions."
+      toast.error(msg)
+    } finally {
+      set({ isSubmitting: false })
+    }
+  },
+
   resetCampaign: () =>
     set({
       selectedKeywords: ["kw1", "kw9", "kw13"],
@@ -219,6 +261,7 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
       budgetSpent: 0,
       selectedBacklinks: [],
       decisionsMade: false,
+      isSubmitting: false,
       metaTitle: "",
       metaDescription: "",
       h1Header: "",

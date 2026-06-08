@@ -21,7 +21,6 @@ import {
   MousePointerClick,
   TrendingUp,
   DollarSign,
-  Eye,
   BarChart2,
   AlertCircle,
 } from "lucide-react"
@@ -178,6 +177,7 @@ export function GoogleAdsControlPanel() {
     campaignStatus,
     estimatedCpc, estimatedImpressions,
     estimatedClicks, estimatedCtr,
+    estimatedConversions,
     decisionsMade, markDecisionsMade,
   } = useGoogleAdsStore()
 
@@ -221,12 +221,10 @@ export function GoogleAdsControlPanel() {
       bg: "bg-sky-900/40",
     },
     {
-      label: "Est. Impressions",
-      value: estimatedImpressions >= 1000
-        ? `${(estimatedImpressions / 1000).toFixed(1)}K`
-        : estimatedImpressions.toLocaleString(),
-      sub: "per day",
-      icon: Eye,
+      label: "Est. Leads / Day",
+      value: estimatedConversions.toLocaleString(),
+      sub: "conversions",
+      icon: CheckCircle2,
       color: "text-violet-400",
       bg: "bg-violet-900/40",
     },

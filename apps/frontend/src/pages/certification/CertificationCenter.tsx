@@ -50,7 +50,7 @@ export function CertificationCenter() {
   const getCertStatus = (type: "completion" | "distinction" | "excellence") => {
     const cert = certificates.find((c) => c.type === type)
     if (!cert) return "locked"
-    return cert.status // 'earned' | 'pending' | 'failed'
+    return cert.status ?? "locked"
   }
 
   const handleClaimCertificate = (type: "completion" | "distinction" | "excellence") => {
@@ -379,7 +379,7 @@ export function CertificationCenter() {
                           </div>
                         ) : cert.status === "pending" ? (
                           <Button
-                            onClick={() => handleClaimCertificate(cert.type)}
+                            onClick={() => handleClaimCertificate(cert.type ?? "completion")}
                             variant="outline"
                             className="h-8 font-black text-xs border-emerald-250 text-emerald-700 bg-emerald-50/20 hover:bg-emerald-50 rounded-xl"
                           >
