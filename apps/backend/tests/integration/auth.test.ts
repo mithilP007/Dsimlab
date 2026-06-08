@@ -211,4 +211,55 @@ describe('Phase 1: Authentication & Authorization Integration Tests', () => {
     expect(classRes.statusCode).not.toBe(403);
     expect(classRes.statusCode).not.toBe(401);
   });
+
+  it('should successfully register an individual user, assign sandbox class, and initialize simulation state', async () => {
+    const individualEmail = 'individual-test@simulation.com';
+
+    // cleanup
+    await prisma.account.deleteMany({
+      where: {
+        userId: {
+          in: await prisma.user.findMany({
+            where: { email: individualEmail },
+            select: { id: true }
+          }).then(users => users.map(u => u.id))
+        }
+      }
+    });
+    await prisma.user.deleteMany({
+      where: { email: individualEmail }
+    });
+
+    const signupRes = await app.inject({
+      method: 'POST',
+      url: '/api/auth/register/individual',
+      payload: {
+        email: individualEmail,
+        password: password,
+        name: 'Individual Tester',
+        planType: '30'
+      }
+    });
+
+    expect(signupRes.statusCode).toBe(200);
+
+    // Verify DB states
+    const user = await prisma.user.findUnique({
+      where: { email: individualEmail },
+      include: { simulations: true }
+    });
+
+    expect(user).not.toBeNull();
+    expect(user?.role).toBe('INDIVIDUAL');
+    expect(user?.classId).toBeDefined();
+    
+    const sandboxClass = await prisma.class.findUnique({
+      where: { id: user!.classId! }
+    });
+    expect(sandboxClass?.inviteCode).toBe('SANDBOX');
+
+    expect(user?.simulations.length).toBe(1);
+    expect(user?.simulations[0].status).toBe('DECISION_OPEN');
+    expect(user?.simulations[0].classId).toBe(sandboxClass?.id);
+  });
 });

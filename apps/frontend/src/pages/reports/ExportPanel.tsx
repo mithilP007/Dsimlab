@@ -105,9 +105,9 @@ export function ExportPanel({ report, isOpen, onClose }: ExportPanelProps) {
       Index: i + 1,
       Round: Math.floor(i / 10) + 1,
       Metric: `Simulation Metric ${i + 1}`,
-      Score: Math.round(70 + Math.random() * 25),
-      Traffic: Math.round(1000 + Math.random() * 9000),
-      Conversions: Math.round(50 + Math.random() * 450),
+      Score: Math.round(70 + ((i * 17) % 26)), // deterministic 70 to 95
+      Traffic: Math.round(1000 + ((i * 123) % 9001)), // deterministic 1000 to 10000
+      Conversions: Math.round(50 + ((i * 7) % 451)), // deterministic 50 to 500
       Channel: ["SEO", "Google Ads", "Meta Ads"][i % 3],
       Timestamp: new Date(Date.now() - i * 3600000).toISOString(),
     }))
@@ -125,9 +125,10 @@ export function ExportPanel({ report, isOpen, onClose }: ExportPanelProps) {
 
     if (success) {
       // Add to recent exports
+      const sizeFactor = ((rowCount * 13) % 15) / 10; // deterministic 0.0 to 1.4
       const sizeEstimate =
         format === "pdf"
-          ? `${(1.2 + Math.random() * 1.5).toFixed(1)} MB`
+          ? `${(1.2 + sizeFactor).toFixed(1)} MB`
           : format === "excel"
           ? `${Math.round(rowCount * 0.4 + 10)} KB`
           : format === "csv"

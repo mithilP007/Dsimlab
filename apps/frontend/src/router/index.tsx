@@ -18,18 +18,25 @@ import { InstructorLogin } from "@/pages/auth/InstructorLogin"
 import { LandingPage } from "@/pages/landing/LandingPage"
 import { ReportsDashboard } from "@/pages/reports/ReportsDashboard"
 import { NotFound } from "@/pages/NotFound"
+import { VerificationPortal } from "@/pages/certification/VerificationPortal"
 import { useAuthStore } from "@/stores/authStore"
 import { AdminDashboard } from "@/pages/admin/AdminDashboard"
 import { UserManager } from "@/pages/admin/UserManager"
 import { ClassOverview } from "@/pages/admin/ClassOverview"
 import { SystemSettings } from "@/pages/admin/SystemSettings"
 import { AdminGuard } from "@/hooks/useRoleGuard"
+import { InstructorGovernance } from "@/pages/instructor/InstructorGovernance"
 
+import { useEffect } from "react"
 import { NotificationPanel } from "@/components/notifications/NotificationPanel"
 import { ActivityFeed } from "@/components/notifications/ActivityFeed"
 
 function ProtectedLayout() {
-  const { isAuthenticated } = useAuthStore()
+  const { isAuthenticated, fetchMe } = useAuthStore()
+
+  useEffect(() => {
+    fetchMe()
+  }, [fetchMe])
 
   if (!isAuthenticated) {
     return <Navigate to="/landing" replace />
@@ -59,6 +66,7 @@ export function AppRouter() {
         <Route path="/signup" element={<SignupIndividual />} />
         <Route path="/join" element={<JoinClassScreen />} />
         <Route path="/instructor-login" element={<InstructorLogin />} />
+        <Route path="/verify/:verificationId" element={<VerificationPortal />} />
 
         {/* Protected workspace console views */}
         <Route element={<ProtectedLayout />}>
@@ -85,7 +93,11 @@ export function AppRouter() {
           <Route path="/certificates" element={<CertificationCenter />} />
           <Route path="/certification" element={<Navigate to="/certificates" replace />} />
           <Route path="/instructor" element={<InstructorPortal />} />
+          <Route path="/instructor/governance" element={<InstructorGovernance />} />
           <Route path="/dashboard" element={<DashboardRoot />} />
+          <Route path="/dashboard/individual" element={<IndividualDashboard />} />
+          <Route path="/dashboard/student" element={<CollegeStudentDashboard />} />
+          <Route path="/dashboard/instructor" element={<InstructorPortal />} />
           <Route path="/notifications" element={<NotificationPanel />} />
           <Route path="/activity" element={<ActivityFeed />} />
         </Route>

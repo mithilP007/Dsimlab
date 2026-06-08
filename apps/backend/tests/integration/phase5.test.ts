@@ -140,11 +140,17 @@ describe('Phase 5: AI Integration & WebSocket Payload Tests', () => {
       select: { id: true },
     });
     const userIds = users.map((u) => u.id);
+    
+    // 1. Delete dependent models
+    await prisma.certificate.deleteMany({ where: { userId: { in: userIds } } });
     await prisma.account.deleteMany({ where: { userId: { in: userIds } } });
     await prisma.simulationState.deleteMany({ where: { userId: { in: userIds } } });
-    await prisma.class.deleteMany({ where: { id: classId } });
-    await prisma.scenario.deleteMany({ where: { id: scenarioId } });
+
+    // 2. Delete users (which cascades and deletes Class because Class.instructorId is onDelete: Cascade)
     await prisma.user.deleteMany({ where: { id: { in: userIds } } });
+
+    // 3. Delete scenario
+    await prisma.scenario.deleteMany({ where: { id: scenarioId } });
     await prisma.$disconnect();
   });
 

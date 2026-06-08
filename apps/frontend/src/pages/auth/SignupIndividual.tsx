@@ -35,7 +35,7 @@ const PLANS: Plan[] = [
 
 export function SignupIndividual() {
   const navigate = useNavigate()
-  const { login } = useAuthStore()
+  const { registerIndividual } = useAuthStore()
   const [step, setStep] = useState(1)
   const [selectedPlanId, setSelectedPlanId] = useState("30")
   const [isLoading, setIsLoading] = useState(false)
@@ -61,26 +61,35 @@ export function SignupIndividual() {
     setStep((prev) => Math.max(prev - 1, 1))
   }
 
-  const handleCompleteSignup = () => {
+  const handleCompleteSignup = async () => {
     setIsLoading(true)
-    const { name, email } = getValues()
-    const selectedPlan = PLANS.find((p) => p.id === selectedPlanId)
+    const { name, email, password } = getValues()
+    const selectedPlan = PLANS.find((p) => p.id === selectedPlanId) || PLANS[2]
 
-    setTimeout(() => {
-      login(
-        {
-          id: "usr_student",
-          name: name,
-          email: email,
-          role: "individual",
-          createdAt: new Date().toISOString(),
-        },
-        "mock-jwt-token"
-      )
+    try {
+      const user = await registerIndividual({
+        email,
+        password,
+        name,
+        planType: selectedPlan.id,
+      })
+      toast.success(`Registered successfully! Active Plan: ${selectedPlan.name}`)
+      
+      const roleStr = (user?.role as string) || ""
+      if (roleStr === "admin") {
+        navigate("/admin")
+      } else if (roleStr === "student-college" || roleStr === "student") {
+        navigate("/dashboard/student")
+      } else if (roleStr === "instructor") {
+        navigate("/dashboard/instructor")
+      } else {
+        navigate("/dashboard/individual")
+      }
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || err.message || "Failed to create sandbox account")
+    } finally {
       setIsLoading(false)
-      toast.success(`Registered successfully! Active Plan: ${selectedPlan?.name}`)
-      navigate("/")
-    }, 1000)
+    }
   }
 
   const selectedPlan = PLANS.find((p) => p.id === selectedPlanId) || PLANS[2]

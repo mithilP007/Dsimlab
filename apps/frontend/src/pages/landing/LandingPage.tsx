@@ -233,6 +233,11 @@ export function LandingPage() {
                       <ArrowUpRight className="ml-1 h-4 w-4" />
                     </Button>
                   </Link>
+                  <a href="mailto:demo@simlab.edu?subject=College%20Demo%20Request&body=Institution%20Name%3A%0AExpected%20Students%3A%0ACourse%3A" className="block">
+                    <Button variant="ghost" className="w-full font-bold h-10 text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100">
+                      Request College Demo
+                    </Button>
+                  </a>
                 </CardContent>
               </Card>
             </motion.div>

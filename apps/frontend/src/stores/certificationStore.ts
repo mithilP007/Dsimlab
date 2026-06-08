@@ -1,6 +1,6 @@
 import { create } from "zustand"
-
-// ─── Interfaces ───────────────────────────────────────────────────────────────
+import api from "@/lib/api"
+import config from "@/lib/config"
 
 export interface CertificateCriteria {
   minScore: number
@@ -19,6 +19,7 @@ export interface PlatformCertificate {
   status: "earned" | "pending" | "failed"
   type: "completion" | "distinction" | "excellence"
   criteria: CertificateCriteria
+  pdfUrl?: string
 }
 
 export interface CriteriaConfig {
@@ -37,204 +38,114 @@ export interface UserProgress {
   rank: number
   roundsCompleted: number
   totalRounds: number
-  eligibleFor: string[] // Array of certificate types: 'completion' | 'distinction' | 'excellence'
+  eligibleFor: string[] // 'completion' | 'distinction' | 'excellence'
 }
 
 interface CertificationState {
   certificates: PlatformCertificate[]
   criteriaConfig: CriteriaConfig
   currentUserProgress: UserProgress
+  isLoading: boolean
 
   // Actions
-  checkEligibility: () => void
-  issueCertificate: (studentName: string, type: "completion" | "distinction" | "excellence") => void
+  checkEligibility: (simulationId: string) => Promise<boolean>
+  issueCertificate: (studentName: string, type: "completion" | "distinction" | "excellence", simulationId: string) => Promise<any>
   updateCriteria: (config: Partial<CriteriaConfig>) => void
   downloadCertificate: (id: string, format: "pdf" | "png") => void
 }
 
-// ─── Initial Mock Data ────────────────────────────────────────────────────────
-
-const INITIAL_CRITERIA_CONFIG: CriteriaConfig = {
-  completionEnabled: true,
-  distinctionEnabled: true,
-  excellenceEnabled: true,
-  minScoreCompletion: 60,
-  minScoreDistinction: 75,
-  minScoreExcellence: 90,
-  minRankDistinction: 10,
-  minRankExcellence: 3,
-}
-
-const INITIAL_CERTIFICATES: PlatformCertificate[] = [
-  {
-    id: "CERT-COMP-9082",
-    studentName: "Student C (You)",
-    className: "MKT 410: Advanced Digital Marketing",
-    issueDate: "2026-05-20",
-    expiryDate: "2029-05-20",
-    score: 85.5,
-    rank: 5,
-    status: "earned",
-    type: "completion",
-    criteria: { minScore: 60, minRank: 25, allRoundsComplete: true },
-  },
-  {
-    id: "CERT-DIST-4421",
-    studentName: "Sophia Martinez",
-    className: "MKT 410: Advanced Digital Marketing",
-    issueDate: "2026-05-25",
-    expiryDate: "2029-05-25",
-    score: 91.5,
-    rank: 2,
-    status: "earned",
-    type: "distinction",
-    criteria: { minScore: 75, minRank: 10, allRoundsComplete: true },
-  },
-  {
-    id: "CERT-EXCL-1102",
-    studentName: "Alexander Wright",
-    className: "MKT 410: Advanced Digital Marketing",
-    issueDate: "2026-05-28",
-    expiryDate: "2029-05-28",
-    score: 94.2,
-    rank: 1,
-    status: "earned",
-    type: "excellence",
-    criteria: { minScore: 90, minRank: 3, allRoundsComplete: true },
-  },
-  {
-    id: "CERT-PEND-8854",
-    studentName: "Student C (You)",
-    className: "MKT 410: Advanced Digital Marketing",
-    issueDate: "",
-    expiryDate: "",
-    score: 85.5,
-    rank: 5,
-    status: "pending",
-    type: "distinction",
-    criteria: { minScore: 75, minRank: 10, allRoundsComplete: true },
-  },
-  {
-    id: "CERT-FAIL-3312",
-    studentName: "Lucas Wilson",
-    className: "MKT 410: Advanced Digital Marketing",
-    issueDate: "",
-    expiryDate: "",
-    score: 57.2,
-    rank: 18,
-    status: "failed",
-    type: "excellence",
-    criteria: { minScore: 90, minRank: 3, allRoundsComplete: true },
-  },
-]
-
-const INITIAL_PROGRESS: UserProgress = {
-  overallScore: 85.5,
-  rank: 5,
-  roundsCompleted: 4,
-  totalRounds: 4,
-  eligibleFor: ["completion", "distinction"],
-}
-
-// ─── Store Creation ──────────────────────────────────────────────────────────
-
 export const useCertificationStore = create<CertificationState>((set, get) => ({
-  certificates: INITIAL_CERTIFICATES,
-  criteriaConfig: INITIAL_CRITERIA_CONFIG,
-  currentUserProgress: INITIAL_PROGRESS,
+  certificates: [],
+  criteriaConfig: {
+    completionEnabled: true,
+    distinctionEnabled: true,
+    excellenceEnabled: true,
+    minScoreCompletion: 60,
+    minScoreDistinction: 75,
+    minScoreExcellence: 90,
+    minRankDistinction: 10,
+    minRankExcellence: 3,
+  },
+  currentUserProgress: {
+    overallScore: 0,
+    rank: 1,
+    roundsCompleted: 0,
+    totalRounds: 10,
+    eligibleFor: [],
+  },
+  isLoading: false,
 
-  checkEligibility: () => {
-    set((state) => {
-      const { overallScore, rank, roundsCompleted, totalRounds } = state.currentUserProgress
-      const config = state.criteriaConfig
-      const isAllRoundsComplete = roundsCompleted === totalRounds
+  checkEligibility: async (simulationId) => {
+    set({ isLoading: true })
+    try {
+      const res = await api.post<{
+        success: boolean
+        eligible: boolean
+        reasons: string[]
+        band: string
+        compositeScore: number
+      }>('/api/certificates/check-eligibility', { simulationId })
 
-      const eligible: string[] = []
+      const data = res.data
+      const eligibleFor = data.eligible && data.band ? [data.band] : []
 
-      if (config.completionEnabled && isAllRoundsComplete && overallScore >= config.minScoreCompletion) {
-        eligible.push("completion")
-      }
-      if (
-        config.distinctionEnabled &&
-        isAllRoundsComplete &&
-        overallScore >= config.minScoreDistinction &&
-        rank <= config.minRankDistinction
-      ) {
-        eligible.push("distinction")
-      }
-      if (
-        config.excellenceEnabled &&
-        isAllRoundsComplete &&
-        overallScore >= config.minScoreExcellence &&
-        rank <= config.minRankExcellence
-      ) {
-        eligible.push("excellence")
-      }
-
-      return {
+      set((state) => ({
         currentUserProgress: {
           ...state.currentUserProgress,
-          eligibleFor: eligible,
+          overallScore: Math.round(data.compositeScore || 0),
+          eligibleFor,
         },
-      }
-    })
+        isLoading: false,
+      }))
+      return data.eligible
+    } catch (err) {
+      console.error("Failed to check eligibility:", err)
+      set({ isLoading: false })
+      return false
+    }
   },
 
-  issueCertificate: (studentName, type) => {
-    set((state) => {
-      const isYou = studentName === "Student C (You)" || studentName === "You"
-      const score = isYou ? state.currentUserProgress.overallScore : 88.0
-      const rank = isYou ? state.currentUserProgress.rank : 4
+  issueCertificate: async (_studentName, _type, simulationId) => {
+    set({ isLoading: true })
+    try {
+      const res = await api.post<{
+        success: boolean
+        certificate: any
+        downloadUrl: string
+      }>('/api/certificates/issue', { simulationId })
 
-      const minScore =
-        type === "completion"
-          ? state.criteriaConfig.minScoreCompletion
-          : type === "distinction"
-          ? state.criteriaConfig.minScoreDistinction
-          : state.criteriaConfig.minScoreExcellence
+      const data = res.data
+      if (data.success && data.downloadUrl) {
+        // Open download link
+        const fullDownloadUrl = `${config.apiBaseUrl}${data.downloadUrl}`
+        window.open(fullDownloadUrl, '_blank')
 
-      const minRank =
-        type === "completion"
-          ? 25
-          : type === "distinction"
-          ? state.criteriaConfig.minRankDistinction
-          : state.criteriaConfig.minRankExcellence
-
-      const newCert: PlatformCertificate = {
-        id: `CERT-${type.toUpperCase().slice(0, 4)}-${Math.floor(1000 + Math.random() * 9000)}`,
-        studentName: isYou ? "Student C (You)" : studentName,
-        className: "MKT 410: Advanced Digital Marketing",
-        issueDate: new Date().toISOString().split("T")[0],
-        expiryDate: new Date(new Date().setFullYear(new Date().getFullYear() + 3)).toISOString().split("T")[0],
-        score,
-        rank,
-        status: "earned",
-        type,
-        criteria: { minScore, minRank, allRoundsComplete: true },
-      }
-
-      // Check if student already has this certificate type pending, update it
-      const existingIdx = state.certificates.findIndex(
-        (c) => c.studentName === newCert.studentName && c.type === type && c.status === "pending"
-      )
-
-      let updatedCertificates = [...state.certificates]
-      if (existingIdx !== -1) {
-        updatedCertificates[existingIdx] = {
-          ...updatedCertificates[existingIdx],
+        // Mapped certificate to append/update
+        const newCert: PlatformCertificate = {
+          id: data.certificate.verificationId || data.certificate.id,
+          studentName: data.certificate.recipientName,
+          className: "SimLab Simulation Campaign",
+          issueDate: data.certificate.issueDate,
+          expiryDate: new Date(new Date().setFullYear(new Date().getFullYear() + 3)).toISOString().split("T")[0],
+          score: Math.round(data.certificate.compositeScore || 0),
+          rank: 1,
           status: "earned",
-          id: newCert.id,
-          issueDate: newCert.issueDate,
-          expiryDate: newCert.expiryDate,
+          type: (data.certificate.band || "completion").toLowerCase() as any,
+          criteria: { minScore: 60, minRank: 10, allRoundsComplete: true },
+          pdfUrl: fullDownloadUrl,
         }
-      } else {
-        updatedCertificates.push(newCert)
-      }
 
-      return {
-        certificates: updatedCertificates,
+        set((state) => ({
+          certificates: [newCert, ...state.certificates.filter((c) => c.id !== newCert.id)],
+          isLoading: false,
+        }))
       }
-    })
+      return data
+    } catch (err) {
+      console.error("Failed to issue certificate:", err)
+      set({ isLoading: false })
+      throw err
+    }
   },
 
   updateCriteria: (config) => {
@@ -244,12 +155,15 @@ export const useCertificationStore = create<CertificationState>((set, get) => ({
         ...config,
       },
     }))
-    get().checkEligibility()
   },
 
-  downloadCertificate: (id, format) => {
-    // Simulated toast trigger in components, action performs state confirmation
-    console.log(`Certificate ${id} download initiated in ${format.toUpperCase()} format.`)
+  downloadCertificate: (id, _format) => {
+    const cert = get().certificates.find((c) => c.id === id)
+    if (cert && cert.pdfUrl) {
+      window.open(cert.pdfUrl, '_blank')
+    } else {
+      console.warn(`No PDF URL found for certificate ID: ${id}`)
+    }
   },
 }))
 

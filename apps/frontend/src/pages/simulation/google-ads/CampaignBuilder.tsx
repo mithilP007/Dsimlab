@@ -2,6 +2,7 @@ import { useGoogleAdsStore } from "@/stores/googleAdsStore"
 import type { CampaignStatus } from "@/stores/googleAdsStore"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { Button } from "@/components/ui/button"
 import { Slider } from "@/components/ui/slider"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
@@ -30,6 +31,11 @@ const STATUS_DOTS: Record<CampaignStatus, string> = {
 export function CampaignBuilder() {
   const {
     campaignName, setCampaignName,
+    objective, setObjective,
+    campaignType, setCampaignType,
+    biddingStrategy, setBiddingStrategy,
+    negativeKeywords, addNegativeKeyword, removeNegativeKeyword,
+    landingPage, updateLandingPage,
     dailyBudget, setDailyBudget,
     totalBudget, budgetSpent,
     devices, toggleDevice,
@@ -46,10 +52,10 @@ export function CampaignBuilder() {
       <CardHeader className="pb-3">
         <CardTitle className="text-base font-bold text-neutral-900 flex items-center gap-2">
           <Settings2 className="h-4 w-4 text-neutral-500" />
-          Campaign Builder
+          Campaign Settings
         </CardTitle>
         <CardDescription>
-          Name your campaign, set budgets, targeting devices and locations.
+          Configure campaign attributes, budgets, bid strategies, negative keywords, and landing page metrics.
         </CardDescription>
       </CardHeader>
 
@@ -87,6 +93,58 @@ export function CampaignBuilder() {
           </div>
         </div>
 
+        {/* Campaign Objective */}
+        <div className="space-y-1.5">
+          <label className="text-xs font-bold text-neutral-700">Campaign Objective</label>
+          <select
+            value={objective}
+            onChange={(e) => setObjective(e.target.value)}
+            className="w-full bg-white border border-neutral-200 rounded-xl px-3 py-2 text-xs font-semibold text-neutral-800 outline-none focus:border-neutral-900 transition-all"
+          >
+            <option value="Sales">Sales</option>
+            <option value="Leads">Leads</option>
+            <option value="Website Traffic">Website Traffic</option>
+            <option value="Brand Awareness">Brand Awareness</option>
+            <option value="App Promotion">App Promotion</option>
+            <option value="Local Store Visits">Local Store Visits</option>
+            <option value="Product and Brand Consideration">Product and Brand Consideration</option>
+          </select>
+        </div>
+
+        {/* Campaign Type */}
+        <div className="space-y-1.5">
+          <label className="text-xs font-bold text-neutral-700">Campaign Type</label>
+          <select
+            value={campaignType}
+            onChange={(e) => setCampaignType(e.target.value)}
+            className="w-full bg-white border border-neutral-200 rounded-xl px-3 py-2 text-xs font-semibold text-neutral-800 outline-none focus:border-neutral-900 transition-all"
+          >
+            <option value="Search">Search (Text Ads)</option>
+            <option value="Display">Display (Image Banner Ads)</option>
+            <option value="Shopping">Shopping (Product Feed Ads)</option>
+            <option value="Video">Video (YouTube Video Ads)</option>
+            <option value="Performance Max">Performance Max (All Channels)</option>
+            <option value="Demand Gen">Demand Gen (Social Feed Ads)</option>
+          </select>
+        </div>
+
+        {/* Bidding Strategy */}
+        <div className="space-y-1.5">
+          <label className="text-xs font-bold text-neutral-700">Bidding Strategy</label>
+          <select
+            value={biddingStrategy}
+            onChange={(e) => setBiddingStrategy(e.target.value)}
+            className="w-full bg-white border border-neutral-200 rounded-xl px-3 py-2 text-xs font-semibold text-neutral-800 outline-none focus:border-neutral-900 transition-all"
+          >
+            <option value="Manual CPC">Manual CPC (Focus on Clicks Bid)</option>
+            <option value="Maximize Clicks">Maximize Clicks (Automated Traffic)</option>
+            <option value="Maximize Conversions">Maximize Conversions (Automated Actions)</option>
+            <option value="Target CPA">Target CPA (Cost-per-Acquisition limit)</option>
+            <option value="Target ROAS">Target ROAS (Revenue ROI focus)</option>
+            <option value="Target Impression Share">Target Impression Share (Visibility focus)</option>
+          </select>
+        </div>
+
         {/* Daily Budget Slider */}
         <div className="space-y-2">
           <div className="flex items-center justify-between text-xs font-bold text-neutral-700">
@@ -109,7 +167,89 @@ export function CampaignBuilder() {
           </div>
         </div>
 
-        {/* Total Budget */}
+        {/* Negative Keywords */}
+        <div className="space-y-2">
+          <label className="text-xs font-bold text-neutral-700">Negative Keywords (Filters traffic)</label>
+          <div className="flex gap-2">
+            <Input
+              id="new-negative-kw"
+              placeholder="e.g. cheap, free, used"
+              className="text-xs h-9"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  const val = e.currentTarget.value.trim();
+                  if (val) {
+                    addNegativeKeyword(val);
+                    e.currentTarget.value = '';
+                  }
+                }
+              }}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              className="h-9 px-3 text-xs font-bold shrink-0 border-neutral-200"
+              onClick={() => {
+                const el = document.getElementById('new-negative-kw') as HTMLInputElement;
+                if (el && el.value.trim()) {
+                  addNegativeKeyword(el.value.trim());
+                  el.value = '';
+                }
+              }}
+            >
+              Add
+            </Button>
+          </div>
+          <div className="flex flex-wrap gap-1.5 mt-1.5">
+            {negativeKeywords.length === 0 ? (
+              <span className="text-[10px] text-neutral-400 font-semibold italic">No negative keywords added.</span>
+            ) : (
+              negativeKeywords.map((kw) => (
+                <Badge
+                  key={kw}
+                  variant="secondary"
+                  className="text-[9px] font-bold bg-neutral-100 hover:bg-neutral-200 text-neutral-750 flex items-center gap-1 py-0.5 px-2 cursor-pointer border border-neutral-200"
+                  onClick={() => removeNegativeKeyword(kw)}
+                >
+                  {kw} <span className="text-neutral-400 font-black">×</span>
+                </Badge>
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* Landing Page Quality Sliders */}
+        <div className="space-y-3 p-3.5 rounded-xl border border-neutral-100 bg-neutral-50/50">
+          <label className="text-xs font-bold text-neutral-700 block">Landing Page Experience Parameters (1-10)</label>
+          <div className="space-y-3">
+            {[
+              { key: "pageRelevance", label: "Page Relevance" },
+              { key: "mobileFriendly", label: "Mobile Friendliness" },
+              { key: "pageSpeed", label: "Page Speed & Core Web Vitals" },
+              { key: "trustSignals", label: "Trust Signals & HTTPS" },
+              { key: "offerClarity", label: "Offer Clarity & Headings" },
+              { key: "conversionReadiness", label: "Form & Checkout Readiness" }
+            ].map(({ key, label }) => (
+              <div key={key} className="space-y-1">
+                <div className="flex justify-between text-[10px] font-bold text-neutral-600">
+                  <span>{label}</span>
+                  <span className="text-neutral-900">{(landingPage as any)[key]}/10</span>
+                </div>
+                <Slider
+                  min={1}
+                  max={10}
+                  step={1}
+                  value={[(landingPage as any)[key]]}
+                  onValueChange={([v]) => updateLandingPage(key, v)}
+                  className="h-1.5"
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Total Budget Tracker */}
         <div className="p-3.5 rounded-xl border border-neutral-100 bg-neutral-50/50 space-y-2.5">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">

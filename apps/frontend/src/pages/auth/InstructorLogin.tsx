@@ -29,7 +29,7 @@ type SignupFormInputs = z.infer<typeof signupSchema>
 
 export function InstructorLogin() {
   const navigate = useNavigate()
-  const { login } = useAuthStore()
+  const { login, registerInstructor } = useAuthStore()
   const [activeTab, setActiveTab] = useState("login")
   const [isLoading, setIsLoading] = useState(false)
 
@@ -41,42 +41,35 @@ export function InstructorLogin() {
     resolver: zodResolver(signupSchema),
   })
 
-  const onLoginSubmit = (data: LoginFormInputs) => {
+  const onLoginSubmit = async (data: LoginFormInputs) => {
     setIsLoading(true)
-    setTimeout(() => {
-      login(
-        {
-          id: "usr_instructor",
-          name: "Dr. Rachel Green",
-          email: data.email,
-          role: "instructor",
-          createdAt: new Date().toISOString(),
-        },
-        "mock-instructor-jwt-token"
-      )
-      setIsLoading(false)
+    try {
+      await login(data.email, data.password)
       toast.success("Welcome to the Instructor Dashboard!")
       navigate("/")
-    }, 800)
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || err.message || "Invalid credentials")
+    } finally {
+      setIsLoading(false)
+    }
   }
 
-  const onSignupSubmit = (data: SignupFormInputs) => {
+  const onSignupSubmit = async (data: SignupFormInputs) => {
     setIsLoading(true)
-    setTimeout(() => {
-      login(
-        {
-          id: "usr_instructor",
-          name: data.instructorName,
-          email: data.email,
-          role: "instructor",
-          createdAt: new Date().toISOString(),
-        },
-        "mock-instructor-jwt-token"
-      )
-      setIsLoading(false)
+    try {
+      await registerInstructor({
+        email: data.email,
+        password: data.password,
+        name: data.instructorName,
+        institution: data.institutionName,
+      })
       toast.success(`Account created for ${data.institutionName}!`)
       navigate("/")
-    }, 1000)
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || err.message || "Failed to create instructor account")
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   return (

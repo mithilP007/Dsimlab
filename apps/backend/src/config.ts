@@ -12,9 +12,25 @@ const envSchema = z.object({
   REDIS_URL: z.string().optional(),
   OLLAMA_HOST: z.string().url().default('http://127.0.0.1:11434'),
   OLLAMA_MODEL: z.string().default('qwen2.5:7b'),
-  FRONTEND_URL: z.string().default('http://localhost:3000'),
+  FRONTEND_URL: z.string().default('http://localhost:5173'),
   RATE_LIMIT_MAX: z.coerce.number().default(100),
   RATE_LIMIT_AUTH_MAX: z.coerce.number().default(20),
+  ROUND_PROCESSING_MODE: z.enum(['immediate', 'delayed']).default('immediate'),
+  ROUND_DELAY_HOURS: z.coerce.number().default(24),
+  TREND_REFRESH_MODE: z.enum(['per_round', 'daily', 'off']).default('per_round'),
+  LIVE_AD_ACCOUNT_MODE: z.preprocess(
+    (val) => val === 'true' || val === true,
+    z.boolean()
+  ).default(false),
+  GOOGLE_ADS_CLIENT_ID: z.string().optional(),
+  GOOGLE_ADS_CLIENT_SECRET: z.string().optional(),
+  GOOGLE_ADS_DEVELOPER_TOKEN: z.string().optional(),
+  GOOGLE_ADS_REFRESH_TOKEN: z.string().optional(),
+  GOOGLE_ADS_CUSTOMER_ID: z.string().optional(),
+  META_APP_ID: z.string().optional(),
+  META_APP_SECRET: z.string().optional(),
+  META_ACCESS_TOKEN: z.string().optional(),
+  META_AD_ACCOUNT_ID: z.string().optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);

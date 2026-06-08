@@ -251,6 +251,9 @@ export function GoogleAdsControlPanel() {
               <span className={cn("h-1.5 w-1.5 rounded-full", STATUS_DOT[campaignStatus])} />
               {campaignStatus}
             </Badge>
+            <Badge className="bg-indigo-500/10 text-indigo-400 border-indigo-500/30 font-black text-[9px] uppercase tracking-wider py-0.5 px-2.5 rounded-full border">
+              Real-Time Trend-Based Google Ads Simulation
+            </Badge>
             <p className="text-sm font-black text-white truncate">
               {campaignName || "Unnamed Campaign"}
             </p>

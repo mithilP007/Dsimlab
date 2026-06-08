@@ -43,7 +43,9 @@ export function initSocketServer(server: HttpServer): void {
     // ── Redis Adapter (optional) ─────────────────────────────────────────────
     if (config.REDIS_URL) {
       try {
-        const pubClient = new Redis(config.REDIS_URL);
+        const pubClient = new Redis(config.REDIS_URL, {
+          maxRetriesPerRequest: null,
+        });
         const subClient = pubClient.duplicate();
 
         pubClient.on('error', (err) =>

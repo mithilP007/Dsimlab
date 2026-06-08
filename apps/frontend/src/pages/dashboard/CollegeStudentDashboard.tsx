@@ -38,6 +38,14 @@ export function CollegeStudentDashboard() {
   const [sortField, setSortField] = useState<SortField>("rank")
   const [sortOrder, setSortOrder] = useState<SortOrder>("asc")
 
+  if (!classInfo) {
+    return (
+      <div className="flex items-center justify-center p-12 text-neutral-500 font-semibold bg-white border border-neutral-200 rounded-xl">
+        No active class sandbox found or loading classroom data...
+      </div>
+    )
+  }
+
   const handleSort = (field: SortField) => {
     if (sortField === field) {
       setSortOrder(sortOrder === "asc" ? "desc" : "asc")

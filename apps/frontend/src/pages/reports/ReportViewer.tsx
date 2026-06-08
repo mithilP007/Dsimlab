@@ -1,3 +1,4 @@
+import { useEffect } from "react"
 import {
   ResponsiveContainer,
   LineChart,
@@ -12,7 +13,8 @@ import {
   Tooltip as ChartTooltip,
   Legend,
 } from "recharts"
-import type { SimulationReport } from "@/stores/reportsStore"
+import { useReportsStore, type SimulationReport } from "@/stores/reportsStore"
+import { useSimulationStore } from "@/stores/simulationStore"
 import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
 import {
@@ -36,6 +38,23 @@ interface ReportViewerProps {
 }
 
 export function ReportViewer({ report, onClose, onExport }: ReportViewerProps) {
+  const activeSimulation = useSimulationStore((s) => s.activeSimulation)
+  const {
+    fetchSeoReport,
+    fetchAdsReport,
+    fetchAttribution,
+    seoReport,
+    adsReport,
+  } = useReportsStore()
+
+  useEffect(() => {
+    if (activeSimulation?.id) {
+      fetchSeoReport(activeSimulation.id)
+      fetchAdsReport(activeSimulation.id)
+      fetchAttribution(activeSimulation.id)
+    }
+  }, [activeSimulation?.id, fetchSeoReport, fetchAdsReport, fetchAttribution])
+
   const handlePrint = () => {
     window.print()
   }
@@ -51,28 +70,54 @@ export function ReportViewer({ report, onClose, onExport }: ReportViewerProps) {
   // ─── Render Report Sub-sections based on Type ──────────────────────────────
 
   const renderPerformanceReport = () => {
-    const scoreData = [
-      { round: "Round 1", Score: 68, Average: 65, Traffic: 1200 },
-      { round: "Round 2", Score: 74, Average: 71, Traffic: 2400 },
-      { round: "Round 3", Score: 83, Average: 76, Traffic: 4100 },
-      { round: "Round 4", Score: 89, Average: 78, Traffic: 6500 },
-    ]
+    const snapshots = useSimulationStore.getState().snapshots || []
+    const scoreData = snapshots.map((s) => ({
+      round: `Round ${s.round}`,
+      Score: Math.round(s.data?.scores?.composite || 0),
+      Average: 75,
+      Traffic: s.data?.dailyMetrics?.reduce((sum: number, m: any) => sum + (m.organicClicks || 0) + (m.googleClicks || 0) + (m.metaClicks || 0), 0) || 0
+    }))
+    
+    if (scoreData.length === 0) {
+      scoreData.push({ round: "Round 1", Score: activeSimulation?.score || 0, Average: 75, Traffic: 0 })
+    }
+
+    const totalOrganic = seoReport?.totalOrganicTraffic || 0
+    const totalGoogleClicks = adsReport?.totalGoogleClicks || 0
+    const totalMetaClicks = adsReport?.totalMetaClicks || 0
+
+    const latestSnapshot = snapshots[snapshots.length - 1]
+    const seoScore = latestSnapshot?.data?.scores?.seo || 70
+    const googleScore = latestSnapshot?.data?.scores?.google || 75
+    const metaScore = latestSnapshot?.data?.scores?.meta || 70
 
     const channelData = [
-      { name: "Organic SEO", Score: 85, Clicks: 3500 },
-      { name: "Google Search Ads", Score: 92, Clicks: 4800 },
-      { name: "Meta Social Ads", Score: 78, Clicks: 2900 },
+      { name: "Organic SEO", Score: seoScore, Clicks: totalOrganic },
+      { name: "Google Search Ads", Score: googleScore, Clicks: totalGoogleClicks },
+      { name: "Meta Social Ads", Score: metaScore, Clicks: totalMetaClicks },
     ]
+
+    const overallScoreVal = Math.round(activeSimulation?.score || 0)
+    const spend = (adsReport?.totalGoogleCost || 0) + (adsReport?.totalMetaCost || 0)
+    const revenue = (adsReport?.totalGoogleRevenue || 0) + (adsReport?.totalMetaRevenue || 0)
+    const roas = spend > 0 ? `${(revenue / spend).toFixed(1)}x` : "0.0x"
+    const conversions = (adsReport?.totalGoogleConversions || 0) + (adsReport?.totalMetaConversions || 0)
+    const cpa = conversions > 0 ? `$${(spend / conversions).toFixed(2)}` : "$0.00"
+    const traffic = totalOrganic + totalGoogleClicks + totalMetaClicks
+
+    const summary = seoReport && adsReport ? 
+      `Total organic search clicks reached ${totalOrganic.toLocaleString()} with top targeted terms like ${seoReport.topKeywords?.slice(0, 3).join(', ') || 'none'}. Paid search drives ${totalGoogleClicks.toLocaleString()} sessions at a CPA of ${cpa}. Social campaign achieves ROAS of ${roas} across Meta placements.` :
+      "No reports generated yet. Submit campaign parameters and advance the simulation to calculate marketing data."
 
     return (
       <div className="space-y-6">
         {/* Metric Cards Row */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           {[
-            { label: "Overall Score", value: "89 / 100", change: "+15% vs R1", icon: Award, color: "text-indigo-600 bg-indigo-50" },
-            { label: "Total ROAS", value: "2.8x Average", change: "+0.4x this round", icon: TrendingUp, color: "text-emerald-600 bg-emerald-50" },
-            { label: "Acquisition Cost", value: "$14.20 CPA", change: "-18% cost reduction", icon: Target, color: "text-amber-600 bg-amber-50" },
-            { label: "Traffic Volume", value: "13,800 Visits", change: "+42% traffic surge", icon: Users, color: "text-blue-600 bg-blue-50" },
+            { label: "Overall Score", value: `${overallScoreVal} / 100`, change: "Latest round index", icon: Award, color: "text-indigo-600 bg-indigo-50" },
+            { label: "Total ROAS", value: roas, change: "Paid campaigns", icon: TrendingUp, color: "text-emerald-600 bg-emerald-50" },
+            { label: "Acquisition Cost", value: `${cpa} CPA`, change: "Google & Meta Ads", icon: Target, color: "text-amber-600 bg-amber-50" },
+            { label: "Traffic Volume", value: `${traffic.toLocaleString()} Visits`, change: "SEO + PPC sessions", icon: Users, color: "text-blue-600 bg-blue-50" },
           ].map((card, i) => {
             const Icon = card.icon
             return (
@@ -99,7 +144,7 @@ export function ReportViewer({ report, onClose, onExport }: ReportViewerProps) {
                 <LineChart data={scoreData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                   <XAxis dataKey="round" tick={{ fontSize: 11, fill: "#888" }} />
-                  <YAxis domain={[50, 100]} tick={{ fontSize: 11, fill: "#888" }} />
+                  <YAxis domain={[0, 100]} tick={{ fontSize: 11, fill: "#888" }} />
                   <ChartTooltip />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
                   <Line type="monotone" dataKey="Score" stroke="#4f46e5" strokeWidth={3} activeDot={{ r: 6 }} />
@@ -132,9 +177,7 @@ export function ReportViewer({ report, onClose, onExport }: ReportViewerProps) {
           <div className="space-y-1">
             <span className="text-sm font-bold text-indigo-950 block">AI Executive Performance Assessment</span>
             <p className="text-xs text-indigo-900/90 leading-relaxed">
-              Your overall campaign competency score has improved significantly, landing in the 90th percentile of the course roster.
-              <strong> Google Ads Quality Scores </strong> peaked at 9/10 owing to a highly structured negative keyword list and exact keyword matching strategies.
-              SEO remains steady with a 4% increase in organic backlinks. Social ads CPC fluctuates slightly, suggesting that refreshing Meta creatives is necessary for Round 5.
+              {summary}
             </p>
           </div>
         </div>

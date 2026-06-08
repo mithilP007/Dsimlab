@@ -107,31 +107,22 @@ describe('Phase 4: Certification, Reports & Events Integration Tests', () => {
   });
 
   afterAll(async () => {
-    await prisma.certificate.deleteMany({
-      where: { userId: studentId }
+    const users = await prisma.user.findMany({
+      where: { email: { in: [studentEmail, instructorEmail] } },
+      select: { id: true },
     });
-    await prisma.simulationState.deleteMany({
-      where: { userId: studentId }
-    });
-    await prisma.class.deleteMany({
-      where: { id: classId }
-    });
-    await prisma.scenario.deleteMany({
-      where: { id: scenarioId }
-    });
-    await prisma.account.deleteMany({
-      where: {
-        userId: {
-          in: await prisma.user.findMany({
-            where: { email: { in: [studentEmail, instructorEmail] } },
-            select: { id: true }
-          }).then(users => users.map(u => u.id))
-        }
-      }
-    });
-    await prisma.user.deleteMany({
-      where: { email: { in: [studentEmail, instructorEmail] } }
-    });
+    const userIds = users.map((u) => u.id);
+
+    // 1. Delete dependent models
+    await prisma.certificate.deleteMany({ where: { userId: { in: userIds } } });
+    await prisma.account.deleteMany({ where: { userId: { in: userIds } } });
+    await prisma.simulationState.deleteMany({ where: { userId: { in: userIds } } });
+
+    // 2. Delete users (which cascades and deletes Class because Class.instructorId is onDelete: Cascade)
+    await prisma.user.deleteMany({ where: { id: { in: userIds } } });
+
+    // 3. Delete scenario
+    await prisma.scenario.deleteMany({ where: { id: scenarioId } });
     await prisma.$disconnect();
   });
 

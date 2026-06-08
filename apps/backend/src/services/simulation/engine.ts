@@ -17,6 +17,8 @@ import { calculateEventImpacts } from '../events/impact';
 import { advanceRoundState, validateStateTransition, SimulationStatus } from './state-machine';
 import { captureRoundSnapshot } from './snapshot';
 import { calculateStrategicConsistency } from '../certificate/eligibility';
+import { trendClient } from '../trends/trend-client';
+import { marketSignalBuilder } from '../trends/market-signal-builder';
 
 /**
  * Orchestrates advancing a simulation round for a student
@@ -139,6 +141,131 @@ export async function processSimulationRound(simulationId: string): Promise<any>
     logger.error({ err }, 'Error parsing decision inputs');
   }
 
+  // Gather all unique keywords across SEO and Google Ads for the search trend API
+  const googleKeywords: string[] = [];
+  googleCampaigns.forEach((c: any) => {
+    if (c.keywords) {
+      c.keywords.forEach((k: any) => {
+        if (k.word && !googleKeywords.includes(k.word)) {
+          googleKeywords.push(k.word);
+        }
+      });
+    }
+  });
+  
+  const combinedKeywords = Array.from(new Set([
+    ...keywords,
+    ...googleKeywords,
+    sim.class.scenario.industry
+  ]));
+
+  // Fetch/Build Real-Time Trend & Market Condition Snapshots
+  const scenario = sim.class.scenario;
+  let trendSnapshot = await prisma.trendSnapshot.findFirst({
+    where: { simulationId, roundNumber: currentRound }
+  });
+
+  let marketCondition = await prisma.marketConditionSnapshot.findFirst({
+    where: { simulationId, roundNumber: currentRound }
+  });
+
+  if (!trendSnapshot || scenario.refreshTrendEveryRound) {
+    const trendSignals = await trendClient.fetchTrends({
+      scenarioName: scenario.name,
+      industry: scenario.industry,
+      location: scenario.location || 'Global',
+      keywords: combinedKeywords,
+      platforms: ['SEO', 'GOOGLE_ADS', 'META_ADS'],
+      date: new Date()
+    });
+
+    const confidence = trendSignals.length > 0
+      ? trendSignals.reduce((sum, s) => sum + s.confidence, 0) / trendSignals.length
+      : 1.0;
+
+    if (trendSnapshot) {
+      trendSnapshot = await prisma.trendSnapshot.update({
+        where: { id: trendSnapshot.id },
+        data: {
+          signals: JSON.stringify(trendSignals),
+          sources: JSON.stringify(trendSignals.flatMap(s => s.sources)),
+          confidence,
+          fetchedAt: new Date()
+        }
+      });
+    } else {
+      trendSnapshot = await prisma.trendSnapshot.create({
+        data: {
+          simulationId,
+          roundNumber: currentRound,
+          scenarioId: scenario.id,
+          industry: scenario.industry,
+          location: scenario.location || 'Global',
+          platform: 'SEO,GOOGLE_ADS,META_ADS',
+          signals: JSON.stringify(trendSignals),
+          sources: JSON.stringify(trendSignals.flatMap(s => s.sources)),
+          confidence,
+          fetchedAt: new Date()
+        }
+      });
+    }
+
+    const marketConditionData = marketSignalBuilder.buildMarketConditions({
+      simulationId,
+      roundNumber: currentRound,
+      signals: trendSignals
+    });
+
+    if (marketCondition) {
+      marketCondition = await prisma.marketConditionSnapshot.update({
+        where: { id: marketCondition.id },
+        data: {
+          demandIndex: marketConditionData.demandIndex,
+          competitionIndex: marketConditionData.competitionIndex,
+          cpcPressure: marketConditionData.cpcPressure,
+          cpmPressure: marketConditionData.cpmPressure,
+          conversionIntent: marketConditionData.conversionIntent,
+          seasonalImpact: marketConditionData.seasonalImpact,
+          newsImpact: marketConditionData.newsImpact,
+          platformModifiers: JSON.stringify(marketConditionData.platformModifiers)
+        }
+      });
+    } else {
+      marketCondition = await prisma.marketConditionSnapshot.create({
+        data: {
+          simulationId,
+          roundNumber: currentRound,
+          demandIndex: marketConditionData.demandIndex,
+          competitionIndex: marketConditionData.competitionIndex,
+          cpcPressure: marketConditionData.cpcPressure,
+          cpmPressure: marketConditionData.cpmPressure,
+          conversionIntent: marketConditionData.conversionIntent,
+          seasonalImpact: marketConditionData.seasonalImpact,
+          newsImpact: marketConditionData.newsImpact,
+          platformModifiers: JSON.stringify(marketConditionData.platformModifiers)
+        }
+      });
+    }
+  }
+
+  // At this point marketCondition is guaranteed to exist (created in block above)
+  // Provide a safe typed fallback in case it is still null (e.g. on first run race condition)
+  const mc = marketCondition ?? {
+    demandIndex: 1.0,
+    competitionIndex: 1.0,
+    cpcPressure: 1.0,
+    cpmPressure: 1.0,
+    conversionIntent: 1.0,
+    seasonalImpact: 1.0,
+    newsImpact: 1.0,
+    platformModifiers: '{"SEO":1.0,"GOOGLE_ADS":1.0,"META_ADS":1.0}'
+  };
+
+  // Parse platform modifiers
+  const platformMods = typeof mc.platformModifiers === 'string'
+    ? JSON.parse(mc.platformModifiers as string)
+    : (mc.platformModifiers as any);
+
   // Compute DA and PA
   const baseDA = 15; // Starting DA benchmark
   // Fetch previous SEO decisions to count cumulative backlink spend
@@ -169,8 +296,8 @@ export async function processSimulationRound(simulationId: string): Promise<any>
   ];
 
   const baseConversionRate = 0.025; // 2.5% benchmark
-  const seoCTR = impacts.seoCTR;
-  const seoCVR = baseConversionRate * impacts.conversionRate;
+  const seoCTR = impacts.seoCTR * (platformMods ? platformMods.SEO : 1.0);
+  const seoCVR = baseConversionRate * impacts.conversionRate * mc.conversionIntent;
 
   let totalOrganicImpressions = 0;
   let totalOrganicClicks = 0;
@@ -179,8 +306,8 @@ export async function processSimulationRound(simulationId: string): Promise<any>
 
   // Compute organic metrics per targeted keyword
   keywords.forEach(kw => {
-    // Deterministic search volumes based on hash
-    let searchVolume = 500 + (kw.length * 150);
+    // Deterministic search volumes based on hash, scaled by demand index and seasonal impact
+    let searchVolume = (500 + (kw.length * 150)) * mc.demandIndex * mc.seasonalImpact;
     if (searchVolume > 8000) searchVolume = 8000;
 
     const difficulty = (kw.length * 7) % 80 + 10;
@@ -221,37 +348,38 @@ export async function processSimulationRound(simulationId: string): Promise<any>
   let googleCost = 0;
   let googleConversions = 0;
 
-  // Compile Google bids
-  interface Bidder {
-    id: string;
-    name: string;
-    bid: number;
-    qualityScore: number;
-    dailyBudget: number;
-  }
-
-  googleCampaigns.forEach((campaign: any) => {
+  // Import Advertiser type from Google auction module
+  const googleAdvertisers = googleCampaigns.flatMap((campaign: any) => {
     const dailyCampaignBudget = campaign.budget / 30.0; // round covers 30 days
     const cKeywords = campaign.keywords || [];
+    const obj = campaign.objective || 'Sales';
+    const type = campaign.campaignType || 'Search';
+    const bidStrategy = campaign.biddingStrategy || 'Manual CPC';
+    const negKws = campaign.negativeKeywords || [];
+    const adCopy = campaign.adCopy || { headline1: '', headline2: '', headline3: '', description1: '', description2: '' };
+    const landingPage = campaign.landingPage || { pageRelevance: 5, mobileFriendly: 5, pageSpeed: 5, trustSignals: 5, offerClarity: 5, conversionReadiness: 5 };
 
-    cKeywords.forEach((kwBid: any) => {
+    return cKeywords.map((kwBid: any) => {
       // Mock rival bidders
-      const mockRivals: Bidder[] = [
+      const mockRivals = [
         { id: 'rival-1', name: 'Rival A', bid: random.nextFloat(0.5, 2.5), qualityScore: random.nextInt(4, 9), dailyBudget: dailyCampaignBudget * 1.2 },
         { id: 'rival-2', name: 'Rival B', bid: random.nextFloat(0.8, 3.0), qualityScore: random.nextInt(5, 8), dailyBudget: dailyCampaignBudget * 0.8 },
       ];
 
-      const qs = calculateQualityScore({
-        title: campaign.name,
-        description: 'Premium quality digital advertising services.',
-      }, kwBid.word, decision.seoContentQuality);
+      const qs = calculateQualityScore(adCopy, kwBid.word, landingPage);
 
-      const studentBidder: Bidder = {
+      const studentBidder = {
         id: 'student',
         name: 'Student Campaign',
-        bid: kwBid.bid,
+        bid: kwBid.bid || 1.0,
         qualityScore: qs,
         dailyBudget: dailyCampaignBudget,
+        matchType: kwBid.matchType || 'broad',
+        objective: obj,
+        campaignType: type,
+        biddingStrategy: bidStrategy,
+        negativeKeywordsCount: negKws.length,
+        landingPageExperience: (landingPage.pageRelevance + landingPage.mobileFriendly + landingPage.pageSpeed + landingPage.trustSignals + landingPage.offerClarity + landingPage.conversionReadiness) / 6
       };
 
       const auctionResults = runGoogleAuction(
@@ -259,25 +387,34 @@ export async function processSimulationRound(simulationId: string): Promise<any>
         1500, // baseline keyword daily search volume
         [studentBidder, ...mockRivals],
         baseConversionRate * impacts.conversionRate,
-        random
+        random,
+        mc
       );
 
-      const studentResult = auctionResults.find(r => r.id === 'student');
-      if (studentResult) {
-        // Pace daily metrics to 30 days
-        const dailyPaced = paceDailyBudget(dailyCampaignBudget, {
-          impressions: studentResult.impressions,
-          clicks: studentResult.clicks,
-          cost: studentResult.actualCPC * studentResult.clicks * impacts.googleCPC,
-          conversions: studentResult.conversions,
-        });
-
-        googleImpressions += dailyPaced.impressions * 30;
-        googleClicks += dailyPaced.clicks * 30;
-        googleCost += dailyPaced.cost * 30;
-        googleConversions += dailyPaced.conversions * 30;
+      const studentRes = auctionResults.find(r => r.id === 'student');
+      if (studentRes) {
+        return {
+          ...studentRes,
+          dailyCampaignBudget
+        };
       }
+      return null;
+    }).filter(Boolean);
+  });
+
+  googleAdvertisers.forEach((res: any) => {
+    // Pace daily metrics to 30 days using dailyCampaignBudget
+    const dailyPaced = paceDailyBudget(res.dailyCampaignBudget, {
+      impressions: res.impressions,
+      clicks: res.clicks,
+      cost: res.cost * impacts.googleCPC,
+      conversions: res.conversions,
     });
+
+    googleImpressions += dailyPaced.impressions * 30;
+    googleClicks += dailyPaced.clicks * 30;
+    googleCost += dailyPaced.cost * 30;
+    googleConversions += dailyPaced.conversions * 30;
   });
 
   // 5. Meta Ads auction modeling
@@ -293,16 +430,44 @@ export async function processSimulationRound(simulationId: string): Promise<any>
     'general-broad': 3500000,
   };
 
-  const metaAdvertisers = metaCampaigns.map((camp: any) => ({
-    id: 'student',
-    name: camp.name,
-    budget: camp.budget / 30.0,
-    audienceInterest: camp.audienceInterest || 'general-broad',
-    bidType: camp.bidType || 'LOWEST_COST',
-    bidAmount: camp.bidAmount || 0,
-    placement: camp.placement || 'auto',
-    creativeQuality: camp.creativeQuality || 6,
-  }));
+  // Check creative fatigue compared to previous round
+  let isSameCreative = false;
+  if (currentRound > 1 && prevDecisions.length > 0) {
+    const lastDec = prevDecisions[prevDecisions.length - 1];
+    try {
+      const prevMeta = JSON.parse(lastDec.metaCampaigns)[0];
+      const currMeta = metaCampaigns[0];
+      if (prevMeta && currMeta && prevMeta.creative && currMeta.creative) {
+        isSameCreative = (prevMeta.creative.headline === currMeta.creative.headline &&
+                          prevMeta.creative.primaryText === currMeta.creative.primaryText);
+      }
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  // Total meta campaign budget ceiling (sum of all campaign budgets for the round)
+  const totalMetaBudgetCeiling = metaCampaigns.reduce((sum: number, c: any) => sum + (c.budget || 0), 0);
+
+  const metaAdvertisers = metaCampaigns.map((camp: any) => {
+    const adCopy = camp.creative || { headline: '', primaryText: '', callToAction: '', mediaQuality: 80 };
+    const avgQuality = adCopy.mediaQuality || 80;
+    const creativeQuality = Math.max(1, Math.min(10, Math.round(avgQuality / 10))) || 8;
+
+    return {
+      id: 'student',
+      name: camp.name,
+      budget: camp.budget / 30.0,
+      audienceInterest: camp.audienceInterest || 'general-broad',
+      bidType: camp.bidType || 'LOWEST_COST',
+      bidAmount: camp.bidAmount || 0,
+      placement: camp.placement || 'auto',
+      creativeQuality,
+      objective: camp.objective || 'sales',
+      isSameCreative,
+      roundNumber: currentRound
+    };
+  });
 
   // Runs meta auctions daily
   for (let day = 1; day <= 30; day++) {
@@ -310,14 +475,18 @@ export async function processSimulationRound(simulationId: string): Promise<any>
       metaAdvertisers,
       audienceSizes,
       baseConversionRate * impacts.conversionRate,
-      random
+      random,
+      mc
     );
 
     const studentRes = results.find(r => r.id === 'student');
     if (studentRes) {
       metaImpressions += studentRes.impressions;
       metaClicks += studentRes.clicks;
-      metaCost += studentRes.cost * impacts.metaCPM;
+      // Apply CPM impact but cap total spend against campaign budget ceiling
+      const dailyCostWithImpact = studentRes.cost * impacts.metaCPM;
+      const remainingBudget = totalMetaBudgetCeiling - metaCost;
+      metaCost += Math.min(dailyCostWithImpact, Math.max(0, remainingBudget));
       metaConversions += studentRes.conversions;
     }
   }
@@ -375,6 +544,11 @@ export async function processSimulationRound(simulationId: string): Promise<any>
   const roundSpend = decision.seoBacklinkBudget + googleCost + metaCost;
   const roundRevenue = (totalOrganicConversions + googleConversions + metaConversions) * averagePricePoint;
 
+  const prevScoreBreakdowns = await prisma.scoreBreakdown.findMany({
+    where: { simulationId, round: { lt: currentRound } },
+    orderBy: { round: 'asc' }
+  });
+
   const dimensionScores = calculateDimensionScores({
     seoKeywordsRanks: keywordsRanks,
     googleAdsCost: googleCost,
@@ -384,6 +558,17 @@ export async function processSimulationRound(simulationId: string): Promise<any>
     allocatedRoundBudget: sim.class.scenario.budgetPerRound,
     totalRoundSpend: roundSpend,
     totalRoundRevenue: roundRevenue,
+    decision,
+    scenario: sim.class.scenario,
+    marketCondition: mc,
+    prevDecisions,
+    prevScoreBreakdowns,
+    googleConversions,
+    metaConversions,
+    googleClicks,
+    metaClicks,
+    googleImpressions,
+    metaImpressions
   });
 
   const compositeIndex = calculateCompositeIndex(dimensionScores);
@@ -457,6 +642,23 @@ export async function processSimulationRound(simulationId: string): Promise<any>
       score: nextState.score,
       status: finalStatus,
     },
+  });
+
+  // Update StudentSimulationProgress record
+  await prisma.studentSimulationProgress.upsert({
+    where: { simulationId },
+    update: {
+      currentDay: nextState.currentRound,
+      status: finalStatus === 'SCORE_LOCKED' ? 'COMPLETED' : 'DECISION_OPEN',
+      completedAt: finalStatus === 'SCORE_LOCKED' ? new Date() : null
+    },
+    create: {
+      simulationId,
+      currentDay: nextState.currentRound,
+      totalDays: sim.class.scenario.durationDays,
+      status: finalStatus === 'SCORE_LOCKED' ? 'COMPLETED' : 'DECISION_OPEN',
+      completedAt: finalStatus === 'SCORE_LOCKED' ? new Date() : null
+    }
   });
 
   // 9. Update percentiles cohort

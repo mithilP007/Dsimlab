@@ -7,16 +7,39 @@ import { SeededRandom } from '../../src/utils/deterministic-random';
 describe('Google Ads Auction Unit Tests', () => {
   it('should evaluate Google Quality Score reflecting keyword copy match', () => {
     const goodCopy = {
-      title: 'Top Corporate CRM Software System',
-      description: 'Get the best analytics dashboard for scaling enterprise sales automation.',
+      headline1: 'Top Corporate CRM Software System',
+      headline2: 'Free CRM Software Demo',
+      headline3: 'Sales Automation System',
+      description1: 'Get the best analytics dashboard for scaling enterprise sales automation.',
+      description2: 'Secure checkout and fast setup. Learn more today.',
     };
     const badCopy = {
-      title: 'General business tool',
-      description: 'Online services provider.',
+      headline1: 'General business tool',
+      headline2: 'Business tool info',
+      headline3: 'General dashboard',
+      description1: 'Online services provider.',
+      description2: 'General details here.',
     };
 
-    const qsHigh = calculateQualityScore(goodCopy, 'crm software', 8.5);
-    const qsLow = calculateQualityScore(badCopy, 'crm software', 2.0);
+    const lpHigh = {
+      pageRelevance: 9,
+      mobileFriendly: 9,
+      pageSpeed: 9,
+      trustSignals: 9,
+      offerClarity: 9,
+      conversionReadiness: 9
+    };
+    const lpLow = {
+      pageRelevance: 2,
+      mobileFriendly: 2,
+      pageSpeed: 2,
+      trustSignals: 2,
+      offerClarity: 2,
+      conversionReadiness: 2
+    };
+
+    const qsHigh = calculateQualityScore(goodCopy, 'crm software', lpHigh);
+    const qsLow = calculateQualityScore(badCopy, 'crm software', lpLow);
 
     expect(qsHigh).toBeGreaterThan(qsLow);
     expect(qsHigh).toBeLessThanOrEqual(10);

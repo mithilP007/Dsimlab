@@ -15,6 +15,10 @@ import { generateCertificatePDF } from '../services/certificate/generator';
 import { checkCertificateEligibility } from '../services/certificate/eligibility';
 import { EVENTS_REGISTRY } from '../services/events/registry';
 import { generateInsight, InsightPlatform } from '../services/ai/ollama-client';
+import { scheduleRoundAdvancement } from '../jobs/queue';
+import { trendClient } from '../services/trends/trend-client';
+import { marketSignalBuilder } from '../services/trends/market-signal-builder';
+import { config } from '../config';
 
 
 export async function apiContractRoutes(fastify: FastifyInstance) {
@@ -86,6 +90,22 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
         isCompleted: false,
         status: 'INITIALIZED',
       },
+    });
+
+    // Fetch class and scenario to set total duration days
+    const cls = await prisma.class.findUnique({
+      where: { id: classId },
+      include: { scenario: true }
+    });
+    const totalDays = cls?.scenario.durationDays || 30;
+
+    await prisma.studentSimulationProgress.create({
+      data: {
+        simulationId: newState.id,
+        currentDay: 1,
+        totalDays,
+        status: 'DECISION_OPEN'
+      }
     });
 
     // Validate and transition INITIALIZED -> DECISION_OPEN
@@ -352,16 +372,41 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
       data: { status: 'LOCKED' }
     });
 
-    const result = await processSimulationRound(sim.id);
+    const isDelayed = config.ROUND_PROCESSING_MODE === 'delayed';
+    const delayMs = config.ROUND_DELAY_HOURS * 3600 * 1000;
 
-    // Push real-time WS update
-    notifyRoundComplete(sim.userId, result);
+    await prisma.studentSimulationProgress.upsert({
+      where: { simulationId: sim.id },
+      update: {
+        status: 'LOCKED',
+        lastSubmittedAt: new Date(),
+        nextResultAt: isDelayed ? new Date(Date.now() + delayMs) : new Date()
+      },
+      create: {
+        simulationId: sim.id,
+        status: 'LOCKED',
+        lastSubmittedAt: new Date(),
+        nextResultAt: isDelayed ? new Date(Date.now() + delayMs) : new Date(),
+        currentDay: sim.currentRound,
+        totalDays: 30
+      }
+    });
+
+    const queueResult = await scheduleRoundAdvancement(sim.id, sim.userId);
 
     return reply.status(200).send({
       success: true,
-      result,
+      result: queueResult.result || {
+        success: true,
+        simulationId: sim.id,
+        roundAdvanced: sim.currentRound,
+        nextRound: sim.currentRound + 1,
+        isCompleted: false,
+        compositeIndex: 0
+      },
     });
   });
+
 
   /**
    * GET /api/simulations/:id/metrics
@@ -391,7 +436,31 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
           type: 'object',
           properties: {
             success: { type: 'boolean' },
-            metrics: { type: 'array', items: { type: 'object' } }
+            metrics: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  id: { type: 'string' },
+                  simulationId: { type: 'string' },
+                  round: { type: 'number' },
+                  day: { type: 'number' },
+                  organicImpressions: { type: 'number' },
+                  organicClicks: { type: 'number' },
+                  organicCTR: { type: 'number' },
+                  organicConversions: { type: 'number' },
+                  googleImpressions: { type: 'number' },
+                  googleClicks: { type: 'number' },
+                  googleCost: { type: 'number' },
+                  googleConversions: { type: 'number' },
+                  metaImpressions: { type: 'number' },
+                  metaClicks: { type: 'number' },
+                  metaCost: { type: 'number' },
+                  metaConversions: { type: 'number' },
+                  revenue: { type: 'number' }
+                }
+              }
+            }
           }
         }
       }
@@ -1273,7 +1342,8 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
       response: {
         201: {
           description: 'Scenario created successfully',
-          type: 'object'
+          type: 'object',
+          additionalProperties: true
         }
       }
     }
@@ -2547,5 +2617,551 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
       ...result,
     });
   });
+
+  // ==========================================
+  // 12. Trends & Market Conditions Routes
+  // ==========================================
+
+  /**
+   * GET /api/trends/search
+   * Returns normalized trend signals for queries.
+   */
+  fastify.get('/api/trends/search', {
+    preHandler: [requireAuth],
+    schema: {
+      querystring: {
+        type: 'object',
+        properties: {
+          industry: { type: 'string' },
+          location: { type: 'string' },
+          keywords: { type: 'string' }
+        }
+      }
+    }
+  }, async (request, reply) => {
+    const query = request.query as any;
+    const keywords = query.keywords ? query.keywords.split(',').map((k: string) => k.trim()) : [];
+    
+    if (keywords.length === 0) {
+      throw new ValidationError('At least one keyword is required.');
+    }
+
+    try {
+      const signals = await trendClient.fetchTrends({
+        scenarioName: 'Search',
+        industry: query.industry || 'General',
+        location: query.location || 'Global',
+        keywords,
+        platforms: ['SEO', 'GOOGLE_ADS', 'META_ADS'],
+        date: new Date()
+      });
+      return reply.send({ success: true, signals });
+    } catch (err: any) {
+      throw new ValidationError(err.message || 'Failed to fetch trend signals.');
+    }
+  });
+
+  /**
+   * GET /api/simulations/:id/trends
+   * Returns all TrendSnapshot records for this simulation.
+   */
+  fastify.get('/api/simulations/:id/trends', {
+    preHandler: [requireAuth],
+    schema: {
+      params: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', format: 'uuid' }
+        }
+      }
+    }
+  }, async (request, reply) => {
+    const params = request.params as any;
+    const trends = await prisma.trendSnapshot.findMany({
+      where: { simulationId: params.id },
+      orderBy: { roundNumber: 'asc' }
+    });
+    return reply.send({
+      success: true,
+      trends: trends.map(t => ({
+        ...t,
+        signals: typeof t.signals === 'string' ? JSON.parse(t.signals) : t.signals,
+        sources: typeof t.sources === 'string' ? JSON.parse(t.sources) : t.sources
+      }))
+    });
+  });
+
+  /**
+   * GET /api/simulations/:id/market-conditions
+   * Returns all MarketConditionSnapshot records for this simulation.
+   */
+  fastify.get('/api/simulations/:id/market-conditions', {
+    preHandler: [requireAuth],
+    schema: {
+      params: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', format: 'uuid' }
+        }
+      }
+    }
+  }, async (request, reply) => {
+    const params = request.params as any;
+    const conditions = await prisma.marketConditionSnapshot.findMany({
+      where: { simulationId: params.id },
+      orderBy: { roundNumber: 'asc' }
+    });
+    return reply.send({
+      success: true,
+      marketConditions: conditions.map(mc => ({
+        ...mc,
+        platformModifiers: typeof mc.platformModifiers === 'string' ? JSON.parse(mc.platformModifiers) : mc.platformModifiers
+      }))
+    });
+  });
+
+  /**
+   * POST /api/simulations/:id/refresh-trends
+   * Re-runs trend fetching and updates snapshot and market conditions. Instructor/Admin only.
+   */
+  fastify.post('/api/simulations/:id/refresh-trends', {
+    preHandler: [requireRole([UserRole.INSTRUCTOR, UserRole.ADMIN])],
+    schema: {
+      params: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', format: 'uuid' }
+        }
+      }
+    }
+  }, async (request, reply) => {
+    const params = request.params as any;
+    const sim = await prisma.simulationState.findUnique({
+      where: { id: params.id },
+      include: { class: { include: { scenario: true } } }
+    });
+    if (!sim) throw new NotFoundError('Simulation not found.');
+
+    const decision = await prisma.decision.findFirst({
+      where: { simulationId: sim.id, round: sim.currentRound }
+    });
+    
+    const seoKeywords = decision ? JSON.parse(decision.seoTargetKeywords) : [];
+    const scenario = sim.class.scenario;
+    const combinedKeywords = Array.from(new Set([
+      ...seoKeywords,
+      scenario.industry
+    ]));
+
+    try {
+      const trendSignals = await trendClient.fetchTrends({
+        scenarioName: scenario.name,
+        industry: scenario.industry,
+        location: scenario.location || 'Global',
+        keywords: combinedKeywords,
+        platforms: ['SEO', 'GOOGLE_ADS', 'META_ADS'],
+        date: new Date()
+      });
+
+      const confidence = trendSignals.length > 0
+        ? trendSignals.reduce((sum, s) => sum + s.confidence, 0) / trendSignals.length
+        : 1.0;
+
+      const existingTrend = await prisma.trendSnapshot.findFirst({
+        where: { simulationId: sim.id, roundNumber: sim.currentRound }
+      });
+
+      if (existingTrend) {
+        await prisma.trendSnapshot.update({
+          where: { id: existingTrend.id },
+          data: {
+            signals: JSON.stringify(trendSignals),
+            sources: JSON.stringify(trendSignals.flatMap(s => s.sources)),
+            confidence,
+            fetchedAt: new Date()
+          }
+        });
+      } else {
+        await prisma.trendSnapshot.create({
+          data: {
+            simulationId: sim.id,
+            roundNumber: sim.currentRound,
+            scenarioId: scenario.id,
+            industry: scenario.industry,
+            location: scenario.location || 'Global',
+            platform: 'SEO,GOOGLE_ADS,META_ADS',
+            signals: JSON.stringify(trendSignals),
+            sources: JSON.stringify(trendSignals.flatMap(s => s.sources)),
+            confidence,
+            fetchedAt: new Date()
+          }
+        });
+      }
+
+      const marketConditionData = marketSignalBuilder.buildMarketConditions({
+        simulationId: sim.id,
+        roundNumber: sim.currentRound,
+        signals: trendSignals
+      });
+
+      const existingMC = await prisma.marketConditionSnapshot.findFirst({
+        where: { simulationId: sim.id, roundNumber: sim.currentRound }
+      });
+
+      if (existingMC) {
+        await prisma.marketConditionSnapshot.update({
+          where: { id: existingMC.id },
+          data: {
+            demandIndex: marketConditionData.demandIndex,
+            competitionIndex: marketConditionData.competitionIndex,
+            cpcPressure: marketConditionData.cpcPressure,
+            cpmPressure: marketConditionData.cpmPressure,
+            conversionIntent: marketConditionData.conversionIntent,
+            seasonalImpact: marketConditionData.seasonalImpact,
+            newsImpact: marketConditionData.newsImpact,
+            platformModifiers: JSON.stringify(marketConditionData.platformModifiers)
+          }
+        });
+      } else {
+        await prisma.marketConditionSnapshot.create({
+          data: {
+            simulationId: sim.id,
+            roundNumber: sim.currentRound,
+            demandIndex: marketConditionData.demandIndex,
+            competitionIndex: marketConditionData.competitionIndex,
+            cpcPressure: marketConditionData.cpcPressure,
+            cpmPressure: marketConditionData.cpmPressure,
+            conversionIntent: marketConditionData.conversionIntent,
+            seasonalImpact: marketConditionData.seasonalImpact,
+            newsImpact: marketConditionData.newsImpact,
+            platformModifiers: JSON.stringify(marketConditionData.platformModifiers)
+          }
+        });
+      }
+
+      return reply.send({ success: true, message: 'Trends refreshed successfully.' });
+    } catch (err: any) {
+      throw new ValidationError(err.message || 'Failed to refresh trend signals.');
+    }
+  });
+
+  /**
+   * GET /api/simulations/:id/data-mode
+   * Returns information about the current data mode and availability of live/trend APIs.
+   */
+  fastify.get('/api/simulations/:id/data-mode', {
+    preHandler: [requireAuth],
+    schema: {
+      params: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', format: 'uuid' }
+        }
+      }
+    }
+  }, async (request, reply) => {
+    const params = request.params as any;
+    const sim = await prisma.simulationState.findUnique({
+      where: { id: params.id },
+      include: { class: { include: { scenario: true } } }
+    });
+    if (!sim) throw new NotFoundError('Simulation not found.');
+
+    const googleCredsConfigured = !!(config.GOOGLE_ADS_CLIENT_ID && config.GOOGLE_ADS_CLIENT_SECRET && config.GOOGLE_ADS_DEVELOPER_TOKEN);
+    const metaCredsConfigured = !!(config.META_APP_ID && config.META_APP_SECRET && config.META_ACCESS_TOKEN);
+    const liveCredentialsConfigured = googleCredsConfigured || metaCredsConfigured;
+
+    let resolvedMode = sim.class.scenario.dataMode || 'REAL_TIME_TREND_SIMULATION';
+    if (resolvedMode === 'LIVE_AD_ACCOUNT' && !liveCredentialsConfigured) {
+      resolvedMode = 'REAL_TIME_TREND_SIMULATION';
+    }
+
+    return reply.send({
+      success: true,
+      mode: resolvedMode,
+      liveCredentialsConfigured,
+      trendSourcesAvailable: true
+    });
+  });
+
+  /**
+   * POST /api/simulations/:id/fast-forward
+   * Instantly runs round advancement, bypassing queue delays. Dev mode only.
+   */
+  fastify.post('/api/simulations/:id/fast-forward', {
+    preHandler: [requireAuth],
+    schema: {
+      params: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', format: 'uuid' }
+        }
+      }
+    }
+  }, async (request, reply) => {
+    if (config.NODE_ENV !== 'development') {
+      throw new ForbiddenError('Fast-forward is only available in development mode.');
+    }
+
+    const params = request.params as any;
+    const sim = await prisma.simulationState.findUnique({
+      where: { id: params.id }
+    });
+    if (!sim) throw new NotFoundError('Simulation not found.');
+
+    // Force locked status to allow processing
+    await prisma.simulationState.update({
+      where: { id: sim.id },
+      data: { status: 'LOCKED' }
+    });
+
+    const result = await processSimulationRound(sim.id);
+    notifyRoundComplete(sim.userId, result);
+
+    return reply.send({
+      success: true,
+      result
+    });
+  });
+
+  /**
+   * GET /api/simulations/:id/countdown
+   * Returns remaining seconds to the next round results
+   */
+  fastify.get('/api/simulations/:id/countdown', {
+    preHandler: [requireAuth],
+    schema: {
+      description: 'Returns remaining seconds to next round result availability',
+      tags: ['Simulation'],
+      params: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', format: 'uuid' }
+        }
+      }
+    }
+  }, async (request, reply) => {
+    const params = request.params as any;
+    const progress = await prisma.studentSimulationProgress.findUnique({
+      where: { simulationId: params.id }
+    });
+    if (!progress || !progress.nextResultAt) {
+      return reply.send({ success: true, remainingSeconds: 0 });
+    }
+    const diff = progress.nextResultAt.getTime() - Date.now();
+    const remainingSeconds = Math.max(0, Math.ceil(diff / 1000));
+    return reply.send({ success: true, remainingSeconds });
+  });
+
+  /**
+   * GET /api/classes/:id/progress
+   * Returns progress tracking list for all cohort students
+   */
+  fastify.get('/api/classes/:id/progress', {
+    preHandler: [requireRole([UserRole.INSTRUCTOR, UserRole.ADMIN])],
+    schema: {
+      description: 'Returns progress tracking checklist for class students',
+      tags: ['Instructor'],
+      params: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', format: 'uuid' }
+        }
+      }
+    }
+  }, async (request, reply) => {
+    const params = request.params as any;
+    const students = await prisma.user.findMany({
+      where: { classId: params.id },
+      include: {
+        simulations: {
+          include: {
+            progress: true,
+            scoreBreakdowns: { orderBy: { round: 'desc' }, take: 1 }
+          }
+        }
+      }
+    });
+
+    const progress = students.map(student => {
+      const activeSim = student.simulations[0] || null;
+      return {
+        studentId: student.id,
+        name: student.name,
+        email: student.email,
+        currentDay: activeSim?.progress?.currentDay || 1,
+        totalDays: activeSim?.progress?.totalDays || 30,
+        status: activeSim?.status || 'NOT_STARTED',
+        score: activeSim?.score || 0,
+        submitted: activeSim?.status === 'LOCKED' || activeSim?.status === 'PROCESSING',
+        lastSubmittedAt: activeSim?.progress?.lastSubmittedAt || null
+      };
+    });
+
+    return reply.send({ success: true, progress });
+  });
+
+  /**
+   * GET /api/classes/:id/leaderboard
+   * Returns simulation scores leaderboard
+   */
+  fastify.get('/api/classes/:id/leaderboard', {
+    preHandler: [requireAuth],
+    schema: {
+      description: 'Returns leaderboard rankings for class',
+      tags: ['Simulation'],
+      params: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', format: 'uuid' }
+        }
+      }
+    }
+  }, async (request, reply) => {
+    const params = request.params as any;
+    const simulations = await prisma.simulationState.findMany({
+      where: { classId: params.id },
+      include: { user: true },
+      orderBy: { score: 'desc' }
+    });
+
+    const leaderboard = simulations.map((sim, index) => ({
+      rank: index + 1,
+      studentName: sim.user.name,
+      score: sim.score,
+      round: sim.currentRound,
+      isCompleted: sim.isCompleted
+    }));
+
+    return reply.send({ success: true, leaderboard });
+  });
+
+  /**
+   * GET /api/classes/:id/audit
+   * Returns classroom decisions audit trail
+   */
+  fastify.get('/api/classes/:id/audit', {
+    preHandler: [requireRole([UserRole.INSTRUCTOR, UserRole.ADMIN])],
+    schema: {
+      description: 'Returns audit trail of decisions for all classroom members',
+      tags: ['Instructor'],
+      params: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', format: 'uuid' }
+        }
+      }
+    }
+  }, async (request, reply) => {
+    const params = request.params as any;
+    const simulations = await prisma.simulationState.findMany({
+      where: { classId: params.id },
+      include: {
+        user: true,
+        decisions: { orderBy: { round: 'asc' } }
+      }
+    });
+
+    const auditTrail = simulations.flatMap(sim => 
+      sim.decisions.map(d => ({
+        studentName: sim.user.name,
+        round: d.round,
+        seoTargetKeywords: JSON.parse(d.seoTargetKeywords),
+        seoContentQuality: d.seoContentQuality,
+        seoBacklinkBudget: d.seoBacklinkBudget,
+        googleCampaigns: JSON.parse(d.googleCampaigns),
+        metaCampaigns: JSON.parse(d.metaCampaigns),
+        createdAt: d.createdAt
+      }))
+    );
+
+    return reply.send({ success: true, auditTrail });
+  });
+
+  /**
+   * GET /api/scenarios/:id/config
+   * Returns full scenario configuration settings
+   */
+  fastify.get('/api/scenarios/:id/config', {
+    preHandler: [requireAuth],
+    schema: {
+      description: 'Returns scenario settings configuration details',
+      tags: ['Scenario'],
+      params: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', format: 'uuid' }
+        }
+      }
+    }
+  }, async (request, reply) => {
+    const params = request.params as any;
+    const scenario = await prisma.scenario.findUnique({
+      where: { id: params.id }
+    });
+    if (!scenario) throw new NotFoundError('Scenario not found.');
+    return reply.send({ success: true, config: scenario });
+  });
+
+  /**
+   * POST /api/scenarios/:id/start
+   * Starts a scenario simulation for student
+   */
+  fastify.post('/api/scenarios/:id/start', {
+    preHandler: [requireAuth],
+    schema: {
+      description: 'Starts a student simulation for scenario ID',
+      tags: ['Simulation'],
+      params: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', format: 'uuid' }
+        }
+      }
+    }
+  }, async (request, reply) => {
+    const authReq = request as AuthenticatedRequest;
+    const params = request.params as any;
+    const classId = authReq.user!.classId;
+    if (!classId) {
+      throw new ValidationError('You must join a class cohort before starting a simulation.');
+    }
+
+    const existingState = await prisma.simulationState.findFirst({
+      where: { userId: authReq.user!.id, classId }
+    });
+    if (existingState) {
+      return reply.send({ success: true, simulationId: existingState.id, status: existingState.status });
+    }
+
+    const scenario = await prisma.scenario.findUnique({ where: { id: params.id } });
+    if (!scenario) throw new NotFoundError('Scenario not found.');
+
+    const newState = await prisma.simulationState.create({
+      data: {
+        userId: authReq.user!.id,
+        classId,
+        currentRound: 1,
+        isCompleted: false,
+        status: 'DECISION_OPEN'
+      }
+    });
+
+    await prisma.studentSimulationProgress.create({
+      data: {
+        simulationId: newState.id,
+        currentDay: 1,
+        totalDays: scenario.durationDays,
+        status: 'DECISION_OPEN'
+      }
+    });
+
+    return reply.status(201).send({
+      success: true,
+      simulationId: newState.id,
+      status: newState.status
+    });
+  });
 }
+
 

@@ -209,8 +209,9 @@ export const useLeaderboardStore = create<LeaderboardState>((set) => ({
     // Simulated refresh changes rankings slightly
     set((state) => {
       const refreshed = state.originalStudents.map((s) => {
-        // Slight fluctuation
-        const scoreChange = Math.random() > 0.6 ? (Math.random() > 0.5 ? 0.5 : -0.5) : 0
+        // Seeded score change to be deterministic and avoid Math.random
+        const charCodeSum = s.name.split('').reduce((sum, char) => sum + char.charCodeAt(0), 0);
+        const scoreChange = charCodeSum % 3 === 0 ? 0.5 : charCodeSum % 3 === 1 ? -0.5 : 0;
         const overall = parseFloat(Math.min(100, Math.max(0, s.overallScore + scoreChange)).toFixed(1))
         return {
           ...s,

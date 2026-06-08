@@ -192,6 +192,9 @@ export function MetaAdsControlPanel() {
                 <><CheckCircle2 className="h-2.5 w-2.5 mr-1" />Saved</>
               ) : "Draft"}
             </Badge>
+            <Badge className="bg-indigo-500/10 text-indigo-400 border-indigo-500/30 font-black text-[9px] uppercase tracking-wider py-0.5 px-2.5 rounded-full border">
+              Real-Time Trend-Based Meta Ads Simulation
+            </Badge>
             <p className="text-sm font-black text-white truncate">{campaignName || "Unnamed Campaign"}</p>
             <Badge className="text-[9px] font-bold border-none bg-blue-900/50 text-blue-300 capitalize">
               {OBJECTIVE_META[objective].label}
@@ -278,6 +281,49 @@ export function MetaAdsControlPanel() {
         {/* Left column */}
         <div className="flex flex-col gap-5">
           <CampaignSetup />
+          
+          {/* Auction Diagnostics Card */}
+          <div className="bg-white border border-neutral-200 rounded-2xl p-5 shadow-sm space-y-4 text-left">
+            <h3 className="text-sm font-bold text-neutral-900 flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-indigo-500 shrink-0 animate-pulse" />
+              Real-Time Auction Diagnostics
+            </h3>
+            
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              <div className="p-3 border border-neutral-100 bg-neutral-50 rounded-xl space-y-1">
+                <span className="text-[10px] text-neutral-450 font-bold block uppercase tracking-wider">Learning Phase</span>
+                <Badge className={cn("text-[9px] font-black border-none", dailyBudget < 45 ? "bg-amber-50 text-amber-700 hover:bg-amber-100" : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100")}>
+                  {dailyBudget < 45 ? "Learning (50 conversions pending)" : "Active / Learning Complete"}
+                </Badge>
+              </div>
+
+              <div className="p-3 border border-neutral-100 bg-neutral-50 rounded-xl space-y-1">
+                <span className="text-[10px] text-neutral-400 font-bold block uppercase tracking-wider">Creative Fatigue</span>
+                <Badge className={cn("text-[9px] font-black border-none", currentDay > 1 ? "bg-amber-50 text-amber-700 hover:bg-amber-100" : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100")}>
+                  {currentDay > 1 ? "High Fatigue (Same Copy)" : "Low Fatigue (Optimal)"}
+                </Badge>
+              </div>
+
+              <div className="p-3 border border-neutral-100 bg-neutral-50 rounded-xl space-y-1">
+                <span className="text-[10px] text-neutral-400 font-bold block uppercase tracking-wider">Audience Saturation</span>
+                <span className="font-extrabold text-neutral-850 block">
+                  {dailyBudget > 100 ? "14.5% (Moderate Saturation)" : "4.2% (Healthy Size)"}
+                </span>
+              </div>
+
+              <div className="p-3 border border-neutral-100 bg-neutral-50 rounded-xl space-y-1">
+                <span className="text-[10px] text-neutral-400 font-bold block uppercase tracking-wider">Frequency Risk</span>
+                <Badge className={cn("text-[9px] font-black border-none", dailyBudget > 150 ? "bg-red-50 text-red-750 hover:bg-red-100" : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100")}>
+                  {dailyBudget > 150 ? "High Frequency Risk" : "Low Risk (< 1.5x)"}
+                </Badge>
+              </div>
+            </div>
+            
+            <p className="text-[10px] text-neutral-450 leading-relaxed font-medium">
+              * The Meta Ads algorithm uses budget size, placement selection, and creative relevance to determine CPC. High budget allocations to small audiences cause audience fatigue and inflate CPM costs.
+            </p>
+          </div>
+
           <CreativeStudio />
         </div>
         {/* Right column */}

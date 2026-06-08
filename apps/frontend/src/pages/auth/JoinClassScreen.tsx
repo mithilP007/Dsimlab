@@ -15,7 +15,9 @@ const codeSchema = z.object({
   classCode: z
     .string()
     .min(1, "Access code is required")
-    .regex(/^SIMP-\d{4}$/i, "Code must match format SIMP-XXXX (e.g., SIMP-1234)"),
+    .min(3, "Code must be at least 3 characters")
+    .max(10, "Code must be at most 10 characters")
+    .regex(/^[a-zA-Z0-9_-]+$/, "Code must contain only alphanumeric characters, hyphens or underscores"),
 })
 
 const accountSchema = z.object({
@@ -29,7 +31,7 @@ type AccountFormInputs = z.infer<typeof accountSchema>
 
 export function JoinClassScreen() {
   const navigate = useNavigate()
-  const { login } = useAuthStore()
+  const { registerStudent } = useAuthStore()
   const [step, setStep] = useState(1)
   const [validatedCode, setValidatedCode] = useState("")
   const [isLoading, setIsLoading] = useState(false)
@@ -58,23 +60,32 @@ export function JoinClassScreen() {
     if (!isValid) return
 
     setIsLoading(true)
-    const { name, email } = accountForm.getValues()
+    const { name, email, password } = accountForm.getValues()
 
-    setTimeout(() => {
-      login(
-        {
-          id: "usr_student_college",
-          name: name,
-          email: email,
-          role: "student-college",
-          createdAt: new Date().toISOString(),
-        },
-        "mock-student-jwt-token"
-      )
-      setIsLoading(false)
+    try {
+      const user = await registerStudent({
+        email,
+        password,
+        name,
+        classJoinCode: validatedCode,
+      })
       toast.success(`Successfully joined class sandbox ${validatedCode}!`)
-      navigate("/")
-    }, 1000)
+      
+      const roleStr = (user?.role as string) || ""
+      if (roleStr === "admin") {
+        navigate("/admin")
+      } else if (roleStr === "student-college" || roleStr === "student") {
+        navigate("/dashboard/student")
+      } else if (roleStr === "instructor") {
+        navigate("/dashboard/instructor")
+      } else {
+        navigate("/dashboard/individual")
+      }
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || err.message || "Failed to join class sandbox")
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   return (
@@ -163,9 +174,9 @@ export function JoinClassScreen() {
                 transition={{ duration: 0.3 }}
               >
                 <CardHeader>
-                  <CardTitle className="text-xl">Step 2: Class Found</CardTitle>
+                  <CardTitle className="text-xl">Step 2: Class Validated</CardTitle>
                   <CardDescription>
-                    Verify that the course and instructor details match
+                    Ready to create your student account for this classroom
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -173,17 +184,17 @@ export function JoinClassScreen() {
                     <ShieldCheck className="h-6 w-6 text-green-600 shrink-0 mt-0.5" />
                     <div className="text-left space-y-2">
                       <div>
-                        <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wide">Class Sandbox</span>
-                        <span className="text-sm font-bold text-neutral-900 block">MKT 410: Digital Marketing Campaigns</span>
+                        <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wide">Class Access</span>
+                        <span className="text-sm font-bold text-neutral-900 block">Invite Code: {validatedCode}</span>
                       </div>
                       <div className="grid grid-cols-2 gap-x-4 gap-y-2 pt-1">
                         <div>
-                          <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wide">Instructor</span>
-                          <span className="text-xs font-semibold text-neutral-700 block">Dr. Rachel Green</span>
+                          <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wide">Status</span>
+                          <span className="text-xs font-semibold text-neutral-700 block">Code Validated</span>
                         </div>
                         <div>
                           <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wide">Duration</span>
-                          <span className="text-xs font-semibold text-neutral-700 block">90 Days Active</span>
+                          <span className="text-xs font-semibold text-neutral-700 block">Course Sandbox</span>
                         </div>
                       </div>
                     </div>

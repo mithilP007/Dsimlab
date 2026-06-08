@@ -3,11 +3,14 @@ import { useResultsStore } from "@/stores/resultsStore"
 import { useCampaignStore } from "@/stores/campaignStore"
 import { useGoogleAdsStore } from "@/stores/googleAdsStore"
 import { useMetaAdsStore } from "@/stores/metaAdsStore"
+import { useSimulationStore } from "@/stores/simulationStore"
 import { ScoreBreakdown } from "./ScoreBreakdown"
 import { TrafficAnalytics } from "./TrafficAnalytics"
 import { RankingReport } from "./RankingReport"
 import { InsightCards } from "./InsightCards"
+import { MarketSignalsPanel } from "./MarketSignalsPanel"
 import { Card, CardContent } from "@/components/ui/card"
+
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -38,8 +41,10 @@ export function ResultsDashboard() {
     totalStudents,
     previousRank,
     badges,
-    advanceRound,
+    fetchResults,
   } = useResultsStore()
+
+  const { activeSimulation, advanceSimulation } = useSimulationStore()
 
   const seoDecisionsMade = useCampaignStore((s) => s.decisionsMade)
   const googleDecisionsMade = useGoogleAdsStore((s) => s.decisionsMade)
@@ -48,30 +53,66 @@ export function ResultsDashboard() {
   const [isLoading, setIsLoading] = useState(true)
   const [activeTab, setActiveTab] = useState("overview")
 
+  const renderDataModeBadge = () => {
+    return (
+      <Badge className="font-bold text-[9px] uppercase tracking-wider px-2 py-0.5 rounded-full border shadow-2xs transition-colors bg-indigo-500/10 text-indigo-400 border-indigo-500/30 hover:bg-indigo-500/20">
+        <span className="h-1.5 w-1.5 rounded-full mr-1.5 inline-block bg-indigo-400 animate-pulse" />
+        Real-Time Trend-Based Simulation
+      </Badge>
+    )
+  }
+
+  const handleFastForwardDev = async () => {
+    if (!activeSimulation?.id) return
+    try {
+      setIsLoading(true)
+      const res = await (await import("@/lib/api")).default.post(`/api/simulations/${activeSimulation.id}/fast-forward`)
+      if (res.data?.success) {
+        toast.success("Simulation fast-forwarded successfully!")
+        // Reset stores and reload results
+        useCampaignStore.getState().resetCampaign()
+        useGoogleAdsStore.getState().resetCampaign()
+        useMetaAdsStore.getState().resetCampaign()
+        await useSimulationStore.getState().fetchLatestState()
+        await fetchResults(activeSimulation.id)
+      }
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || "Failed to fast-forward simulation")
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+
   useEffect(() => {
-    const timer = setTimeout(() => setIsLoading(false), 1000)
-    return () => clearTimeout(timer)
-  }, [activeTab]) // Trigger skeleton loader on tab change to match spec
+    if (activeSimulation?.id) {
+      fetchResults(activeSimulation.id).then(() => {
+        setIsLoading(false)
+      })
+    } else {
+      setIsLoading(false)
+    }
+  }, [activeSimulation?.id, fetchResults, activeTab])
 
   // Enable next round when all decisions are saved
   const allDecisionsMade = seoDecisionsMade && googleDecisionsMade && metaDecisionsMade
 
-  const handleAdvanceRound = () => {
+  const handleAdvanceRound = async () => {
     if (!allDecisionsMade) {
       toast.error("Decisions Pending", {
         description: "You must complete and save your decisions in SEO, Google Ads, and Meta Ads first.",
       })
       return
     }
-    advanceRound()
-    // Reset stores
-    useCampaignStore.getState().resetCampaign()
-    useGoogleAdsStore.getState().resetCampaign()
-    useMetaAdsStore.getState().resetCampaign()
-
-    toast.success(`Successfully advanced to Round ${currentRound + 1}!`, {
-      description: "Simulation results recalculating. Prepare your strategies for the new round.",
-    })
+    try {
+      await advanceSimulation()
+      // Reset stores
+      useCampaignStore.getState().resetCampaign()
+      useGoogleAdsStore.getState().resetCampaign()
+      useMetaAdsStore.getState().resetCampaign()
+    } catch (err) {
+      console.error(err)
+    }
   }
 
   const renderBadgeIcon = (iconName: string) => {
@@ -100,14 +141,18 @@ export function ResultsDashboard() {
       {/* Top Header Bar */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-5 p-5 rounded-2xl border border-neutral-200 bg-neutral-950 text-white">
         <div className="space-y-1">
-          <Badge className="bg-neutral-800 text-neutral-300 border-neutral-700 hover:bg-neutral-800 font-bold text-[9px] uppercase tracking-wider px-2 py-0.5 rounded-full">
-            Simulation Dashboard
-          </Badge>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge className="bg-neutral-800 text-neutral-300 border-neutral-700 hover:bg-neutral-800 font-bold text-[9px] uppercase tracking-wider px-2 py-0.5 rounded-full">
+              Simulation Dashboard
+            </Badge>
+            {renderDataModeBadge()}
+          </div>
           <h1 className="text-xl font-black">Round {currentRound} Results</h1>
           <p className="text-xs text-neutral-400 font-medium">
             Review campaign data and optimize channels for round {currentRound} of {totalRounds}.
           </p>
         </div>
+
 
         {/* Status Metrics Container */}
         <div className="flex flex-wrap items-center gap-6">
@@ -172,17 +217,24 @@ export function ResultsDashboard() {
         <div className="mt-6">
           <TabsContent value="overview" className="mt-0">
             {isLoading ? (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-                <Skeleton className="h-[400px] w-full rounded-2xl" />
-                <Skeleton className="h-[400px] w-full rounded-2xl" />
+              <div className="space-y-6">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+                  <Skeleton className="h-[400px] w-full rounded-2xl" />
+                  <Skeleton className="h-[400px] w-full rounded-2xl" />
+                </div>
+                <Skeleton className="h-[300px] w-full rounded-2xl" />
               </div>
             ) : (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-                <ScoreBreakdown />
-                <InsightCards />
+              <div className="space-y-6">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+                  <ScoreBreakdown />
+                  <InsightCards />
+                </div>
+                <MarketSignalsPanel simulationId={activeSimulation?.id} roundNumber={currentRound} />
               </div>
             )}
           </TabsContent>
+
 
           <TabsContent value="traffic" className="mt-0">
             {isLoading ? (
@@ -300,19 +352,31 @@ export function ResultsDashboard() {
             </div>
           </div>
 
-          <Button
-            onClick={handleAdvanceRound}
-            disabled={!allDecisionsMade}
-            className={cn(
-              "h-10 px-6 font-bold text-xs shrink-0 transition-all flex items-center gap-1.5",
-              allDecisionsMade
-                ? "bg-slate-900 text-white hover:bg-neutral-700 shadow-sm"
-                : "bg-neutral-200 text-neutral-400 cursor-not-allowed border-none shadow-none"
+          <div className="flex items-center gap-2">
+            {import.meta.env.DEV && (
+              <Button
+                onClick={handleFastForwardDev}
+                className="h-10 px-4 font-bold text-xs bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm flex items-center gap-1.5 transition-all"
+              >
+                <Zap className="h-4 w-4" />
+                Fast-Forward (Dev)
+              </Button>
             )}
-          >
-            Proceed to Next Round
-            <ChevronRight className="h-4 w-4" />
-          </Button>
+            <Button
+              onClick={handleAdvanceRound}
+              disabled={!allDecisionsMade}
+              className={cn(
+                "h-10 px-6 font-bold text-xs shrink-0 transition-all flex items-center gap-1.5",
+                allDecisionsMade
+                  ? "bg-slate-900 text-white hover:bg-neutral-700 shadow-sm"
+                  : "bg-neutral-200 text-neutral-400 cursor-not-allowed border-none shadow-none"
+              )}
+            >
+              Proceed to Next Round
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+
         </div>
       </div>
     </div>

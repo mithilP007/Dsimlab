@@ -165,6 +165,18 @@ function computeEstimates(
 
 interface GoogleAdsState {
   campaignName: string
+  objective: string
+  campaignType: string
+  biddingStrategy: string
+  negativeKeywords: string[]
+  landingPage: {
+    pageRelevance: number
+    mobileFriendly: number
+    pageSpeed: number
+    trustSignals: number
+    offerClarity: number
+    conversionReadiness: number
+  }
   dailyBudget: number
   totalBudget: number
   budgetSpent: number
@@ -182,6 +194,12 @@ interface GoogleAdsState {
 
   // Actions
   setCampaignName: (name: string) => void
+  setObjective: (objective: string) => void
+  setCampaignType: (campaignType: string) => void
+  setBiddingStrategy: (biddingStrategy: string) => void
+  addNegativeKeyword: (word: string) => void
+  removeNegativeKeyword: (word: string) => void
+  updateLandingPage: (key: string, value: number) => void
   setDailyBudget: (budget: number) => void
   addKeyword: (keyword: string, bid: number, matchType: MatchType) => void
   removeKeyword: (keyword: string) => void
@@ -204,6 +222,18 @@ const initialEstimates = computeEstimates(DEFAULT_KEYWORDS, 50, DEFAULT_AUDIENCE
 
 export const useGoogleAdsStore = create<GoogleAdsState>((set, get) => ({
   campaignName:         "Footwear Summer Sale 2025",
+  objective:            "Sales",
+  campaignType:         "Search",
+  biddingStrategy:      "Manual CPC",
+  negativeKeywords:     [],
+  landingPage: {
+    pageRelevance: 5,
+    mobileFriendly: 5,
+    pageSpeed: 5,
+    trustSignals: 5,
+    offerClarity: 5,
+    conversionReadiness: 5,
+  },
   dailyBudget:          50,
   totalBudget:          1500,
   budgetSpent:          initialEstimates.budgetSpent,
@@ -220,6 +250,29 @@ export const useGoogleAdsStore = create<GoogleAdsState>((set, get) => ({
   decisionsMade:        false,
 
   setCampaignName: (name) => set({ campaignName: name }),
+
+  setObjective: (objective) => set({ objective }),
+
+  setCampaignType: (campaignType) => set({ campaignType }),
+
+  setBiddingStrategy: (biddingStrategy) => set({ biddingStrategy }),
+
+  addNegativeKeyword: (word) =>
+    set((state) => {
+      const trimmed = word.trim().toLowerCase()
+      if (!trimmed || state.negativeKeywords.includes(trimmed)) return state
+      return { negativeKeywords: [...state.negativeKeywords, trimmed] }
+    }),
+
+  removeNegativeKeyword: (word) =>
+    set((state) => ({
+      negativeKeywords: state.negativeKeywords.filter((w) => w !== word),
+    })),
+
+  updateLandingPage: (key, value) =>
+    set((state) => ({
+      landingPage: { ...state.landingPage, [key]: value },
+    })),
 
   setDailyBudget: (budget) => {
     set({ dailyBudget: budget, totalBudget: budget * 30 })
@@ -302,6 +355,18 @@ export const useGoogleAdsStore = create<GoogleAdsState>((set, get) => ({
     const est = computeEstimates(DEFAULT_KEYWORDS, 50, DEFAULT_AUDIENCES)
     set({
       campaignName:         "Footwear Summer Sale 2025",
+      objective:            "Sales",
+      campaignType:         "Search",
+      biddingStrategy:      "Manual CPC",
+      negativeKeywords:     [],
+      landingPage: {
+        pageRelevance: 5,
+        mobileFriendly: 5,
+        pageSpeed: 5,
+        trustSignals: 5,
+        offerClarity: 5,
+        conversionReadiness: 5,
+      },
       dailyBudget:          50,
       totalBudget:          1500,
       budgetSpent:          est.budgetSpent,

@@ -1,3 +1,4 @@
+// Hot reload trigger to load latest env configuration
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import swagger from '@fastify/swagger';
@@ -29,6 +30,7 @@ import { reportRoutes } from './routes/report.routes';
 import { auditRoutes } from './routes/audit.routes';
 import { requireAuth, AuthenticatedRequest } from './auth/middleware';
 import { apiContractRoutes } from './routes/api-contract.routes';
+import { prisma } from './db/client';
 
 export const app = Fastify({
   logger: false, // We use custom Pino logger
@@ -63,7 +65,7 @@ app.register(swagger, {
     },
     servers: [
       {
-        url: 'http://localhost:3000',
+        url: 'http://localhost:5000',
         description: 'Local development server',
       },
     ],
@@ -202,6 +204,203 @@ app.ready().then(() => {
 });
 
 // Better Auth Web Request Integration
+app.get('/api/auth/me', async (req, reply) => {
+  await requireAuth(req, reply);
+  if (reply.sent) return;
+  const authReq = req as AuthenticatedRequest;
+  const user = authReq.user!;
+  return reply.status(200).send(user);
+});
+
+app.post('/api/auth/register/individual', async (req, reply) => {
+  const method = 'POST';
+  const protocol = req.protocol;
+  const host = req.hostname;
+  const url = `${protocol}://${host}/api/auth/sign-up/email`;
+
+  const headers = new Headers();
+  Object.entries(req.headers).forEach(([key, val]) => {
+    if (val) {
+      if (Array.isArray(val)) {
+        val.forEach(v => headers.append(key, v));
+      } else {
+        headers.set(key, val);
+      }
+    }
+  });
+
+  const rawBody = req.body as Record<string, any>;
+  const body = JSON.stringify({
+    email: rawBody.email,
+    password: rawBody.password,
+    name: rawBody.name,
+    role: 'INDIVIDUAL',
+    institution: rawBody.institution || null,
+    planType: rawBody.planType || '30',
+  });
+
+  const webRequest = new Request(url, {
+    method,
+    headers,
+    body,
+  });
+
+  const webResponse = await auth.handler(webRequest);
+
+  if (webResponse.status >= 200 && webResponse.status < 300) {
+    try {
+      const user = await prisma.user.findUnique({
+        where: { email: rawBody.email }
+      });
+      if (user) {
+        let scenario = await prisma.scenario.findFirst({
+          where: { name: 'Global SaaS Marketing Challenge' }
+        });
+        if (!scenario) {
+          scenario = await prisma.scenario.findFirst();
+        }
+        if (!scenario) {
+          scenario = await prisma.scenario.create({
+            data: {
+              name: 'Global SaaS Marketing Challenge',
+              description: 'Acquire corporate customers for a collaborative cloud CRM tool in a competitive B2B space.',
+              industry: 'B2B Software',
+              startRound: 1,
+              maxRounds: 10,
+              budgetPerRound: 5000.0,
+              baselineOrganicTraffic: 1500,
+              targetKPI: 'revenue',
+            }
+          });
+        }
+
+        let instructor = await prisma.user.findFirst({
+          where: { role: 'INSTRUCTOR' }
+        });
+        if (!instructor) {
+          instructor = await prisma.user.create({
+            data: {
+              email: 'sandbox-instructor@simulation.com',
+              emailVerified: true,
+              name: 'Sandbox Instructor',
+              role: 'INSTRUCTOR',
+            }
+          });
+        }
+
+        let sandboxClass = await prisma.class.findFirst({
+          where: { inviteCode: 'SANDBOX' }
+        });
+        if (!sandboxClass) {
+          sandboxClass = await prisma.class.create({
+            data: {
+              name: 'Individual Sandbox Cohort',
+              inviteCode: 'SANDBOX',
+              instructorId: instructor.id,
+              scenarioId: scenario.id,
+            }
+          });
+        }
+
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { classId: sandboxClass.id }
+        });
+
+        // Initialize state as DECISION_OPEN directly
+        await prisma.simulationState.create({
+          data: {
+            userId: user.id,
+            classId: sandboxClass.id,
+            currentRound: 1,
+            isCompleted: false,
+            status: 'DECISION_OPEN',
+          }
+        });
+      }
+    } catch (dbErr) {
+      logger.error(dbErr, 'Failed to auto-provision sandbox class or state during individual registration');
+    }
+  }
+
+  webResponse.headers.forEach((value, key) => {
+    if (key.toLowerCase() === 'set-cookie') {
+      const cookies = (webResponse.headers as any).getSetCookie 
+        ? (webResponse.headers as any).getSetCookie() 
+        : [value];
+      reply.header('set-cookie', cookies);
+    } else {
+      reply.header(key, value);
+    }
+  });
+  reply.status(webResponse.status);
+  return reply.send(await webResponse.text());
+});
+
+app.post('/api/auth/register/student', async (req, reply) => {
+  const method = 'POST';
+  const protocol = req.protocol;
+  const host = req.hostname;
+  const url = `${protocol}://${host}/api/auth/sign-up/email`;
+
+  const headers = new Headers();
+  Object.entries(req.headers).forEach(([key, val]) => {
+    if (val) {
+      if (Array.isArray(val)) {
+        val.forEach(v => headers.append(key, v));
+      } else {
+        headers.set(key, val);
+      }
+    }
+  });
+
+  const rawBody = req.body as Record<string, any>;
+  const classJoinCode = rawBody.classJoinCode;
+
+  const targetClass = await prisma.class.findUnique({
+    where: { inviteCode: classJoinCode },
+  });
+
+  if (!targetClass) {
+    reply.status(404);
+    return reply.send({
+      success: false,
+      error: 'No class found matching the provided invite code.',
+      message: 'No class found matching the provided invite code.',
+      code: 'NOT_FOUND',
+      statusCode: 404
+    });
+  }
+
+  const body = JSON.stringify({
+    email: rawBody.email,
+    password: rawBody.password,
+    name: rawBody.name,
+    role: 'STUDENT_COLLEGE',
+    classId: targetClass.id,
+  });
+
+  const webRequest = new Request(url, {
+    method,
+    headers,
+    body,
+  });
+
+  const webResponse = await auth.handler(webRequest);
+  webResponse.headers.forEach((value, key) => {
+    if (key.toLowerCase() === 'set-cookie') {
+      const cookies = (webResponse.headers as any).getSetCookie 
+        ? (webResponse.headers as any).getSetCookie() 
+        : [value];
+      reply.header('set-cookie', cookies);
+    } else {
+      reply.header(key, value);
+    }
+  });
+  reply.status(webResponse.status);
+  return reply.send(await webResponse.text());
+});
+
 app.all('/api/auth/*', {
   config: {
     rateLimit: {
@@ -242,7 +441,14 @@ app.all('/api/auth/*', {
 
   // Copy response headers
   webResponse.headers.forEach((value, key) => {
-    reply.header(key, value);
+    if (key.toLowerCase() === 'set-cookie') {
+      const cookies = (webResponse.headers as any).getSetCookie 
+        ? (webResponse.headers as any).getSetCookie() 
+        : [value];
+      reply.header('set-cookie', cookies);
+    } else {
+      reply.header(key, value);
+    }
   });
 
   reply.status(webResponse.status);
@@ -294,6 +500,15 @@ app.get('/api/me', {
     role: user.role,
     institution: user.institution || null,
     planType: user.planType || null,
+  });
+});
+
+app.get('/', async (_request, reply) => {
+  return reply.status(200).send({
+    success: true,
+    status: 'online',
+    message: 'Digital Marketing Simulation Lab API is running.',
+    documentation: '/docs'
   });
 });
 

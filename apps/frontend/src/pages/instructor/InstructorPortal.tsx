@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Progress } from "@/components/ui/progress"
+import { Link } from "react-router"
 import {
   Dialog,
   DialogContent,
@@ -16,7 +17,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { School, Users, TrendingUp, Plus, Clock, ArrowRight, Activity, Calendar, Mail, Sparkles } from "lucide-react"
+import { School, Users, TrendingUp, Plus, Clock, ArrowRight, Activity, Calendar, Mail, Sparkles, ShieldCheck } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 
@@ -96,14 +97,22 @@ export function InstructorPortal() {
   // Active Classes Count
   const activeClassesCount = classes.filter((c) => c.status === "active").length
 
-  // Generate generic activity log from mock students
-  const recentActivities = [
-    { student: "Alexander Wright", action: "Completed SEO Campaign checklist", time: "2 mins ago", class: "MKT 410" },
-    { student: "Sophia Martinez", action: "Submitted Google Ads Round 4 Decisions", time: "5 mins ago", class: "MKT 410" },
-    { student: "Liam Chen", action: "Adjusted Facebook CPC budget bid", time: "15 mins ago", class: "MKT 410" },
-    { student: "Grace Nelson", action: "Completed E-commerce Launch Sprint R3", time: "1 hour ago", class: "MKT 420" },
-    { student: "Henry Foster", action: "Requested Final Certification", time: "2 hours ago", class: "MKT 310" },
-  ]
+  // Generate activity log — uses store students if available, otherwise shows placeholder
+  const recentActivities = students.length > 0
+    ? students.slice(0, 5).map((s, i) => {
+        const status = s.status as string
+        return {
+          student: s.name || `Student ${i + 1}`,
+          action: status === 'completed' ? 'Completed simulation round'
+            : status === 'in-progress' ? 'Submitted campaign decisions'
+            : 'Joined class',
+          time: 'Recently',
+          class: classes.find(c => c.id === s.classId)?.name || 'Class'
+        }
+      })
+    : [
+        { student: "No students yet", action: "Invite students using Join Code or email", time: "—", class: "" },
+      ]
 
   // If a class is selected, render ClassManager view instead
   if (selectedClassId) {
@@ -388,6 +397,17 @@ export function InstructorPortal() {
             </span>
 
             <div className="flex flex-col gap-2.5">
+              {/* Governance Console Link */}
+              <Link to="/instructor/governance">
+                <Button
+                  variant="outline"
+                  className="w-full h-9 font-bold border-neutral-250 bg-white text-xs rounded-xl flex items-center justify-start gap-2 shadow-3xs"
+                >
+                  <ShieldCheck className="h-4 w-4 text-violet-600" />
+                  Governance Console
+                </Button>
+              </Link>
+
               {/* Scenario Builder Trigger */}
               <Dialog open={isScenarioOpen} onOpenChange={setIsScenarioOpen}>
                 <DialogTrigger asChild>

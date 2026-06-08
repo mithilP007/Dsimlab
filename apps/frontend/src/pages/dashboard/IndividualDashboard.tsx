@@ -1,5 +1,7 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { useNavigate } from "react-router"
 import { useAuthStore } from "@/stores/authStore"
+import { useSimulationStore } from "@/stores/simulationStore"
 import { KpiCard } from "@/components/simulation/KpiCard"
 import { MetricSparkline } from "@/components/charts/MetricSparkline"
 import { EmptyState } from "@/components/shared/EmptyState"
@@ -7,6 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 import { Badge } from "@/components/ui/badge"
+import { toast } from "sonner"
 import {
   Activity,
   Calendar,
@@ -17,41 +20,90 @@ import {
   Play,
   RotateCcw,
   ArrowRight,
+  Zap,
 } from "lucide-react"
 
 export function IndividualDashboard() {
+  const navigate = useNavigate()
   const { user } = useAuthStore()
-  const [hasSimulation, setHasSimulation] = useState(true)
+  const { activeSimulation, startSimulation, fetchLatestState, resetSimulation } = useSimulationStore()
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    fetchLatestState().finally(() => {
+      setLoading(false)
+    })
+  }, [fetchLatestState])
+
+  const renderDataModeBadge = () => {
+    return (
+      <Badge className="font-bold text-[9px] uppercase tracking-wider px-2 py-0.5 rounded-full border shadow-2xs transition-colors bg-indigo-500/10 text-indigo-400 border-indigo-500/30 hover:bg-indigo-500/20">
+        <span className="h-1.5 w-1.5 rounded-full mr-1.5 inline-block bg-indigo-400 animate-pulse" />
+        Real-Time Trend-Based Simulation
+      </Badge>
+    )
+  }
+
+  const handleFastForwardDev = async () => {
+    if (!activeSimulation?.id) return
+    setLoading(true)
+    try {
+      const res = await (await import("@/lib/api")).default.post(`/api/simulations/${activeSimulation.id}/fast-forward`)
+      if (res.data?.success) {
+        toast.success("Simulation round advanced instantly via fast-forward!")
+        await fetchLatestState()
+      }
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || "Failed to fast-forward simulation")
+    } finally {
+      setLoading(false)
+    }
+  }
+
 
   // Mock historical data for sparkline
-  const sparklineData = [10, 15, 12, 24, 30, 28, 45]
+  const sparklineData = activeSimulation ? [10, 15, 12, 24, 30, 28, Math.round(activeSimulation.score)] : [0, 0, 0]
 
-  const handleStartSimulation = () => {
-    setHasSimulation(true)
+  const handleStartSimulation = async () => {
+    setLoading(true)
+    try {
+      const sim = await startSimulation()
+      if (sim) {
+        navigate("/simulation/seo")
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Failed to start simulation sandbox")
+    } finally {
+      setLoading(false)
+    }
   }
 
-  const handleDeleteSimulation = () => {
-    setHasSimulation(false)
+  const handleDeleteSimulation = async () => {
+    // Reset simulation locally and locally clear the active session
+    resetSimulation()
+    toast.success("Simulation session cleared. Ready to start new campaign sandbox.")
   }
 
-  // Checklist verification states
-  const checklist = [
-    { label: "Started Simulation", completed: true },
-    { label: "Completed 25%", completed: true },
-    { label: "Completed 50%", completed: false },
-    { label: "Completed 75%", completed: false },
-    { label: "Eligible for Certification", completed: false, isFinal: true },
-  ]
+  if (loading) {
+    return (
+      <div className="min-h-[60vh] flex items-center justify-center p-6 bg-white rounded-2xl border border-neutral-200">
+        <div className="space-y-4 text-center">
+          <div className="h-8 w-8 border-4 border-neutral-900 border-t-transparent rounded-full animate-spin mx-auto" />
+          <p className="text-xs font-bold text-neutral-500">Loading your sandbox space...</p>
+        </div>
+      </div>
+    )
+  }
 
-  if (!hasSimulation) {
+  if (!activeSimulation) {
     return (
       <div className="min-h-[80vh] flex items-center justify-center p-6">
         <div className="w-full max-w-md">
           <EmptyState
             title="Start Your First Simulation"
-            description="Begin your digital marketing journey."
+            description="Create your personalized sandbox simulation workspace to begin practicing keyword bidding, Meta targets, and organic optimization."
             icon={Play}
-            actionText="Start Simulation"
+            actionText="Start Simulation Sandbox"
             onAction={handleStartSimulation}
           />
         </div>
@@ -59,19 +111,49 @@ export function IndividualDashboard() {
     )
   }
 
+  // Map checklist items dynamically from backend values
+  const currentRound = activeSimulation.currentRound
+  const roiValue = Math.round(activeSimulation.score)
+  const progressPct = Math.round(((currentRound - 1) / 10) * 100)
+  const isCompleted = activeSimulation.isCompleted
+
+  const checklist = [
+    { label: "Initialized Simulation Sandbox", completed: true },
+    { label: "Completed Round 1 Campaigns", completed: currentRound > 1 || isCompleted },
+    { label: "Completed Round 5 Milestone", completed: currentRound > 5 || isCompleted },
+    { label: "Completed All Simulation Rounds", completed: isCompleted },
+    { label: "Eligible for Certification Check", completed: isCompleted && roiValue >= 60, isFinal: true },
+  ]
+
+  const daysActive = currentRound - 1
+  const daysRemaining = Math.max(0, 10 - daysActive)
+
   return (
     <div className="space-y-6 text-left">
       {/* Greetings & Admin Controls */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-6 rounded-xl border border-neutral-200/80 shadow-sm">
-        <div className="space-y-1">
-          <h2 className="text-xl font-extrabold text-neutral-900 tracking-tight">
-            Simulation Console
-          </h2>
+        <div className="space-y-1.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-xl font-extrabold text-neutral-900 tracking-tight">
+              Simulation Console
+            </h2>
+            {renderDataModeBadge()}
+          </div>
           <p className="text-xs text-neutral-400 font-semibold uppercase tracking-wider">
             Workspace: {user?.name || "Marketer"} • Individual Sandbox
           </p>
         </div>
         <div className="flex gap-2">
+          {import.meta.env.DEV && (
+            <Button
+              size="sm"
+              className="h-9 text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-semibold flex items-center gap-1.5 shadow-xs"
+              onClick={handleFastForwardDev}
+            >
+              <Zap className="h-3.5 w-3.5" />
+              Fast-Forward (Dev)
+            </Button>
+          )}
           <Button
             size="sm"
             variant="ghost"
@@ -79,37 +161,38 @@ export function IndividualDashboard() {
             onClick={handleDeleteSimulation}
           >
             <RotateCcw className="mr-1 h-3.5 w-3.5" />
-            Reset Simulation
+            Reset Console Session
           </Button>
         </div>
       </div>
+
 
       {/* KPI Section */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiCard
           title="Simulation Progress %"
-          value="45%"
-          trend="+10%"
-          description="completed"
+          value={`${progressPct}%`}
+          trend={isCompleted ? "Completed" : "Active"}
+          description="rounds completed"
           icon={Activity}
         />
         <KpiCard
-          title="Days Remaining"
-          value="15 Days"
-          description="out of 30"
+          title="Rounds Remaining"
+          value={`${daysRemaining} Rounds`}
+          description="out of 10 max rounds"
           icon={Calendar}
         />
         <KpiCard
-          title="Best ROI Score"
-          value="18.5%"
-          trend="+2.4%"
-          description="current record"
+          title="Active Bidding Score"
+          value={`${roiValue}%`}
+          trend={roiValue >= 60 ? "Passing Score" : "Needs Growth"}
+          description="composite performance index"
           icon={TrendingUp}
         />
         <KpiCard
-          title="Certification Status"
-          value="In Progress"
-          description="50% criteria met"
+          title="Certification Eligibility"
+          value={isCompleted && roiValue >= 60 ? "Eligible" : "In Progress"}
+          description={isCompleted && roiValue >= 60 ? "Criteria fully met" : "Complete simulator rounds"}
           icon={Award}
         />
       </div>
@@ -125,7 +208,7 @@ export function IndividualDashboard() {
                 <CardDescription>Metrics progress history over the current round</CardDescription>
               </div>
               <Badge variant="outline" className="text-[10px] font-bold border-neutral-200 uppercase bg-neutral-50 px-2 py-0.5">
-                Active Round
+                Round {currentRound}
               </Badge>
             </CardHeader>
             <CardContent className="space-y-6">
@@ -133,7 +216,7 @@ export function IndividualDashboard() {
               <div className="p-2 border border-neutral-100 rounded-xl bg-neutral-50/50">
                 <div className="flex justify-between items-center text-xs font-bold text-neutral-400 px-2 pb-2">
                   <span>ROI Trend Tracker</span>
-                  <span className="text-neutral-900">Step 7 of 30</span>
+                  <span className="text-neutral-900">Round {currentRound} of 10</span>
                 </div>
                 <MetricSparkline data={sparklineData} height={70} color="#171717" />
               </div>
@@ -142,14 +225,17 @@ export function IndividualDashboard() {
               <div className="space-y-2">
                 <div className="flex justify-between items-center text-xs font-semibold text-neutral-500">
                   <span>Completed Steps</span>
-                  <span className="text-neutral-900 font-bold">45% (13/30 Days)</span>
+                  <span className="text-neutral-900 font-bold">{progressPct}% ({currentRound - 1}/10 Rounds)</span>
                 </div>
-                <Progress value={45} className="h-2" />
+                <Progress value={progressPct} className="h-2" />
               </div>
             </CardContent>
           </div>
           <CardFooter className="pt-2">
-            <Button className="w-full h-11 font-bold bg-neutral-950 text-white hover:bg-neutral-800 shadow-sm">
+            <Button 
+              className="w-full h-11 font-bold bg-neutral-950 text-white hover:bg-neutral-800 shadow-sm"
+              onClick={() => navigate("/simulation/seo")}
+            >
               Continue Simulation
               <ArrowRight className="ml-2 h-4 w-4" />
             </Button>
@@ -180,19 +266,19 @@ export function IndividualDashboard() {
               {/* Remaining Days indicator */}
               <div className="grid grid-cols-2 gap-4 text-left">
                 <div className="p-3 border border-neutral-100 rounded-xl bg-neutral-50/50">
-                  <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wide">Days Active</span>
-                  <span className="text-lg font-black text-neutral-900 block">18 Days</span>
+                  <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wide">Rounds Completed</span>
+                  <span className="text-lg font-black text-neutral-900 block">{currentRound - 1} Rounds</span>
                 </div>
                 <div className="p-3 border border-neutral-100 rounded-xl bg-neutral-50/50">
-                  <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wide">Days Remaining</span>
-                  <span className="text-lg font-black text-neutral-900 block">12 Days</span>
+                  <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wide">Rounds Remaining</span>
+                  <span className="text-lg font-black text-neutral-900 block">{daysRemaining} Rounds</span>
                 </div>
               </div>
             </CardContent>
           </div>
           <CardFooter className="pt-2">
-            <Button variant="outline" className="w-full h-11 font-bold border-neutral-200 hover:bg-neutral-50">
-              Upgrade Subscription Plan
+            <Button variant="outline" className="w-full h-11 font-bold border-neutral-200 hover:bg-neutral-50" disabled>
+              Sandbox Plan Active
             </Button>
           </CardFooter>
         </Card>

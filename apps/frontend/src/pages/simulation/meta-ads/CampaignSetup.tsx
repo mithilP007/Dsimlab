@@ -109,6 +109,19 @@ export function CampaignSetup() {
           </div>
         </div>
 
+        {/* Budget Type */}
+        <div className="space-y-1.5">
+          <label className="text-xs font-bold text-neutral-700">Budget Type</label>
+          <select
+            className="w-full bg-white border border-neutral-200 rounded-xl px-3 py-2 text-xs font-semibold text-neutral-800 outline-none focus:border-neutral-900 transition-all"
+            defaultValue="daily"
+          >
+            <option value="daily">Daily Budget (Individual Ad Set control)</option>
+            <option value="lifetime">Lifetime Budget (Total campaign pacing)</option>
+            <option value="cbo">Campaign Budget Optimization (CBO - AI allocated)</option>
+          </select>
+        </div>
+
         {/* Daily Budget */}
         <div className="space-y-2">
           <div className="flex items-center justify-between">

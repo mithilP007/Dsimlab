@@ -1,6 +1,7 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useCertificationStore } from "@/stores/certificationStore"
 import { useAuthStore } from "@/stores/authStore"
+import { useSimulationStore } from "@/stores/simulationStore"
 import { CertificateViewer } from "./CertificateViewer"
 import { CriteriaConfig } from "./CriteriaConfig"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -21,10 +22,12 @@ import { toast } from "sonner"
 
 export function CertificationCenter() {
   const { user } = useAuthStore()
+  const { activeSimulation } = useSimulationStore()
   const {
     certificates,
     criteriaConfig,
     currentUserProgress,
+    checkEligibility,
     issueCertificate,
     downloadCertificate,
   } = useCertificationStore()
@@ -37,16 +40,26 @@ export function CertificationCenter() {
 
   const isInstructor = user?.role === "instructor"
 
+  useEffect(() => {
+    if (activeSimulation?.id) {
+      checkEligibility(activeSimulation.id)
+    }
+  }, [activeSimulation?.id, checkEligibility])
+
   // Check if current user earned specific cert type
   const getCertStatus = (type: "completion" | "distinction" | "excellence") => {
-    const cert = certificates.find((c) => c.studentName === "Student C (You)" && c.type === type)
+    const cert = certificates.find((c) => c.type === type)
     if (!cert) return "locked"
     return cert.status // 'earned' | 'pending' | 'failed'
   }
 
   const handleClaimCertificate = (type: "completion" | "distinction" | "excellence") => {
-    issueCertificate("Student C (You)", type)
-    toast.success(`Congratulations! You have claimed your ${type.toUpperCase()} Certificate.`)
+    if (activeSimulation?.id) {
+      issueCertificate(user?.name || "Student", type, activeSimulation.id)
+      toast.success(`Congratulations! You have claimed your ${type.toUpperCase()} Certificate.`)
+    } else {
+      toast.error("No active simulation found.")
+    }
   }
 
   const handleDownload = (id: string, format: "pdf" | "png") => {
@@ -118,9 +131,7 @@ export function CertificationCenter() {
   }
 
   // Filter user's actual certificates list for the table
-  const userCertificates = certificates.filter(
-    (c) => c.studentName === "Student C (You)" || c.studentName === "You"
-  )
+  const userCertificates = certificates
 
   const isEligible = (type: "completion" | "distinction" | "excellence") => {
     return currentUserProgress.eligibleFor.includes(type)

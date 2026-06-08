@@ -87,19 +87,42 @@ model Class {
 }
 
 model Scenario {
-  id                     String   @id @default(uuid())
-  name                   String
-  description            String
-  industry               String
-  startRound             Int      @default(1)
-  maxRounds              Int      @default(10)
-  budgetPerRound         Float    @default(5000.0)
-  baselineOrganicTraffic Int      @default(1000)
-  targetKPI              String   @default("revenue") // revenue, clicks, conversions
-  createdAt              DateTime @default(now())
-  updatedAt              DateTime @updatedAt
+  id                            String   @id @default(uuid())
+  name                          String
+  description                   String
+  industry                      String
+  startRound                    Int      @default(1)
+  maxRounds                     Int      @default(10)
+  budgetPerRound                Float    @default(5000.0)
+  baselineOrganicTraffic        Int      @default(1000)
+  targetKPI                     String   @default("revenue") // revenue, clicks, conversions
+  location                      String   @default("Global")
+  durationDays                  Int      @default(30)
+  dailyBudgetCap                Float    @default(50.0)
+  platforms                     String   @default("[\"SEO\", \"GOOGLE_ADS\", \"META_ADS\"]")
+  dataMode                      String   @default("REAL_TIME_TREND_SIMULATION")
+  refreshTrendEveryRound        Boolean  @default(true)
+  
+  // New lab config fields
+  scenarioType                  String   @default("standard")
+  totalBudget                   Float    @default(5000.0)
+  allowedPlatforms              String   @default("[\"SEO\", \"GOOGLE_ADS\", \"META_ADS\"]")
+  allowedGoogleObjectives       String   @default("[\"Sales\", \"Leads\", \"Website Traffic\", \"Brand Awareness\"]")
+  allowedMetaObjectives         String   @default("[\"Awareness\", \"Traffic\", \"Engagement\", \"Leads\", \"Sales\"]")
+  allowedBiddingStrategies      String   @default("[\"Manual CPC\", \"Maximize Clicks\", \"Maximize Conversions\"]")
+  allowedAudienceKeywordOptions String   @default("[]")
+  targetLocations               String   @default("[\"Global\"]")
+  difficulty                    String   @default("medium")
+  marketVolatility              Float    @default(1.0)
+  trendRefreshFrequency         String   @default("daily")
+  scoringWeights                String   @default("{\"alignment\":0.2,\"budget\":0.1,\"optimization\":0.2,\"keywordAudience\":0.2,\"creative\":0.15,\"roi\":0.15}")
+  aiHintsEnabled                Boolean  @default(true)
+  certificateEnabled            Boolean  @default(true)
 
-  classes                Class[]
+  createdAt                     DateTime @default(now())
+  updatedAt                     DateTime @updatedAt
+
+  classes                       Class[]
 }
 
 model SimulationState {
@@ -123,6 +146,7 @@ model SimulationState {
   scoreBreakdowns  ScoreBreakdown[]
   certificates     Certificate[]
   snapshots        RoundSnapshot[]
+  progress         StudentSimulationProgress?
 
   @@index([userId, status])
   @@index([classId, isCompleted])
@@ -257,4 +281,53 @@ model RoundSnapshot {
 
   @@unique([simulationId, round])
   @@index([simulationId, round])
+}
+
+model TrendSnapshot {
+  id           String          @id @default(uuid())
+  simulationId String
+  roundNumber  Int
+  scenarioId   String
+  industry     String
+  location     String
+  platform     String
+  signals      Json            // Stored TrendSignal array or object
+  sources      Json
+  confidence   Float
+  fetchedAt    DateTime
+  createdAt    DateTime        @default(now())
+
+  @@index([simulationId, roundNumber])
+}
+
+model MarketConditionSnapshot {
+  id                 String          @id @default(uuid())
+  simulationId       String
+  roundNumber        Int
+  demandIndex        Float
+  competitionIndex   Float
+  cpcPressure        Float
+  cpmPressure        Float
+  conversionIntent   Float
+  seasonalImpact     Float
+  newsImpact         Float
+  socialBuzzImpact   Float           @default(1.0)
+  platformModifiers  Json
+  createdAt          DateTime        @default(now())
+
+  @@index([simulationId, roundNumber])
+}
+
+model StudentSimulationProgress {
+  id              String          @id @default(uuid())
+  simulationId    String          @unique
+  simulation      SimulationState @relation(fields: [simulationId], references: [id], onDelete: Cascade)
+  currentDay      Int             @default(1)
+  totalDays       Int             @default(30)
+  status          String          @default("DECISION_OPEN")
+  lastSubmittedAt DateTime?
+  nextResultAt    DateTime?
+  completedAt     DateTime?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
 }

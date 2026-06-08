@@ -31,23 +31,17 @@ export function LoginScreen() {
     resolver: zodResolver(loginSchema),
   })
 
-  const onSubmit = (data: LoginFormInputs) => {
+  const onSubmit = async (data: LoginFormInputs) => {
     setIsLoading(true)
-    setTimeout(() => {
-      login(
-        {
-          id: "usr_student",
-          name: "Alex Sandbox",
-          email: data.email,
-          role: "individual",
-          createdAt: new Date().toISOString(),
-        },
-        "mock-jwt-token"
-      )
-      setIsLoading(false)
+    try {
+      await login(data.email, data.password)
       toast.success("Welcome back to SimpLab!")
       navigate("/")
-    }, 800)
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || "Invalid credentials. Please try again.")
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   return (
