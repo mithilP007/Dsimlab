@@ -93,6 +93,13 @@ export interface ResultsState {
   }
   isLoading: boolean
 
+  // Phase 2 Historical/Context Data
+  breakdowns: any[]
+  snapshots: any[]
+  leaderboard: any[]
+  events: any[]
+  allMetrics: any[]
+
   // Actions
   fetchResults: (simulationId: string) => Promise<void>
   calculateResults: () => void
@@ -135,17 +142,23 @@ export const useResultsStore = create<ResultsState>((set, get) => ({
   },
   isLoading: false,
 
+  breakdowns: [],
+  snapshots: [],
+  leaderboard: [],
+  events: [],
+  allMetrics: [],
+
   fetchResults: async (simulationId) => {
     set({ isLoading: true })
     try {
       // 1. Fetch simulation details
       const simRes = await api.get<any>(`/api/simulations/${simulationId}`)
       const sim = simRes.data
+      const currentRoundNum = sim.currentRound
 
       // 2. Fetch score breakdowns
       const breakRes = await api.get<{ success: boolean; breakdowns: any[] }>('/api/v1/scoring/breakdown')
       const breakdowns = breakRes.data?.breakdowns || []
-      const currentRoundNum = sim.currentRound
       
       const latestBreakdown = breakdowns.find((b) => b.round === currentRoundNum)
       const prevBreakdown = breakdowns.find((b) => b.round === currentRoundNum - 1)
@@ -157,11 +170,20 @@ export const useResultsStore = create<ResultsState>((set, get) => ({
       const classRank = currentRankIndex !== -1 ? currentRankIndex + 1 : 1
       const totalStudents = leaderboard.length || 1
 
-      // 4. Fetch daily metrics
-      const metricRes = await api.get<{ success: boolean; metrics: any[] }>(`/api/simulations/${simulationId}/metrics?round=${currentRoundNum}`)
-      const metrics = metricRes.data?.metrics || []
+      // 4. Fetch daily metrics (all rounds)
+      const metricRes = await api.get<{ success: boolean; metrics: any[] }>(`/api/simulations/${simulationId}/metrics`)
+      const allMetrics = metricRes.data?.metrics || []
+      const metrics = allMetrics.filter((m) => m.round === currentRoundNum)
 
-      // Aggregate metrics for SEO/Google/Meta
+      // 5. Fetch triggered events
+      const eventRes = await api.get<{ success: boolean; events: any[] }>(`/api/simulations/${simulationId}/events`)
+      const events = eventRes.data?.events || []
+
+      // 6. Fetch snapshots
+      const snapRes = await api.get<{ success: boolean; snapshots: any[] }>(`/api/simulations/${simulationId}/snapshots`)
+      const snapshots = snapRes.data?.snapshots || []
+
+      // Aggregate metrics for SEO/Google/Meta (Current Round)
       let seoTraffic = 0
       let googleImpressions = 0, googleClicks = 0, googleConversions = 0, googleSpend = 0
       let metaImpressions = 0, metaClicks = 0, metaConversions = 0, metaSpend = 0
@@ -310,6 +332,13 @@ export const useResultsStore = create<ResultsState>((set, get) => ({
         insights,
         badges,
         isLoading: false,
+
+        // Save Raw/History data for Phase 2 components
+        breakdowns,
+        snapshots,
+        leaderboard,
+        events,
+        allMetrics,
       })
     } catch (err) {
       console.error("Failed to fetch results:", err)

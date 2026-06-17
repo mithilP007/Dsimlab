@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useNavigate, Link } from "react-router"
 import { useForm } from "react-hook-form"
 import { z } from "zod"
@@ -13,6 +13,7 @@ import { toast } from "sonner"
 import { School, User, Mail, Lock, ArrowLeft, ArrowRight } from "lucide-react"
 
 const loginSchema = z.object({
+  university: z.string().optional(),
   email: z.string().min(1, "Email is required").email("Please enter a valid email"),
   password: z.string().min(6, "Password must be at least 6 characters"),
 })
@@ -29,9 +30,20 @@ type SignupFormInputs = z.infer<typeof signupSchema>
 
 export function InstructorLogin() {
   const navigate = useNavigate()
-  const { login, registerInstructor } = useAuthStore()
+  const { user, login, registerInstructor, isAuthenticated, logout } = useAuthStore()
   const [activeTab, setActiveTab] = useState("login")
   const [isLoading, setIsLoading] = useState(false)
+
+  // Redirect if already logged in
+  useEffect(() => {
+    if (isAuthenticated) {
+      if (user?.role === "instructor" || user?.role === "admin") {
+        navigate("/instructor", { replace: true })
+      } else {
+        navigate("/", { replace: true })
+      }
+    }
+  }, [isAuthenticated, user, navigate])
 
   const loginForm = useForm<LoginFormInputs>({
     resolver: zodResolver(loginSchema),
@@ -44,11 +56,16 @@ export function InstructorLogin() {
   const onLoginSubmit = async (data: LoginFormInputs) => {
     setIsLoading(true)
     try {
-      await login(data.email, data.password)
+      const loggedUser = await login(data.email, data.password)
+      if (loggedUser.role !== "instructor" && loggedUser.role !== "admin") {
+        await logout()
+        toast.error("Access denied: Student accounts cannot sign in here.")
+        return
+      }
       toast.success("Welcome to the Instructor Dashboard!")
-      navigate("/")
+      navigate("/instructor", { replace: true })
     } catch (err: any) {
-      toast.error(err.response?.data?.message || err.message || "Invalid credentials")
+      toast.error("Invalid email or password. Please try again.")
     } finally {
       setIsLoading(false)
     }
@@ -64,7 +81,7 @@ export function InstructorLogin() {
         institution: data.institutionName,
       })
       toast.success(`Account created for ${data.institutionName}!`)
-      navigate("/")
+      navigate("/", { replace: true })
     } catch (err: any) {
       toast.error(err.response?.data?.message || err.message || "Failed to create instructor account")
     } finally {
@@ -97,12 +114,18 @@ export function InstructorLogin() {
 
         <Card className="border-neutral-200/80 shadow-lg overflow-hidden">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <div className="px-6 pt-6">
-              <TabsList className="grid grid-cols-2 w-full p-0.5 bg-neutral-100 border border-neutral-200/50 h-10">
-                <TabsTrigger value="login" className="h-9 font-semibold text-xs data-[state=active]:bg-white data-[state=active]:text-neutral-900">
+            <div className="px-4 pt-4">
+              <TabsList className="grid grid-cols-2 w-full p-1 bg-neutral-100 border border-neutral-200/50 h-10 rounded-lg">
+                <TabsTrigger
+                  value="login"
+                  className="font-semibold text-xs rounded-md transition-all data-[state=active]:bg-white data-[state=active]:text-neutral-900 data-[state=active]:shadow-sm"
+                >
                   Instructor Sign In
                 </TabsTrigger>
-                <TabsTrigger value="signup" className="h-9 font-semibold text-xs data-[state=active]:bg-white data-[state=active]:text-neutral-900">
+                <TabsTrigger
+                  value="signup"
+                  className="font-semibold text-xs rounded-md transition-all data-[state=active]:bg-white data-[state=active]:text-neutral-900 data-[state=active]:shadow-sm"
+                >
                   Register Account
                 </TabsTrigger>
               </TabsList>
@@ -125,6 +148,23 @@ export function InstructorLogin() {
                       </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
+                      {/* University (cosmetic / display field) */}
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-neutral-700 uppercase" htmlFor="login-university">
+                          University / Institution <span className="text-neutral-400 normal-case font-normal text-[11px]">(optional)</span>
+                        </label>
+                        <div className="relative">
+                          <School className="absolute left-3 top-2.5 h-4 w-4 text-neutral-400" />
+                          <Input
+                            id="login-university"
+                            placeholder="e.g. Stanford University"
+                            className="pl-9 h-10 border-neutral-200"
+                            disabled={isLoading}
+                            {...loginForm.register("university")}
+                          />
+                        </div>
+                      </div>
+
                       {/* Email */}
                       <div className="space-y-1.5">
                         <label className="text-xs font-bold text-neutral-700 uppercase" htmlFor="login-email">

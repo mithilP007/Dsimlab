@@ -3,7 +3,7 @@ import { prisma } from '../../db/client';
 export interface EligibilityResult {
   eligible: boolean;
   reasons: string[];
-  band: 'COMPETENT' | 'PROFICIENT' | 'ADVANCED';
+  band: 'BRONZE' | 'SILVER' | 'GOLD' | 'PLATINUM' | 'COMPETENT' | 'PROFICIENT' | 'ADVANCED';
   compositeScore: number;
   strategicConsistency: number;
 }
@@ -107,7 +107,7 @@ export async function checkCertificateEligibility(simulationId: string): Promise
     return {
       eligible: false,
       reasons: ['Simulation state not found.'],
-      band: 'COMPETENT',
+      band: 'BRONZE',
       compositeScore: 0,
       strategicConsistency: 0,
     };
@@ -151,11 +151,13 @@ export async function checkCertificateEligibility(simulationId: string): Promise
   }
 
   // Determine band
-  let band: 'COMPETENT' | 'PROFICIENT' | 'ADVANCED' = 'COMPETENT';
-  if (compositeScore >= 90.0) {
-    band = 'ADVANCED';
-  } else if (compositeScore >= 80.0) {
-    band = 'PROFICIENT';
+  let band: 'BRONZE' | 'SILVER' | 'GOLD' | 'PLATINUM' | 'COMPETENT' | 'PROFICIENT' | 'ADVANCED' = 'BRONZE';
+  if (compositeScore >= 95.0 && strategicConsistency >= 88.0) {
+    band = 'PLATINUM';
+  } else if (compositeScore >= 90.0 && strategicConsistency >= 80.0) {
+    band = 'GOLD';
+  } else if (compositeScore >= 80.0 && strategicConsistency >= 70.0) {
+    band = 'SILVER';
   }
 
   const eligible = reasons.length === 0;

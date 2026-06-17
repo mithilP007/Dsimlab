@@ -1,4 +1,4 @@
-import { Link } from "react-router"
+import { Link, useNavigate } from "react-router"
 import { motion } from "framer-motion"
 import { Button } from "@/components/ui/button"
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card"
@@ -17,8 +17,20 @@ import {
   ChevronRight,
   ArrowUpRight,
 } from "lucide-react"
+import { useAuthStore } from "@/stores/authStore"
+import { useEffect } from "react"
 
 export function LandingPage() {
+  const navigate = useNavigate()
+  const { isAuthenticated } = useAuthStore()
+
+  // Redirect if already logged in
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate("/", { replace: true })
+    }
+  }, [isAuthenticated, navigate])
+
   const benefits = [
     {
       icon: Search,
@@ -110,7 +122,7 @@ export function LandingPage() {
           </Link>
           <Link to="/signup" className="hidden sm:inline-block">
             <Button size="sm" className="h-9 font-semibold text-xs bg-neutral-950 text-white hover:bg-neutral-800">
-              Start Sandbox
+              Pricing
             </Button>
           </Link>
         </div>
@@ -136,21 +148,21 @@ export function LandingPage() {
           initial={{ opacity: 0, y: 15 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.2, ease: "easeOut" }}
-          className="flex flex-col sm:flex-row gap-3 justify-center w-full max-w-lg"
+          className="flex flex-col sm:flex-row gap-4 justify-center w-full max-w-2xl"
         >
-          <Link to="/signup" className="flex-1">
-            <Button size="lg" className="w-full h-12 text-sm font-bold bg-neutral-950 text-white hover:bg-neutral-800 shadow-md">
-              Start as Individual Learner
+          <Link to="/signup" className="flex-1 min-w-[180px]">
+            <Button size="lg" className="w-full h-12 text-sm font-black bg-neutral-950 text-white hover:bg-neutral-800 shadow-md rounded-xl">
+              Pricing
             </Button>
           </Link>
-          <Link to="/join" className="flex-1">
-            <Button size="lg" variant="outline" className="w-full h-12 text-sm font-bold border-neutral-200 hover:bg-neutral-50">
-              Join a Class
+          <Link to="/join" className="flex-1 min-w-[180px]">
+            <Button size="lg" variant="outline" className="w-full h-12 text-sm font-black border-neutral-200 hover:bg-neutral-50 rounded-xl bg-white text-neutral-800">
+              Join Class
             </Button>
           </Link>
-          <Link to="/instructor-login" className="flex-1">
-            <Button size="lg" variant="secondary" className="w-full h-12 text-sm font-bold bg-neutral-200/50 hover:bg-neutral-200">
-              Instructor Login
+          <Link to="/instructor-login" className="flex-1 min-w-[180px]">
+            <Button size="lg" variant="secondary" className="w-full h-12 text-sm font-black bg-neutral-200/60 hover:bg-neutral-200 text-neutral-800 rounded-xl">
+              Instructor Portal
             </Button>
           </Link>
         </motion.div>
@@ -197,7 +209,7 @@ export function LandingPage() {
                   </ul>
                   <Link to="/signup" className="block pt-4">
                     <Button className="w-full font-bold h-10 bg-neutral-950 text-white hover:bg-neutral-800">
-                      Launch Sandbox
+                      Pricing
                       <ChevronRight className="ml-1 h-4 w-4" />
                     </Button>
                   </Link>
@@ -337,14 +349,14 @@ export function LandingPage() {
             Join thousands of marketers simulating campaigns, ranking organic content, and earning verifiable course achievements.
           </p>
 
-          <div className="pt-2 flex flex-col sm:flex-row gap-3 justify-center max-w-xs mx-auto">
-            <Link to="/signup" className="flex-1">
-              <Button size="lg" className="w-full h-11 text-xs font-bold bg-neutral-950 text-white hover:bg-neutral-800">
-                Start Free
+          <div className="pt-2 flex flex-col sm:flex-row gap-4 justify-center max-w-md mx-auto">
+            <Link to="/signup" className="flex-1 min-w-[160px]">
+              <Button size="lg" className="w-full h-11 text-xs font-black bg-neutral-950 text-white hover:bg-neutral-800 rounded-xl">
+                Pricing
               </Button>
             </Link>
-            <Link to="/instructor-login" className="flex-1">
-              <Button size="lg" variant="outline" className="w-full h-11 text-xs font-bold border-neutral-200 hover:bg-neutral-50">
+            <Link to="/instructor-login" className="flex-1 min-w-[160px]">
+              <Button size="lg" variant="outline" className="w-full h-11 text-xs font-black border-neutral-200 hover:bg-neutral-50 bg-white text-neutral-800 rounded-xl">
                 Instructor Access
               </Button>
             </Link>

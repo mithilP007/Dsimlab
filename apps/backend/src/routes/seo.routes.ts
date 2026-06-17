@@ -3,6 +3,7 @@ import { requireAuth, AuthenticatedRequest } from '../auth/middleware';
 import { prisma } from '../db/client';
 import { z } from 'zod';
 import { ValidationError, NotFoundError } from '../utils/errors';
+import { logActivity, createNotification } from '../utils/audit';
 
 export async function seoRoutes(fastify: FastifyInstance) {
   /**
@@ -90,6 +91,29 @@ export async function seoRoutes(fastify: FastifyInstance) {
       }
     });
 
+    // Write audit log with "fees of operation" (backlink budget spent)
+    await logActivity(
+      authReq.user!.id,
+      'SEO_DECISION_SUBMIT',
+      `Submitted SEO choices for Round ${sim.currentRound}. Targeted keywords: ${parsed.data.seoTargetKeywords.join(', ')}. Backlink Budget Spent: $${parsed.data.seoBacklinkBudget}.`
+    );
+
+    // Notify instructor
+    const targetClass = await prisma.class.findUnique({
+      where: { id: sim.classId },
+      select: { instructorId: true }
+    });
+    if (targetClass?.instructorId) {
+      await createNotification(
+        targetClass.instructorId,
+        'info',
+        'SEO Campaign Updated',
+        `${authReq.user!.name} updated SEO campaign choices. Spent $${parsed.data.seoBacklinkBudget} on backlink budget.`,
+        authReq.user!.name,
+        '/instructor'
+      );
+    }
+
     return reply.status(200).send({
       success: true,
       decision: {
@@ -100,3 +124,4 @@ export async function seoRoutes(fastify: FastifyInstance) {
     });
   });
 }
+

@@ -1,0 +1,88 @@
+name: SimLab CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  validate-and-test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: test_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+
+    - name: Install Monorepo Dependencies
+      run: npm ci
+
+    - name: Install Workspace Dependencies
+      run: |
+        npm run install-all || (cd apps/backend && npm install) && (cd apps/frontend && npm install)
+
+    - name: Backend Lint & Typecheck
+      run: |
+        cd apps/backend
+        npm run build -- --noEmit || npx tsc --noEmit
+
+    - name: Frontend Lint & Typecheck
+      run: |
+        cd apps/frontend
+        npx tsc --noEmit
+
+    - name: Generate Prisma Client
+      env:
+        DATABASE_URL: postgresql://test_user:test_password@localhost:5432/test_db
+      run: |
+        cd apps/backend
+        npx prisma generate
+
+    - name: Run Database Migrations
+      env:
+        DATABASE_URL: postgresql://test_user:test_password@localhost:5432/test_db
+      run: |
+        cd apps/backend
+        npx prisma db push --skip-generate
+
+    - name: Run Backend Integration & Unit Tests
+      env:
+        DATABASE_URL: postgresql://test_user:test_password@localhost:5432/test_db
+        NODE_ENV: test
+        BETTER_AUTH_SECRET: static_testing_secret_must_be_32_chars_long
+      run: |
+        cd apps/backend
+        npm run test
+
+    - name: Build Backend Production Target
+      run: |
+        cd apps/backend
+        npm run build
+
+    - name: Build Frontend Production Assets
+      env:
+        VITE_API_URL: http://localhost:5000
+      run: |
+        cd apps/frontend
+        npm run build

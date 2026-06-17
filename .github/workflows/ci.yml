@@ -1,0 +1,81 @@
+name: SimLab CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build-and-test:
+    name: Build & Test Suite
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: simlab_test
+          POSTGRES_PASSWORD: testpassword
+          POSTGRES_USER: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout Code Repository
+        uses: actions/checkout@v3
+
+      - name: Setup NodeJS Runtime
+        uses: actions/setup-node@v3
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Generate Prisma Clients
+        run: npx prisma generate --schema=apps/backend/src/prisma/schema.prisma
+
+      - name: Run Backend Tests
+        env:
+          DATABASE_URL: postgresql://postgres:testpassword@localhost:5432/simlab_test?schema=public
+          REDIS_URL: redis://localhost:6379
+          BETTER_AUTH_SECRET: local_testing_auth_jwt_secret_32_chars
+        run: npm run test -w apps/backend
+
+      - name: Build Backend Service
+        run: npm run build -w apps/backend
+
+      - name: Build Frontend Application
+        run: npm run build -w apps/frontend
+
+  security-scan:
+    name: Security Vulnerability Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code Repository
+        uses: actions/checkout@v3
+
+      - name: Setup NodeJS Runtime
+        uses: actions/setup-node@v3
+        with:
+          node-version: 20
+
+      - name: Audit NPM Packages
+        run: npm audit --audit-level=high || true

@@ -24,6 +24,18 @@ export async function setupRoundScheduler(): Promise<void> {
       }
     );
     logger.info('Overnight batch scheduler configured for 12:00 AM daily.');
+
+    // Schedule weekly compliance data retention sweep every Sunday at 3:00 AM ('0 3 * * 0')
+    await dailyRoundQueue.add(
+      'data-retention-pruning-job',
+      {},
+      {
+        repeat: {
+          pattern: '0 3 * * 0',
+        },
+      }
+    );
+    logger.info('GDPR data retention pruning scheduler configured for 3:00 AM weekly on Sundays.');
   } catch (err) {
     logger.error(err, 'Failed to register repeatable cron scheduler in BullMQ.');
   }

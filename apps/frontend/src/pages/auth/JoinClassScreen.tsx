@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useNavigate, Link } from "react-router"
 import { useForm } from "react-hook-form"
 import { z } from "zod"
@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card"
 import { toast } from "sonner"
 import { Hash, User, Mail, Lock, ArrowLeft, ArrowRight, ShieldCheck } from "lucide-react"
+import api from "@/lib/api"
 
 const codeSchema = z.object({
   classCode: z
@@ -31,10 +32,17 @@ type AccountFormInputs = z.infer<typeof accountSchema>
 
 export function JoinClassScreen() {
   const navigate = useNavigate()
-  const { registerStudent } = useAuthStore()
+  const { registerStudent, isAuthenticated, user, fetchMe } = useAuthStore()
   const [step, setStep] = useState(1)
   const [validatedCode, setValidatedCode] = useState("")
   const [isLoading, setIsLoading] = useState(false)
+
+  // Redirect if already logged in and belongs to a class
+  useEffect(() => {
+    if (isAuthenticated && user && user.classId) {
+      navigate("/dashboard/student", { replace: true })
+    }
+  }, [isAuthenticated, user, navigate])
 
   // Form hooks for separate steps
   const codeForm = useForm<CodeFormInputs>({
@@ -50,8 +58,28 @@ export function JoinClassScreen() {
     const isValid = await codeForm.trigger()
     if (!isValid) return
 
-    setValidatedCode(codeForm.getValues().classCode.toUpperCase())
-    setStep(2)
+    const code = codeForm.getValues().classCode.toUpperCase()
+    setValidatedCode(code)
+
+    if (isAuthenticated) {
+      setIsLoading(true)
+      try {
+        const res = await api.post("/api/v1/users/join-class", {
+          inviteCode: code,
+        })
+        if (res.status === 200) {
+          toast.success(`Successfully joined classroom: ${res.data.className || code}`)
+          await fetchMe()
+          navigate("/dashboard/student", { replace: true })
+        }
+      } catch (err: any) {
+        toast.error(err.response?.data?.message || err.message || "Failed to join classroom.")
+      } finally {
+        setIsLoading(false)
+      }
+    } else {
+      setStep(2)
+    }
   }
 
   const handleCreateAccount = async (e: React.FormEvent) => {
@@ -69,20 +97,20 @@ export function JoinClassScreen() {
         name,
         classJoinCode: validatedCode,
       })
-      toast.success(`Successfully joined class sandbox ${validatedCode}!`)
+      toast.success(`Successfully joined class ${validatedCode}!`)
       
       const roleStr = (user?.role as string) || ""
       if (roleStr === "admin") {
-        navigate("/admin")
+        navigate("/admin", { replace: true })
       } else if (roleStr === "student-college" || roleStr === "student") {
-        navigate("/dashboard/student")
+        navigate("/dashboard/student", { replace: true })
       } else if (roleStr === "instructor") {
-        navigate("/dashboard/instructor")
+        navigate("/dashboard/instructor", { replace: true })
       } else {
-        navigate("/dashboard/individual")
+        navigate("/dashboard/individual", { replace: true })
       }
     } catch (err: any) {
-      toast.error(err.response?.data?.message || err.message || "Failed to join class sandbox")
+      toast.error(err.response?.data?.message || err.message || "Failed to join class")
     } finally {
       setIsLoading(false)
     }
@@ -157,7 +185,7 @@ export function JoinClassScreen() {
                     <div className="text-center w-full text-xs text-neutral-500">
                       Looking for individual access?{" "}
                       <Link to="/signup" className="font-bold text-neutral-900 hover:underline">
-                        Create standard sandbox
+                        View Pricing
                       </Link>
                     </div>
                   </CardFooter>
@@ -194,7 +222,7 @@ export function JoinClassScreen() {
                         </div>
                         <div>
                           <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wide">Duration</span>
-                          <span className="text-xs font-semibold text-neutral-700 block">Course Sandbox</span>
+                          <span className="text-xs font-semibold text-neutral-700 block">Course Session</span>
                         </div>
                       </div>
                     </div>

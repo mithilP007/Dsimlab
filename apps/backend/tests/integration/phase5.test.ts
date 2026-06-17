@@ -18,6 +18,7 @@ describe('Phase 5: AI Integration & WebSocket Payload Tests', () => {
   const instructorEmail = 'p5-instructor@simulation.com';
   const password = 'SecretPassword123!';
   let studentCookies: any;
+  let instructorCookies: any;
   let studentId: string;
   let classId: string;
   let scenarioId: string;
@@ -68,7 +69,7 @@ describe('Phase 5: AI Integration & WebSocket Payload Tests', () => {
       url: '/api/auth/sign-in/email',
       payload: { email: instructorEmail, password },
     });
-    const instructorCookies = instLogin.headers['set-cookie'];
+    instructorCookies = instLogin.headers['set-cookie'];
 
     const classRes = await app.inject({
       method: 'POST',
@@ -295,4 +296,121 @@ describe('Phase 5: AI Integration & WebSocket Payload Tests', () => {
     expect(typeof config.OLLAMA_MODEL).toBe('string');
     expect(config.OLLAMA_MODEL.length).toBeGreaterThan(0);
   });
+
+  // ─── Phase 5: Reports & Accreditation Center Endpoints ────────────────────
+
+  describe('Report Endpoints', () => {
+    it('GET /api/v1/report/class/:classId/nba returns class NBA reports for instructor', async () => {
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/v1/report/class/${classId}/nba`,
+        headers: { cookie: instructorCookies },
+      });
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.success).toBe(true);
+      expect(body.className).toBeDefined();
+      expect(body.attainments).toBeDefined();
+      expect(body.attainments.co).toBeDefined();
+      expect(body.attainments.po).toBeDefined();
+      expect(body.averages).toBeDefined();
+      expect(body.students).toBeDefined();
+    });
+
+    it('GET /api/v1/report/class/:classId/nba returns 403/401 for students', async () => {
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/v1/report/class/${classId}/nba`,
+        headers: { cookie: studentCookies },
+      });
+      expect(res.statusCode).toBe(403);
+    });
+
+    it('GET /api/v1/report/class/:classId/obe returns OBE reports', async () => {
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/v1/report/class/${classId}/obe`,
+        headers: { cookie: instructorCookies },
+      });
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.success).toBe(true);
+      expect(body.attainments.pso).toBeDefined();
+      expect(body.distribution).toBeDefined();
+      expect(body.recommendations).toBeDefined();
+    });
+
+    it('GET /api/v1/report/class/:classId/accreditation returns accreditation metrics', async () => {
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/v1/report/class/${classId}/accreditation`,
+        headers: { cookie: instructorCookies },
+      });
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.success).toBe(true);
+      expect(body.nbaReadiness).toBeDefined();
+      expect(body.obeReadiness).toBeDefined();
+      expect(body.poCoveragePercent).toBeDefined();
+      expect(body.graduateAttributes).toBeDefined();
+    });
+
+    it('GET /api/v1/report/class/:classId/performance returns performance analytics', async () => {
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/v1/report/class/${classId}/performance`,
+        headers: { cookie: instructorCookies },
+      });
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.success).toBe(true);
+      expect(body.stats).toBeDefined();
+      expect(body.stats.average).toBeDefined();
+      expect(body.stats.highest).toBeDefined();
+      expect(body.stats.median).toBeDefined();
+      expect(body.leaderboard).toBeDefined();
+    });
+
+    it('GET /api/v1/report/student/:studentId returns student-specific reports', async () => {
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/v1/report/student/${studentId}`,
+        headers: { cookie: instructorCookies },
+      });
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.success).toBe(true);
+      expect(body.studentName).toBe('Student P5');
+      expect(body.history).toBeDefined();
+      expect(body.recommendations).toBeDefined();
+    });
+
+    it('GET /api/v1/report/instructor/comparisons returns instructor comparative metrics', async () => {
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/v1/report/instructor/comparisons',
+        headers: { cookie: instructorCookies },
+      });
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.success).toBe(true);
+      expect(body.comparisons).toBeDefined();
+    });
+
+    it('GET /api/v1/report/class/:classId/ai-insights returns diagnostic cohort feedback', async () => {
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/v1/report/class/${classId}/ai-insights`,
+        headers: { cookie: instructorCookies },
+      });
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.success).toBe(true);
+      expect(body.strengths).toBeDefined();
+      expect(body.weaknesses).toBeDefined();
+      expect(body.riskIndicators).toBeDefined();
+      expect(body.accreditationSuggestions).toBeDefined();
+    });
+  });
 });
+

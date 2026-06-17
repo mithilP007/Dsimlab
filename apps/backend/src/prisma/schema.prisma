@@ -19,6 +19,15 @@ model User {
   planType      String?
   classId       String?
   class         Class?    @relation("ClassStudents", fields: [classId], references: [id], onDelete: SetNull)
+  
+  // Custom instructor details fields
+  phoneNumber    String?
+  universityRole String?
+  age            Int?
+  gender         String?
+  category       String?
+  status         String    @default("active") // active, suspended, pending
+
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
@@ -34,6 +43,12 @@ model User {
   // Student relations
   simulations   SimulationState[]
   auditLogs     AuditLog[]
+  notifications Notification[]
+
+  // Billing relations
+  subscriptions Subscription[]
+  invoices      Invoice[]
+  couponUsages  CouponUsage[]
 }
 
 model Session {
@@ -46,6 +61,8 @@ model Session {
   userAgent String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([userId])
 }
 
 model Account {
@@ -60,6 +77,8 @@ model Account {
   password     String?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
+
+  @@index([userId])
 }
 
 model Verification {
@@ -84,6 +103,9 @@ model Class {
   simulations  SimulationState[]
   createdAt    DateTime          @default(now())
   updatedAt    DateTime          @updatedAt
+
+  @@index([instructorId])
+  @@index([scenarioId])
 }
 
 model Scenario {
@@ -259,6 +281,9 @@ model Certificate {
   band               String          @default("COMPETENT")
   skills             String          @default("[]")
   createdAt          DateTime        @default(now())
+
+  @@index([userId])
+  @@index([simulationId])
 }
 
 model AuditLog {
@@ -269,6 +294,9 @@ model AuditLog {
   details            String
   ipAddress          String?
   createdAt          DateTime        @default(now())
+
+  @@index([userId])
+  @@index([createdAt])
 }
 
 model RoundSnapshot {
@@ -331,3 +359,152 @@ model StudentSimulationProgress {
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
 }
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String   // info, success, warning, achievement
+  title     String
+  message   String
+  read      Boolean  @default(false)
+  link      String?
+  actor     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([userId, read])
+}
+
+model Plan {
+  id                String         @id @default(uuid())
+  name              String         @unique // Free Trial, Individual Basic, Individual Pro, Instructor, College, Enterprise
+  code              String         @unique // free, individual_basic, individual_pro, instructor, college, enterprise
+  priceMonthly      Float
+  priceYearly       Float
+  currency          String         @default("INR")
+  simulationLimit   Int            // -1 for unlimited
+  studentLimit      Int            // Max students per class
+  instructorLimit   Int            // Max instructors under a college
+  certificateLimit  Int
+  reportExportLimit Int
+  storageLimitMb    Int            @default(50)
+  features          String         // JSON array of strings
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  subscriptions     Subscription[]
+}
+
+model Subscription {
+  id                   String         @id @default(uuid())
+  userId               String
+  user                 User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  planId               String
+  plan                 Plan           @relation(fields: [planId], references: [id])
+  status               String         // active, trialing, past_due, cancelled, expired
+  billingCycle         String         // monthly, yearly, trial
+  startDate            DateTime       @default(now())
+  endDate              DateTime
+  cancelAtPeriodEnd    Boolean        @default(false)
+  gatewaySubscriptionId String?        @unique
+  gatewayCustomerId    String?
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  invoices             Invoice[]
+  payments             Payment[]
+  couponUsages         CouponUsage[]
+
+  @@index([userId, status])
+  @@index([planId])
+}
+
+model Invoice {
+  id             String        @id @default(uuid())
+  userId         String
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscriptionId String
+  subscription   Subscription  @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  invoiceNumber  String        @unique // INV-YYYY-XXXX
+  amount         Float
+  tax            Float         @default(0.0)
+  currency       String        @default("INR")
+  status         String        // paid, unpaid, void, refunded
+  pdfUrl         String?
+  billingAddress String?
+  taxDetails     String?       // GSTIN or Tax identification
+  dueDate        DateTime?
+  paidAt         DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  payments       Payment[]
+
+  @@index([userId])
+  @@index([subscriptionId])
+}
+
+model Payment {
+  id               String        @id @default(uuid())
+  subscriptionId   String?
+  subscription     Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  invoiceId        String?
+  invoice          Invoice?      @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  amount           Float
+  currency         String        @default("INR")
+  status           String        // captured, failed, pending, refunded
+  gateway          String        @default("razorpay")
+  gatewayPaymentId String        @unique
+  gatewayOrderId   String?
+  gatewaySignature String?
+  refundedAmount   Float         @default(0.0)
+  errorMessage     String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  @@index([subscriptionId])
+  @@index([invoiceId])
+}
+
+model Coupon {
+  id              String        @id @default(uuid())
+  code            String        @unique
+  discountType    String        // percentage, flat, trial_extension
+  discountValue   Float
+  durationMonths  Int?          // Null means lifetime/forever
+  expirationDate  DateTime?
+  maxRedemptions  Int?
+  redemptionsCount Int          @default(0)
+  isActive        Boolean       @default(true)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  usages          CouponUsage[]
+}
+
+model CouponUsage {
+  id             String       @id @default(uuid())
+  couponId       String
+  coupon         Coupon       @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscriptionId String
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  usedAt         DateTime     @default(now())
+
+  @@index([userId])
+  @@index([couponId])
+  @@index([subscriptionId])
+}
+
+model BillingEvent {
+  id         String   @id @default(uuid())
+  eventType  String
+  payload    String   // JSON string
+  processed  Boolean  @default(false)
+  error      String?
+  createdAt  DateTime @default(now())
+}
+

@@ -102,6 +102,12 @@ export function useSocket() {
           fetchMetrics(),
           fetchSnapshots()
         ]);
+        try {
+          const { useLeaderboardStore } = await import('../stores/leaderboardStore');
+          await useLeaderboardStore.getState().fetchLeaderboard();
+        } catch (err) {
+          console.warn("Failed to refresh classmate leaderboard on socket update:", err);
+        }
       }
       setIsLoading(false);
     });

@@ -9,11 +9,26 @@ export const api = axios.create({
   withCredentials: true, // Ensures session cookies are sent automatically
 });
 
+const generateUUID = () => {
+  if (typeof window !== 'undefined' && window.crypto && window.crypto.randomUUID) {
+    return window.crypto.randomUUID();
+  }
+  return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+};
+
 // Request Interceptor
 api.interceptors.request.use(
   (reqConfig) => {
-    // If the browser already has the better-auth cookie, it will be sent automatically
-    // due to withCredentials: true. No manual authorization header is required.
+    if (!reqConfig.headers['x-correlation-id']) {
+      reqConfig.headers['x-correlation-id'] = generateUUID();
+    }
+
+    if (['post', 'put', 'patch', 'delete'].includes(reqConfig.method?.toLowerCase() || '')) {
+      if (!reqConfig.headers['x-idempotency-key']) {
+        reqConfig.headers['x-idempotency-key'] = generateUUID();
+      }
+    }
+
     return reqConfig;
   },
   (error) => {
@@ -41,6 +56,9 @@ api.interceptors.response.use(
     uiStore.setConnectionError(null);
 
     const { status } = error.response;
+    const correlationId = error.response.headers?.['x-correlation-id'] || error.response.data?.correlationId;
+    const traceText = correlationId ? ` (Trace: ${correlationId})` : '';
+
     if (status === 401) {
       const currentPath = window.location.pathname + window.location.search;
       const isPublicPath = 
@@ -53,9 +71,11 @@ api.interceptors.response.use(
         window.location.href = `/login?redirect=${encodeURIComponent(currentPath)}`;
       }
     } else if (status === 403) {
-      toast.error("Access denied.");
+      toast.error(`Access denied.${traceText}`);
+    } else if (status === 429) {
+      toast.error(error.response.data?.message || `Rate limit exceeded. Please retry later.${traceText}`);
     } else if (status === 500) {
-      toast.error("Server error. Please try again.");
+      toast.error(`Internal server error. Our engineering team has been notified.${traceText}`);
     }
 
     return Promise.reject(error);

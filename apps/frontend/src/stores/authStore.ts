@@ -91,7 +91,7 @@ export const useAuthStore = create<AuthState>()(
           console.error("Sign out request failed", err);
         }
         set({ user: null, role: null, isAuthenticated: false });
-        window.location.href = '/';
+        window.location.href = '/login';
       },
 
       setUser: (user) => set({ user, role: user ? user.role : null, isAuthenticated: !!user }),

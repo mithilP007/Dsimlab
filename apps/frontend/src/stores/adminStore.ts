@@ -1,4 +1,5 @@
 import { create } from "zustand"
+import api from "@/lib/api"
 
 export interface AdminUser {
   id: string
@@ -10,6 +11,12 @@ export interface AdminUser {
   lastLogin: string
   classCount: number
   totalScore: number
+  phoneNumber?: string
+  universityRole?: string
+  age?: number
+  gender?: string
+  category?: string
+  institution?: string
 }
 
 export interface AdminClass {
@@ -25,10 +32,12 @@ export interface AdminClass {
 export interface SystemStats {
   totalUsers: number
   activeUsers: number
-  totalClasses: number
-  simulationsRun: number
-  avgPlatformScore: number
-  newUsersThisWeek: number
+  students: number
+  instructors: number
+  colleges: number
+  activeSimulations: number
+  certificatesIssued: number
+  totalRevenue: number
 }
 
 export interface SystemSettings {
@@ -36,14 +45,65 @@ export interface SystemSettings {
   maxStudentsPerClass: number
   defaultRounds: number
   maintenanceMode: boolean
-  // Certificate limits
   minScoreGold: number
   minScoreSilver: number
   minScoreBronze: number
-  // Budget & notification defaults
   defaultBudget: number
   autoEmailToggle: boolean
   digestFrequency: "daily" | "weekly" | "monthly"
+}
+
+export interface InstitutionProfile {
+  name: string
+  studentsCount: number
+  instructorCount: number
+  completionRate: number
+  certificationRate: number
+  status: "active" | "suspended"
+}
+
+export interface AuditLogEntry {
+  id: string
+  timestamp: string
+  actorName: string
+  actorEmail: string
+  action: string
+  target: string
+  status: string
+}
+
+export interface SystemHealthData {
+  api: string
+  database: string
+  dbLatencyMs: number
+  websocket: string
+  websocketConnections: number
+  cpuUsage?: number
+  memory: {
+    heapUsedMb: number
+    heapTotalMb: number
+  }
+  storage: {
+    usedBytes: number
+    totalBytes: number
+    percentage: number
+  }
+  queueHealth?: {
+    roundQueue: { waiting: number; active: number; completed: number; failed: number }
+    certificateQueue: { waiting: number; active: number; completed: number; failed: number }
+    reportQueue: { waiting: number; active: number; completed: number; failed: number }
+    notificationQueue: { waiting: number; active: number; completed: number; failed: number }
+  } | null
+  recentErrors: string[]
+}
+
+export interface AnalyticsOverviewData {
+  growth: {
+    month: string
+    users: number
+    simulations: number
+    certificates: number
+  }[]
 }
 
 interface AdminStoreState {
@@ -51,63 +111,38 @@ interface AdminStoreState {
   classes: AdminClass[]
   systemStats: SystemStats
   settings: SystemSettings
+  institutions: InstitutionProfile[]
+  auditLogs: AuditLogEntry[]
+  systemHealth: SystemHealthData | null
+  analyticsOverview: AnalyticsOverviewData | null
+  recentActivity: any[]
+  isLoading: boolean
 
   // Actions
-  suspendUser: (id: string) => void
-  activateUser: (id: string) => void
-  changeUserRole: (id: string, role: "student" | "instructor" | "admin") => void
-  deleteUser: (id: string) => void
+  fetchDashboardStats: () => Promise<void>
+  fetchUsers: () => Promise<void>
+  suspendUser: (id: string) => Promise<void>
+  activateUser: (id: string) => Promise<void>
+  changeUserRole: (id: string, role: "student" | "instructor" | "admin") => Promise<void>
+  deleteUser: (id: string) => Promise<void>
+  addUser: (user: Omit<AdminUser, "id" | "joinedAt" | "lastLogin">) => Promise<void>
+  resetUserPassword: (id: string) => Promise<void>
+  bulkUserAction: (userIds: string[], action: "suspend" | "activate" | "delete") => Promise<void>
+  
+  fetchInstitutions: () => Promise<void>
+  renameInstitution: (name: string, newName: string) => Promise<void>
+  deactivateInstitution: (name: string) => Promise<void>
+  reactivateInstitution: (name: string) => Promise<void>
+  
+  fetchAuditLogs: () => Promise<void>
+  fetchAnalyticsOverview: () => Promise<void>
+  fetchSystemHealth: () => Promise<void>
+  broadcastNotification: (payload: { title: string; message: string; targetRole?: string; targetInstitution?: string }) => Promise<void>
+  
   archiveClass: (id: string) => void
   deleteClass: (id: string) => void
   updateSettings: (settings: Partial<SystemSettings>) => void
-  addUser: (user: Omit<AdminUser, "id" | "joinedAt" | "lastLogin">) => void
 }
-
-// ─── Mock Data Generators ───────────────────────────────────────────────────
-
-const MOCK_USERS: AdminUser[] = [
-  { id: "usr_1", name: "Alex Sandbox", email: "alex.sandbox@simplab.dev", role: "student", status: "active", joinedAt: "2026-05-01", lastLogin: "2 mins ago", classCount: 1, totalScore: 88.5 },
-  { id: "usr_2", name: "Professor Green", email: "p.green@simplab.dev", role: "instructor", status: "active", joinedAt: "2026-04-15", lastLogin: "5 mins ago", classCount: 3, totalScore: 0 },
-  { id: "usr_3", name: "Admin Manager", email: "admin@simplab.dev", role: "admin", status: "active", joinedAt: "2026-01-01", lastLogin: "Just now", classCount: 0, totalScore: 0 },
-  { id: "usr_4", name: "Sophia Martinez", email: "sophia.m@univ.edu", role: "student", status: "active", joinedAt: "2026-05-02", lastLogin: "15 mins ago", classCount: 1, totalScore: 94.2 },
-  { id: "usr_5", name: "Ethan Thomas", email: "ethan.t@univ.edu", role: "student", status: "suspended", joinedAt: "2026-05-03", lastLogin: "3 days ago", classCount: 1, totalScore: 71.0 },
-  { id: "usr_6", name: "Dr. Rachel Carter", email: "r.carter@statecollege.edu", role: "instructor", status: "active", joinedAt: "2026-03-20", lastLogin: "1 day ago", classCount: 2, totalScore: 0 },
-  { id: "usr_7", name: "Olivia Vance", email: "o.vance@univ.edu", role: "student", status: "pending", joinedAt: "2026-06-02", lastLogin: "Never", classCount: 0, totalScore: 0 },
-  { id: "usr_8", name: "Marcus Aurelius", email: "marcus@rome.edu", role: "student", status: "active", joinedAt: "2026-05-10", lastLogin: "2 hours ago", classCount: 1, totalScore: 85.0 },
-  { id: "usr_9", name: "Lucy Heartfilia", email: "lucy@fairy.edu", role: "student", status: "active", joinedAt: "2026-05-12", lastLogin: "4 hours ago", classCount: 1, totalScore: 92.4 },
-  { id: "usr_10", name: "Natsu Dragneel", email: "natsu@fairy.edu", role: "student", status: "suspended", joinedAt: "2026-05-12", lastLogin: "5 days ago", classCount: 1, totalScore: 54.0 },
-  { id: "usr_11", name: "Gray Fullbuster", email: "gray@fairy.edu", role: "student", status: "active", joinedAt: "2026-05-13", lastLogin: "10 mins ago", classCount: 1, totalScore: 89.8 },
-  { id: "usr_12", name: "Erza Scarlet", email: "erza@fairy.edu", role: "student", status: "active", joinedAt: "2026-05-13", lastLogin: "1 hour ago", classCount: 1, totalScore: 99.1 },
-  { id: "usr_13", name: "Wendy Marvell", email: "wendy@fairy.edu", role: "student", status: "pending", joinedAt: "2026-06-03", lastLogin: "Never", classCount: 0, totalScore: 0 },
-  { id: "usr_14", name: "Gajeel Redfox", email: "gajeel@fairy.edu", role: "student", status: "active", joinedAt: "2026-05-14", lastLogin: "2 days ago", classCount: 1, totalScore: 78.6 },
-  { id: "usr_15", name: "Mirajane Strauss", email: "mira@fairy.edu", role: "student", status: "active", joinedAt: "2026-05-14", lastLogin: "3 hours ago", classCount: 1, totalScore: 95.0 },
-  { id: "usr_16", name: "Laxus Dreyar", email: "laxus@fairy.edu", role: "student", status: "active", joinedAt: "2026-05-15", lastLogin: "1 day ago", classCount: 1, totalScore: 91.5 },
-  { id: "usr_17", name: "Juvia Lockser", email: "juvia@fairy.edu", role: "student", status: "active", joinedAt: "2026-05-15", lastLogin: "45 mins ago", classCount: 1, totalScore: 83.0 },
-  { id: "usr_18", name: "Gildarts Clive", email: "gildarts@fairy.edu", role: "instructor", status: "active", joinedAt: "2026-02-10", lastLogin: "2 weeks ago", classCount: 1, totalScore: 0 },
-  { id: "usr_19", name: "Makarov Dreyar", email: "master@fairy.edu", role: "admin", status: "active", joinedAt: "2026-01-01", lastLogin: "12 hours ago", classCount: 0, totalScore: 0 },
-  { id: "usr_20", name: "Cana Alberona", email: "cana@fairy.edu", role: "student", status: "active", joinedAt: "2026-05-16", lastLogin: "30 mins ago", classCount: 1, totalScore: 77.2 },
-  { id: "usr_21", name: "Levy McGarden", email: "levy@fairy.edu", role: "student", status: "active", joinedAt: "2026-05-16", lastLogin: "15 mins ago", classCount: 1, totalScore: 96.5 },
-  { id: "usr_22", name: "Happy Exceed", email: "happy@fairy.edu", role: "student", status: "active", joinedAt: "2026-05-17", lastLogin: "5 mins ago", classCount: 1, totalScore: 68.0 },
-  { id: "usr_23", name: "Carla Exceed", email: "carla@fairy.edu", role: "student", status: "active", joinedAt: "2026-05-17", lastLogin: "4 hours ago", classCount: 1, totalScore: 86.4 },
-  { id: "usr_24", name: "Lily Panther", email: "lily@fairy.edu", role: "student", status: "suspended", joinedAt: "2026-05-18", lastLogin: "4 days ago", classCount: 1, totalScore: 72.8 },
-  { id: "usr_25", name: "Professor Birch", email: "birch@hoenn.edu", role: "instructor", status: "active", joinedAt: "2026-03-01", lastLogin: "1 day ago", classCount: 1, totalScore: 0 },
-  { id: "usr_26", name: "May Maple", email: "may@hoenn.edu", role: "student", status: "active", joinedAt: "2026-05-20", lastLogin: "2 hours ago", classCount: 1, totalScore: 84.1 },
-  { id: "usr_27", name: "Brendan Birch", email: "brendan@hoenn.edu", role: "student", status: "active", joinedAt: "2026-05-20", lastLogin: "3 hours ago", classCount: 1, totalScore: 89.0 },
-  { id: "usr_28", name: "Wally Ralts", email: "wally@hoenn.edu", role: "student", status: "pending", joinedAt: "2026-06-04", lastLogin: "Never", classCount: 0, totalScore: 0 },
-  { id: "usr_29", name: "Steven Stone", email: "steven@champion.edu", role: "student", status: "active", joinedAt: "2026-05-22", lastLogin: "5 mins ago", classCount: 1, totalScore: 98.7 },
-  { id: "usr_30", name: "Wallace Gym", email: "wallace@sootopolis.edu", role: "student", status: "active", joinedAt: "2026-05-25", lastLogin: "1 hour ago", classCount: 1, totalScore: 90.5 }
-]
-
-const MOCK_CLASSES: AdminClass[] = [
-  { id: "cls_1", name: "MKT 410: Advanced Digital Marketing", instructor: "Professor Green", students: 12, status: "active", createdAt: "2026-05-01", avgScore: 84.5 },
-  { id: "cls_2", name: "MKT 420: Social Media Strategy", instructor: "Professor Green", students: 8, status: "active", createdAt: "2026-05-10", avgScore: 78.2 },
-  { id: "cls_3", name: "MKT 310: Intro to Advertising", instructor: "Professor Green", students: 5, status: "archived", createdAt: "2026-04-15", avgScore: 81.0 },
-  { id: "cls_4", name: "MKT 501: MBA Growth Lab", instructor: "Dr. Rachel Carter", students: 18, status: "active", createdAt: "2026-05-20", avgScore: 88.6 },
-  { id: "cls_5", name: "MKT 305: Brand Development", instructor: "Dr. Rachel Carter", students: 15, status: "active", createdAt: "2026-05-22", avgScore: 82.1 },
-  { id: "cls_6", name: "MKT 460: Campaign Analytics", instructor: "Gildarts Clive", students: 22, status: "active", createdAt: "2026-05-15", avgScore: 85.3 },
-  { id: "cls_7", name: "MKT 220: Marketing Fundamentals", instructor: "Professor Birch", students: 25, status: "active", createdAt: "2026-05-20", avgScore: 79.4 },
-  { id: "cls_8", name: "MKT 610: Doctoral Seminar", instructor: "Dr. Rachel Carter", students: 4, status: "archived", createdAt: "2026-04-01", avgScore: 91.2 }
-]
 
 const INITIAL_SETTINGS: SystemSettings = {
   registrationOpen: true,
@@ -122,69 +157,273 @@ const INITIAL_SETTINGS: SystemSettings = {
   digestFrequency: "weekly",
 }
 
-// ─── Store Creation ──────────────────────────────────────────────────────────
-
-export const useAdminStore = create<AdminStoreState>()((set) => ({
-  users: MOCK_USERS,
-  classes: MOCK_CLASSES,
+export const useAdminStore = create<AdminStoreState>()((set, get) => ({
+  users: [],
+  classes: [],
   systemStats: {
-    totalUsers: MOCK_USERS.length,
-    activeUsers: MOCK_USERS.filter((u) => u.status === "active").length,
-    totalClasses: MOCK_CLASSES.length,
-    simulationsRun: 147,
-    avgPlatformScore: 82.4,
-    newUsersThisWeek: 6,
+    totalUsers: 0,
+    activeUsers: 0,
+    students: 0,
+    instructors: 0,
+    colleges: 0,
+    activeSimulations: 0,
+    certificatesIssued: 0,
+    totalRevenue: 0
   },
   settings: INITIAL_SETTINGS,
+  institutions: [],
+  auditLogs: [],
+  systemHealth: null,
+  analyticsOverview: null,
+  recentActivity: [],
+  isLoading: false,
 
-  suspendUser: (id) => {
-    set((state) => {
-      const nextUsers = state.users.map((u) =>
-        u.id === id ? { ...u, status: "suspended" as const } : u
-      )
-      return {
-        users: nextUsers,
-        systemStats: {
-          ...state.systemStats,
-          activeUsers: nextUsers.filter((u) => u.status === "active").length,
-        },
+  fetchDashboardStats: async () => {
+    set({ isLoading: true })
+    try {
+      const res = await api.get<{ success: boolean; stats: SystemStats; recentActivity: any[] }>("/api/v1/admin/dashboard-stats")
+      if (res.data.success) {
+        set({
+          systemStats: res.data.stats,
+          recentActivity: res.data.recentActivity,
+          isLoading: false
+        })
       }
-    })
+    } catch (err) {
+      console.error("Failed to fetch dashboard stats", err)
+      set({ isLoading: false })
+    }
   },
 
-  activateUser: (id) => {
-    set((state) => {
-      const nextUsers = state.users.map((u) =>
-        u.id === id ? { ...u, status: "active" as const } : u
-      )
-      return {
-        users: nextUsers,
-        systemStats: {
-          ...state.systemStats,
-          activeUsers: nextUsers.filter((u) => u.status === "active").length,
-        },
+  fetchUsers: async () => {
+    set({ isLoading: true })
+    try {
+      const res = await api.get<{ success: boolean; users: AdminUser[] }>("/api/v1/users")
+      if (res.data.success) {
+        const usersList = res.data.users
+        set((state) => ({
+          users: usersList,
+          systemStats: {
+            ...state.systemStats,
+            totalUsers: usersList.length,
+            activeUsers: usersList.filter((u) => u.status === "active").length,
+          },
+          isLoading: false
+        }))
       }
-    })
+    } catch (err) {
+      console.error("Failed to fetch users", err)
+      set({ isLoading: false })
+    }
   },
 
-  changeUserRole: (id, role) => {
-    set((state) => ({
-      users: state.users.map((u) => (u.id === id ? { ...u, role } : u)),
-    }))
+  suspendUser: async (id) => {
+    try {
+      await api.post(`/api/v1/users/${id}/suspend`)
+      set((state) => {
+        const nextUsers = state.users.map((u) =>
+          u.id === id ? { ...u, status: "suspended" as const } : u
+        )
+        return {
+          users: nextUsers,
+          systemStats: {
+            ...state.systemStats,
+            activeUsers: nextUsers.filter((u) => u.status === "active").length,
+          },
+        }
+      })
+    } catch (err) {
+      console.error("Failed to suspend user", err)
+      throw err
+    }
   },
 
-  deleteUser: (id) => {
-    set((state) => {
-      const nextUsers = state.users.filter((u) => u.id !== id)
-      return {
-        users: nextUsers,
-        systemStats: {
-          ...state.systemStats,
-          totalUsers: nextUsers.length,
-          activeUsers: nextUsers.filter((u) => u.status === "active").length,
-        },
+  activateUser: async (id) => {
+    try {
+      await api.post(`/api/v1/users/${id}/activate`)
+      set((state) => {
+        const nextUsers = state.users.map((u) =>
+          u.id === id ? { ...u, status: "active" as const } : u
+        )
+        return {
+          users: nextUsers,
+          systemStats: {
+            ...state.systemStats,
+            activeUsers: nextUsers.filter((u) => u.status === "active").length,
+          },
+        }
+      })
+    } catch (err) {
+      console.error("Failed to activate user", err)
+      throw err
+    }
+  },
+
+  changeUserRole: async (id, role) => {
+    try {
+      await api.post(`/api/v1/users/assign-role`, { userId: id, role })
+      set((state) => ({
+        users: state.users.map((u) => (u.id === id ? { ...u, role } : u)),
+      }))
+    } catch (err) {
+      console.error("Failed to change user role", err)
+      throw err
+    }
+  },
+
+  deleteUser: async (id) => {
+    try {
+      await api.delete(`/api/v1/users/${id}`)
+      set((state) => {
+        const nextUsers = state.users.filter((u) => u.id !== id)
+        return {
+          users: nextUsers,
+          systemStats: {
+            ...state.systemStats,
+            totalUsers: nextUsers.length,
+            activeUsers: nextUsers.filter((u) => u.status === "active").length,
+          },
+        }
+      })
+    } catch (err) {
+      console.error("Failed to delete user", err)
+      throw err
+    }
+  },
+
+  addUser: async (user) => {
+    try {
+      const res = await api.post<{ success: boolean; user: AdminUser }>(`/api/v1/users/provision`, user)
+      if (res.data.success) {
+        set((state) => {
+          const nextUsers = [...state.users, res.data.user]
+          return {
+            users: nextUsers,
+            systemStats: {
+              ...state.systemStats,
+              totalUsers: nextUsers.length,
+              activeUsers: nextUsers.filter((u) => u.status === "active").length,
+            },
+          }
+        })
       }
-    })
+    } catch (err) {
+      console.error("Failed to provision user", err)
+      throw err
+    }
+  },
+
+  resetUserPassword: async (id) => {
+    try {
+      await api.post(`/api/v1/admin/users/${id}/reset-password`)
+    } catch (err) {
+      console.error("Failed to reset password", err)
+      throw err
+    }
+  },
+
+  bulkUserAction: async (userIds, action) => {
+    try {
+      await api.post(`/api/v1/admin/users/bulk-action`, { userIds, action })
+      await get().fetchUsers()
+    } catch (err) {
+      console.error("Failed to execute bulk user action", err)
+      throw err
+    }
+  },
+
+  fetchInstitutions: async () => {
+    set({ isLoading: true })
+    try {
+      const res = await api.get<{ success: boolean; institutions: InstitutionProfile[] }>("/api/v1/admin/institutions")
+      if (res.data.success) {
+        set({ institutions: res.data.institutions, isLoading: false })
+      }
+    } catch (err) {
+      console.error("Failed to fetch institutions", err)
+      set({ isLoading: false })
+    }
+  },
+
+  renameInstitution: async (name, newName) => {
+    try {
+      await api.put(`/api/v1/admin/institutions/${encodeURIComponent(name)}`, { newName })
+      await get().fetchInstitutions()
+    } catch (err) {
+      console.error("Failed to rename institution", err)
+      throw err
+    }
+  },
+
+  deactivateInstitution: async (name) => {
+    try {
+      await api.post(`/api/v1/admin/institutions/${encodeURIComponent(name)}/deactivate`)
+      await get().fetchInstitutions()
+    } catch (err) {
+      console.error("Failed to deactivate institution", err)
+      throw err
+    }
+  },
+
+  reactivateInstitution: async (name) => {
+    try {
+      await api.post(`/api/v1/admin/institutions/${encodeURIComponent(name)}/reactivate`)
+      await get().fetchInstitutions()
+    } catch (err) {
+      console.error("Failed to reactivate institution", err)
+      throw err
+    }
+  },
+
+  fetchAuditLogs: async () => {
+    set({ isLoading: true })
+    try {
+      const res = await api.get<{ success: boolean; logs: AuditLogEntry[] }>("/api/v1/admin/audit-logs")
+      if (res.data.success) {
+        set({ auditLogs: res.data.logs, isLoading: false })
+      }
+    } catch (err) {
+      console.error("Failed to fetch audit logs", err)
+      set({ isLoading: false })
+    }
+  },
+
+  fetchAnalyticsOverview: async () => {
+    set({ isLoading: true })
+    try {
+      const res = await api.get<{ success: boolean; growth: any[] }>("/api/v1/admin/analytics/overview")
+      if (res.data.success) {
+        set({
+          analyticsOverview: { growth: res.data.growth },
+          isLoading: false
+        })
+      }
+    } catch (err) {
+      console.error("Failed to fetch analytics overview", err)
+      set({ isLoading: false })
+    }
+  },
+
+  fetchSystemHealth: async () => {
+    set({ isLoading: true })
+    try {
+      const res = await api.get<{ success: boolean; health: SystemHealthData }>("/api/v1/admin/system-health")
+      if (res.data.success) {
+        set({ systemHealth: res.data.health, isLoading: false })
+      }
+    } catch (err) {
+      console.error("Failed to fetch system health", err)
+      set({ isLoading: false })
+    }
+  },
+
+  broadcastNotification: async (payload) => {
+    try {
+      await api.post(`/api/v1/admin/broadcast-notification`, payload)
+    } catch (err) {
+      console.error("Failed to broadcast notification", err)
+      throw err
+    }
   },
 
   archiveClass: (id) => {
@@ -212,26 +451,6 @@ export const useAdminStore = create<AdminStoreState>()((set) => ({
     set((state) => ({
       settings: { ...state.settings, ...settingsUpdates },
     }))
-  },
-
-  addUser: (user) => {
-    set((state) => {
-      const newUser: AdminUser = {
-        ...user,
-        id: `usr_${state.users.length + 1}`,
-        joinedAt: new Date().toISOString().split("T")[0],
-        lastLogin: "Never",
-      }
-      const nextUsers = [...state.users, newUser]
-      return {
-        users: nextUsers,
-        systemStats: {
-          ...state.systemStats,
-          totalUsers: nextUsers.length,
-          activeUsers: nextUsers.filter((u) => u.status === "active").length,
-        },
-      }
-    })
   },
 }))
 

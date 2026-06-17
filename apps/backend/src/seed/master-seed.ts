@@ -9,6 +9,13 @@ async function main() {
 
   // 1. Clean Database
   console.log('Cleaning active tables...');
+  await prisma.billingEvent.deleteMany({});
+  await prisma.couponUsage.deleteMany({});
+  await prisma.coupon.deleteMany({});
+  await prisma.payment.deleteMany({});
+  await prisma.invoice.deleteMany({});
+  await prisma.subscription.deleteMany({});
+  await prisma.plan.deleteMany({});
   await prisma.auditLog.deleteMany({});
   await prisma.certificate.deleteMany({});
   await prisma.scoreBreakdown.deleteMany({});
@@ -20,6 +27,117 @@ async function main() {
   await prisma.user.deleteMany({});
   await prisma.scenario.deleteMany({});
   
+  // 1.5 Seed Pricing Plans
+  console.log('Seeding Pricing Plans...');
+  await prisma.plan.createMany({
+    data: [
+      {
+        name: 'Free Trial',
+        code: 'free',
+        priceMonthly: 0,
+        priceYearly: 0,
+        simulationLimit: 1,
+        studentLimit: 5,
+        instructorLimit: 0,
+        certificateLimit: 0,
+        reportExportLimit: 1,
+        storageLimitMb: 50,
+        features: JSON.stringify(['1 Sandbox Campaign Run', 'Basic SEO Simulator access', 'Email Support'])
+      },
+      {
+        name: 'Individual Basic',
+        code: 'individual_basic',
+        priceMonthly: 1500,
+        priceYearly: 15000,
+        simulationLimit: 5,
+        studentLimit: 0,
+        instructorLimit: 0,
+        certificateLimit: 5,
+        reportExportLimit: 5,
+        storageLimitMb: 100,
+        features: JSON.stringify(['5 Sandbox Campaign Runs', 'Access to Google & Meta Ads', 'Full Bronze/Silver Certificates', 'Email Support'])
+      },
+      {
+        name: 'Individual Pro',
+        code: 'individual_pro',
+        priceMonthly: 3000,
+        priceYearly: 30000,
+        simulationLimit: -1,
+        studentLimit: 0,
+        instructorLimit: 0,
+        certificateLimit: -1,
+        reportExportLimit: -1,
+        storageLimitMb: 500,
+        features: JSON.stringify(['Unlimited Campaign Runs', 'All Ads Engines', 'All Certificates (Platinum included)', 'Priority Support'])
+      },
+      {
+        name: 'Instructor',
+        code: 'instructor',
+        priceMonthly: 5000,
+        priceYearly: 50000,
+        simulationLimit: -1,
+        studentLimit: 30,
+        instructorLimit: 0,
+        certificateLimit: -1,
+        reportExportLimit: -1,
+        storageLimitMb: 1024,
+        features: JSON.stringify(['Classroom Management (Up to 30 students)', 'NBA & OBE Accredited Reports', 'Student Analytics Ledgers', 'Export Reports to PDF/CSV'])
+      },
+      {
+        name: 'College License',
+        code: 'college',
+        priceMonthly: 15000,
+        priceYearly: 150000,
+        simulationLimit: -1,
+        studentLimit: 200,
+        instructorLimit: 10,
+        certificateLimit: -1,
+        reportExportLimit: -1,
+        storageLimitMb: 5120,
+        features: JSON.stringify(['Colleges Hub (Up to 10 Instructors, 200 Students)', 'Accreditation Readiness Indexes', 'Bulk Student Imports', 'Premium Dedicated Support'])
+      },
+      {
+        name: 'Enterprise License',
+        code: 'enterprise',
+        priceMonthly: 45000,
+        priceYearly: 450000,
+        simulationLimit: -1,
+        studentLimit: -1,
+        instructorLimit: -1,
+        certificateLimit: -1,
+        reportExportLimit: -1,
+        storageLimitMb: 20480,
+        features: JSON.stringify(['Unlimited Cohorts, Instructors & Students', 'Custom Scenario Builders', 'SLA Dedicated Account Managers', 'Single Sign-On (SSO) integration'])
+      }
+    ]
+  });
+
+  console.log('Seeding Coupons...');
+  await prisma.coupon.createMany({
+    data: [
+      {
+        code: 'WELCOME50',
+        discountType: 'percentage',
+        discountValue: 50.0,
+        durationMonths: 3,
+        isActive: true
+      },
+      {
+        code: 'FLAT1000',
+        discountType: 'flat',
+        discountValue: 1000.0,
+        durationMonths: 1,
+        isActive: true
+      },
+      {
+        code: 'TRIAL30',
+        discountType: 'trial_extension',
+        discountValue: 30.0,
+        isActive: true
+      }
+    ]
+  });
+
   // 2. Create Scenarios
   console.log('Seeding Simulation Scenarios...');
   const scenarioSaaS = await prisma.scenario.create({
@@ -69,6 +187,18 @@ async function main() {
     },
   });
 
+  const instructorPlan = await prisma.plan.findFirst({ where: { code: 'instructor' } });
+  await prisma.subscription.create({
+    data: {
+      userId: instructor.id,
+      planId: instructorPlan!.id,
+      status: 'active',
+      billingCycle: 'monthly',
+      startDate: new Date(),
+      endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+    }
+  });
+
   console.log('Seeding Student Account...');
   const student = await prisma.user.create({
     data: {
@@ -86,6 +216,18 @@ async function main() {
       providerId: 'credential',
       password: MOCK_PASSWORD_HASH,
     },
+  });
+
+  const studentPlan = await prisma.plan.findFirst({ where: { code: 'free' } });
+  await prisma.subscription.create({
+    data: {
+      userId: student.id,
+      planId: studentPlan!.id,
+      status: 'active',
+      billingCycle: 'trial',
+      startDate: new Date(),
+      endDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000)
+    }
   });
 
   // 4. Create Default Class

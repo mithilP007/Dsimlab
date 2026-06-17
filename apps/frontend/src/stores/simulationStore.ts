@@ -21,6 +21,7 @@ export interface SimulationDetails {
   cumulativeSpend: number
   cumulativeRevenue: number
   score: number
+  allowedPlatforms?: string[]
 }
 
 interface SimulationState {
@@ -167,6 +168,14 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
         const res = await api.get<{ success: boolean; state: any }>('/api/v1/simulation/state');
         if (res.data?.success && res.data.state) {
           const state = res.data.state;
+          let allowedPlatforms: string[] = ["SEO", "GOOGLE_ADS", "META_ADS"];
+          if (state.class?.scenario?.allowedPlatforms) {
+            try {
+              allowedPlatforms = JSON.parse(state.class.scenario.allowedPlatforms);
+            } catch (e) {
+              console.error(e);
+            }
+          }
           const mapped: SimulationDetails = {
             id: state.id,
             userId: state.userId,
@@ -177,6 +186,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
             cumulativeSpend: state.cumulativeSpend,
             cumulativeRevenue: state.cumulativeRevenue,
             score: state.score,
+            allowedPlatforms,
           };
           set({
             activeSimulation: mapped,
@@ -188,14 +198,38 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
         return null;
       }
       
-      const res = await api.get<SimulationDetails>(`/api/simulations/${id}`);
+      const res = await api.get<any>(`/api/simulations/${id}`);
       const data = res.data;
+
+      let allowedPlatforms: string[] = ["SEO", "GOOGLE_ADS", "META_ADS"];
+      try {
+        const stateRes = await api.get<{ success: boolean; state: any }>('/api/v1/simulation/state');
+        if (stateRes.data?.success && stateRes.data.state?.class?.scenario?.allowedPlatforms) {
+          allowedPlatforms = JSON.parse(stateRes.data.state.class.scenario.allowedPlatforms);
+        }
+      } catch (e) {
+        console.error("Failed to fetch allowed platforms detail", e);
+      }
+
+      const mapped: SimulationDetails = {
+        id: data.id,
+        userId: data.userId,
+        classId: data.classId,
+        currentRound: data.currentRound,
+        status: data.status as SimulationStatus,
+        isCompleted: data.isCompleted,
+        cumulativeSpend: data.cumulativeSpend,
+        cumulativeRevenue: data.cumulativeRevenue,
+        score: data.score,
+        allowedPlatforms,
+      };
+
       set({
-        activeSimulation: data,
-        status: data.status,
-        currentDay: data.currentRound,
+        activeSimulation: mapped,
+        status: mapped.status,
+        currentDay: mapped.currentRound,
       });
-      return data;
+      return mapped;
     } catch (error) {
       console.error("Failed to fetch simulation state:", error);
       return null;

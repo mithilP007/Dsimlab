@@ -28,8 +28,8 @@ interface Plan {
 }
 
 const PLANS: Plan[] = [
-  { id: "7", name: "Weekly Trial", days: 7, price: 15, description: "Perfect for quick sandbox practice" },
-  { id: "15", name: "Sprint Sandbox", days: 15, price: 29, description: "Recommended for midterm projects" },
+  { id: "7", name: "Weekly Trial", days: 7, price: 15, description: "Perfect for quick trial practice" },
+  { id: "15", name: "Sprint Plan", days: 15, price: 29, description: "Recommended for midterm projects" },
   { id: "30", name: "Complete Simulation", days: 30, price: 49, description: "Full coverage for comprehensive courses" },
 ]
 
@@ -86,7 +86,7 @@ export function SignupIndividual() {
         navigate("/dashboard/individual")
       }
     } catch (err: any) {
-      toast.error(err.response?.data?.message || err.message || "Failed to create sandbox account")
+      toast.error(err.response?.data?.message || err.message || "Failed to create account")
     } finally {
       setIsLoading(false)
     }
@@ -103,7 +103,7 @@ export function SignupIndividual() {
             S
           </div>
           <h2 className="mt-4 text-3xl font-bold tracking-tight text-neutral-900">
-            Create Sandbox
+            Choose Plan
           </h2>
           {/* Progress indicators */}
           <div className="mt-4 flex items-center justify-center gap-2">
@@ -131,7 +131,7 @@ export function SignupIndividual() {
                 <CardHeader>
                   <CardTitle className="text-xl">Step 1: Account Details</CardTitle>
                   <CardDescription>
-                    Provide your username and credentials for sandbox login
+                    Provide your username and credentials for login
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -196,7 +196,7 @@ export function SignupIndividual() {
                 </CardContent>
                 <CardFooter className="flex flex-col space-y-4">
                   <Button type="button" className="w-full h-10 font-bold" onClick={nextStep}>
-                    Choose Sandbox Plan
+                    Choose Pricing Plan
                     <ArrowRight className="ml-2 h-4 w-4" />
                   </Button>
                   <div className="text-center w-full text-xs text-neutral-500">
@@ -293,7 +293,7 @@ export function SignupIndividual() {
                       <span className="text-xs font-bold text-neutral-900">{getValues().name}</span>
                     </div>
                     <div className="flex justify-between border-b border-neutral-200/50 pb-2">
-                      <span className="text-xs text-neutral-500 font-semibold uppercase">Sandbox Plan</span>
+                      <span className="text-xs text-neutral-500 font-semibold uppercase">Pricing Plan</span>
                       <span className="text-xs font-bold text-neutral-900">{selectedPlan.name}</span>
                     </div>
                     <div className="flex justify-between border-b border-neutral-200/50 pb-2">
@@ -309,7 +309,7 @@ export function SignupIndividual() {
                   <div className="flex items-start gap-2.5 p-3 rounded-lg border border-amber-200 bg-amber-50/50 text-amber-800 text-[11px] leading-relaxed font-medium">
                     <CreditCard className="h-4 w-4 shrink-0 text-amber-600" />
                     <span>
-                      Demo Sandbox Mode: No transaction billing will be initiated. Clicking finish grants full simulator rights.
+                      Demo Mode: No transaction billing will be initiated. Clicking finish grants full simulator rights.
                     </span>
                   </div>
                 </CardContent>
@@ -328,7 +328,7 @@ export function SignupIndividual() {
                     onClick={handleCompleteSignup}
                     disabled={isLoading}
                   >
-                    {isLoading ? "Provisioning..." : "Provision Sandbox"}
+                    {isLoading ? "Provisioning..." : "Complete Signup"}
                   </Button>
                 </CardFooter>
               </motion.div>

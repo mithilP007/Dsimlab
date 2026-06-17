@@ -3,6 +3,7 @@ import { requireAuth, AuthenticatedRequest } from '../auth/middleware';
 import { prisma } from '../db/client';
 import { z } from 'zod';
 import { ValidationError, NotFoundError } from '../utils/errors';
+import { logActivity, createNotification } from '../utils/audit';
 
 export async function metaAdsRoutes(fastify: FastifyInstance) {
   /**
@@ -88,9 +89,34 @@ export async function metaAdsRoutes(fastify: FastifyInstance) {
       }
     });
 
+    // Write audit log with "fees of operation" (Meta Ads budgets spent)
+    const totalMetaBudget = parsed.data.campaigns.reduce((acc, c) => acc + c.budget, 0);
+    await logActivity(
+      authReq.user!.id,
+      'META_ADS_DECISION_SUBMIT',
+      `Submitted Meta Ads choices for Round ${sim.currentRound}. Created ${parsed.data.campaigns.length} campaigns. Total Meta Ads Budget Spent: $${totalMetaBudget}.`
+    );
+
+    // Notify instructor
+    const targetClass = await prisma.class.findUnique({
+      where: { id: sim.classId },
+      select: { instructorId: true }
+    });
+    if (targetClass?.instructorId) {
+      await createNotification(
+        targetClass.instructorId,
+        'info',
+        'Meta Ads Campaign Updated',
+        `${authReq.user!.name} updated Meta Ads campaigns. Total budget spent: $${totalMetaBudget}.`,
+        authReq.user!.name,
+        '/instructor'
+      );
+    }
+
     return reply.status(200).send({
       success: true,
       campaigns: JSON.parse(decision.metaCampaigns)
     });
   });
 }
+

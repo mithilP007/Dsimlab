@@ -65,4 +65,66 @@ describe('Instructor Features Integration Tests', () => {
     expect(checkClass).not.toBeNull();
     expect(checkClass?.name).toBe('Advanced E-Commerce Cohort');
   });
+
+  it('should allow kicking a student from a class', async () => {
+    const inviteCode = 'TESTKICK';
+    const testClass = await prisma.class.create({
+      data: {
+        name: 'Kick Test Cohort',
+        inviteCode,
+        instructorId: instructorId,
+        scenarioId: scenarioId
+      }
+    });
+
+    const student = await prisma.user.create({
+      data: {
+        email: 'student-to-kick@sim.com',
+        name: 'Student To Kick',
+        role: 'STUDENT_COLLEGE',
+        emailVerified: true,
+        classId: testClass.id,
+        status: 'active'
+      }
+    });
+
+    await prisma.simulationState.create({
+      data: {
+        userId: student.id,
+        classId: testClass.id,
+        currentRound: 1,
+        status: 'DECISION_OPEN'
+      }
+    });
+
+    const fetchedStudent = await prisma.user.findUnique({
+      where: { id: student.id },
+      include: { class: true }
+    });
+
+    expect(fetchedStudent).not.toBeNull();
+    expect(fetchedStudent?.classId).toBe(testClass.id);
+
+    await prisma.$transaction(async (tx) => {
+      if (fetchedStudent?.classId) {
+        await tx.simulationState.deleteMany({
+          where: { userId: student.id, classId: fetchedStudent.classId }
+        });
+      }
+      await tx.user.update({
+        where: { id: student.id },
+        data: { classId: null, status: 'active' }
+      });
+    });
+
+    const updatedStudent = await prisma.user.findUnique({
+      where: { id: student.id }
+    });
+    expect(updatedStudent?.classId).toBeNull();
+
+    const updatedSim = await prisma.simulationState.findMany({
+      where: { userId: student.id }
+    });
+    expect(updatedSim.length).toBe(0);
+  });
 });

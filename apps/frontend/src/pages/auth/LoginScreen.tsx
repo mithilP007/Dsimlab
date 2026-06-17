@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useNavigate, Link } from "react-router"
 import { useForm } from "react-hook-form"
 import { z } from "zod"
@@ -20,8 +20,15 @@ type LoginFormInputs = z.infer<typeof loginSchema>
 
 export function LoginScreen() {
   const navigate = useNavigate()
-  const { login } = useAuthStore()
+  const { login, isAuthenticated } = useAuthStore()
   const [isLoading, setIsLoading] = useState(false)
+
+  // Redirect if already logged in
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate("/", { replace: true })
+    }
+  }, [isAuthenticated, navigate])
 
   const {
     register,
@@ -36,9 +43,9 @@ export function LoginScreen() {
     try {
       await login(data.email, data.password)
       toast.success("Welcome back to SimpLab!")
-      navigate("/")
+      navigate("/", { replace: true })
     } catch (err: any) {
-      toast.error(err.response?.data?.error || "Invalid credentials. Please try again.")
+      toast.error("Invalid email or password. Please try again.")
     } finally {
       setIsLoading(false)
     }
@@ -60,7 +67,7 @@ export function LoginScreen() {
             Welcome Back
           </h2>
           <p className="mt-1.5 text-sm text-neutral-500">
-            Login to your digital marketing simulation sandbox
+            Login to your digital marketing simulation console
           </p>
         </div>
 
@@ -69,7 +76,7 @@ export function LoginScreen() {
             <CardHeader className="space-y-1">
               <CardTitle className="text-xl">Sign In</CardTitle>
               <CardDescription>
-                Enter your credentials to access your active sandbox
+                Enter your credentials to access your active session
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -132,9 +139,9 @@ export function LoginScreen() {
 
               <div className="text-center w-full text-xs text-neutral-500 space-y-2">
                 <div>
-                  Don't have a sandbox yet?{" "}
+                  Looking for pricing plans?{" "}
                   <Link to="/signup" className="font-bold text-neutral-900 hover:underline">
-                    Create a free account
+                    View Pricing
                   </Link>
                 </div>
                 <div>

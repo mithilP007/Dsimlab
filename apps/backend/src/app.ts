@@ -7,11 +7,18 @@ import fs from 'fs';
 import path from 'path';
 import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
+import crypto from 'crypto';
 import { auth } from './auth/better-auth';
 import { prisma } from './db/client';
-import { logger } from './utils/logger';
+import { logger, asyncLocalStorage } from './utils/logger';
 import { AppError } from './utils/errors';
 import { config } from './config';
+import { logActivity, createNotification } from './utils/audit';
+import { sanitizeInput } from './utils/sanitizer';
+import { cacheService } from './utils/caching';
+import { bruteForceService } from './auth/brute-force';
+import { errorReportRoutes } from './routes/error-report.routes';
+import { monitoring } from './utils/monitoring';
 
 // Route Imports
 import { healthRoutes } from './routes/health';
@@ -29,9 +36,12 @@ import { scenarioRoutes } from './routes/scenario.routes';
 import { certificateRoutes } from './routes/certificate.routes';
 import { reportRoutes } from './routes/report.routes';
 import { auditRoutes } from './routes/audit.routes';
+import { notificationRoutes } from './routes/notification.routes';
+import { adminRoutes } from './routes/admin.routes';
 import { requireAuth, AuthenticatedRequest } from './auth/middleware';
 import { apiContractRoutes } from './routes/api-contract.routes';
-import { prisma } from './db/client';
+import { billingRoutes } from './routes/billing.routes';
+import { billingAdminRoutes } from './routes/billing.admin.routes';
 
 export const app = Fastify({
   logger: false, // We use custom Pino logger
@@ -44,9 +54,18 @@ app.register(cors, {
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
 });
 
-// Register Helmet
+// Register Helmet with Content Security Policy (CSP)
 app.register(helmet, {
-  contentSecurityPolicy: false,
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+      fontSrc: ["'self'", "https://fonts.gstatic.com"],
+      imgSrc: ["'self'", "data:", "https:"],
+      connectSrc: ["'self'", "wss:", "ws:"],
+    },
+  },
 });
 
 // Register Global Rate Limiting
@@ -54,6 +73,89 @@ app.register(rateLimit, {
   max: config.RATE_LIMIT_MAX || 100,
   timeWindow: '1 minute',
   keyGenerator: (req) => req.ip,
+});
+
+// Request Correlation ID Context Hook
+app.addHook('onRequest', (request, reply, done) => {
+  const correlationId = (request.headers['x-correlation-id'] as string) || crypto.randomUUID();
+  reply.header('x-correlation-id', correlationId);
+  asyncLocalStorage.enterWith({ correlationId });
+  done();
+});
+
+// Response Telemetry Duration Hook
+app.addHook('onResponse', (request, reply, done) => {
+  const duration = reply.getResponseTime();
+  monitoring.recordApiLatency(request.routerPath || request.url, duration);
+  done();
+});
+
+// Input Sanitization (XSS & SQL Injection Safeguard)
+app.addHook('preValidation', async (request) => {
+  if (request.body) {
+    request.body = sanitizeInput(request.body);
+  }
+});
+
+// CSRF Protection Hook
+app.addHook('preHandler', async (request, reply) => {
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method)) {
+    if (request.url.startsWith('/health') || request.url.startsWith('/api/auth/')) {
+      return;
+    }
+    const origin = request.headers.origin;
+    const referer = request.headers.referer;
+
+    if (origin && origin !== config.FRONTEND_URL) {
+      reply.status(403).send({
+        success: false,
+        error: 'CSRF Protection: Invalid origin',
+        message: 'Request origin does not match the trusted site.',
+        code: 'CSRF_ERROR',
+        statusCode: 403,
+      });
+      return;
+    }
+
+    if (!origin && referer && !referer.startsWith(config.FRONTEND_URL)) {
+      reply.status(403).send({
+        success: false,
+        error: 'CSRF Protection: Invalid referer',
+        message: 'Request referer is untrusted.',
+        code: 'CSRF_ERROR',
+        statusCode: 403,
+      });
+      return;
+    }
+  }
+});
+
+// Idempotent Multi-Submission Interceptor
+app.addHook('preHandler', async (request, reply) => {
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method)) {
+    const key = request.headers['x-idempotency-key'] as string;
+    if (key) {
+      const cacheKey = `idempotency:${key}:${request.url}`;
+      const cachedResponse = await cacheService.get<{ statusCode: number; headers: Record<string, string>; body: any }>(cacheKey);
+      if (cachedResponse) {
+        reply.status(cachedResponse.statusCode);
+        Object.entries(cachedResponse.headers).forEach(([k, v]) => reply.header(k, v));
+        reply.send(cachedResponse.body);
+        return;
+      }
+
+      const originalSend = reply.send;
+      reply.send = function (payload: any) {
+        const res = {
+          statusCode: reply.statusCode,
+          headers: reply.getHeaders(),
+          body: payload,
+        };
+        cacheService.set(cacheKey, res, 300).catch(err => logger.error(err, 'Failed to cache idempotency response'));
+        return originalSend.call(this, payload);
+      };
+    }
+  }
 });
 
 // Register Swagger
@@ -204,52 +306,7 @@ app.ready().then(() => {
   }
 });
 
-// Custom register routes matching frontend API requirements
-app.post('/api/auth/register/individual', async (request, reply) => {
-  const body = request.body as any;
-  const webRequest = new Request(`${request.protocol}://${request.hostname}/api/auth/sign-up/email`, {
-    method: 'POST',
-    headers: new Headers({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify({
-      email: body.email,
-      password: body.password,
-      name: body.name,
-      role: 'INDIVIDUAL',
-    }),
-  });
-  const webResponse = await auth.handler(webRequest);
-  webResponse.headers.forEach((value, key) => { reply.header(key, value); });
-  reply.status(webResponse.status);
-  return reply.send(await webResponse.text());
-});
 
-app.post('/api/auth/register/student', async (request, reply) => {
-  const body = request.body as any;
-  // Look up class by join code first
-  const targetClass = await prisma.class.findUnique({
-    where: { inviteCode: body.classJoinCode },
-  });
-  if (!targetClass) {
-    reply.status(400);
-    return reply.send({ success: false, error: 'Invalid class join code.' });
-  }
-
-  const webRequest = new Request(`${request.protocol}://${request.hostname}/api/auth/sign-up/email`, {
-    method: 'POST',
-    headers: new Headers({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify({
-      email: body.email,
-      password: body.password,
-      name: body.name,
-      role: 'STUDENT_COLLEGE',
-      classId: targetClass.id,
-    }),
-  });
-  const webResponse = await auth.handler(webRequest);
-  webResponse.headers.forEach((value, key) => { reply.header(key, value); });
-  reply.status(webResponse.status);
-  return reply.send(await webResponse.text());
-});
 
 // Better Auth Web Request Integration
 app.get('/api/auth/me', async (req, reply) => {
@@ -257,7 +314,7 @@ app.get('/api/auth/me', async (req, reply) => {
   if (reply.sent) return;
   const authReq = req as AuthenticatedRequest;
   const user = authReq.user!;
-  return reply.status(200).send(user);
+  reply.status(200).send(user);
 });
 
 app.post('/api/auth/register/individual', async (req, reply) => {
@@ -435,6 +492,34 @@ app.post('/api/auth/register/student', async (req, reply) => {
   });
 
   const webResponse = await auth.handler(webRequest);
+
+  if (webResponse.status >= 200 && webResponse.status < 300) {
+    try {
+      const updatedUser = await prisma.user.update({
+        where: { email: rawBody.email },
+        data: { status: 'pending' }
+      });
+
+      // Notify the instructor
+      await createNotification(
+        targetClass.instructorId,
+        'info',
+        'New Student Joined Class',
+        `Student "${updatedUser.name}" (${updatedUser.email}) has registered and requested to join your class "${targetClass.name}". Approval is required.`,
+        updatedUser.name
+      );
+
+      // Log student activity
+      await logActivity(
+        updatedUser.id,
+        'JOIN_CLASS',
+        `Registered and joined classroom "${targetClass.name}" (Code: ${targetClass.inviteCode}). Status is pending approval.`
+      );
+    } catch (dbErr) {
+      logger.error(dbErr, 'Failed to update student registration status and notify instructor');
+    }
+  }
+
   webResponse.headers.forEach((value, key) => {
     if (key.toLowerCase() === 'set-cookie') {
       const cookies = (webResponse.headers as any).getSetCookie 
@@ -463,6 +548,22 @@ app.all('/api/auth/*', {
   const path = req.raw.url || '';
   const url = `${protocol}://${host}${path}`;
 
+  const isSignIn = path.includes('sign-in/email');
+  let email = '';
+  if (isSignIn && req.body) {
+    email = (req.body as any).email;
+    if (email && await bruteForceService.isBlocked(email)) {
+      reply.status(429);
+      return reply.send({
+        success: false,
+        error: 'Too many failed login attempts. This account is temporarily blocked for 15 minutes.',
+        message: 'Too many failed login attempts. This account is temporarily blocked for 15 minutes.',
+        code: 'TOO_MANY_REQUESTS',
+        statusCode: 429
+      });
+    }
+  }
+
   const headers = new Headers();
   Object.entries(req.headers).forEach(([key, val]) => {
     if (val) {
@@ -486,6 +587,14 @@ app.all('/api/auth/*', {
   });
 
   const webResponse = await auth.handler(webRequest);
+
+  if (isSignIn && email) {
+    if (webResponse.status >= 200 && webResponse.status < 300) {
+      await bruteForceService.reset(email);
+    } else if (webResponse.status === 401 || webResponse.status === 400) {
+      await bruteForceService.handleFailedAttempt(email);
+    }
+  }
 
   // Copy response headers
   webResponse.headers.forEach((value, key) => {
@@ -575,7 +684,12 @@ app.register(classRoutes, { prefix: '/api/v1/class' });
 app.register(scenarioRoutes, { prefix: '/api/v1/scenario' });
 app.register(certificateRoutes, { prefix: '/api/v1/certificate' });
 app.register(reportRoutes, { prefix: '/api/v1/report' });
+app.register(adminRoutes, { prefix: '/api/v1/admin' });
+app.register(billingAdminRoutes, { prefix: '/api/v1/admin/billing' });
+app.register(billingRoutes, { prefix: '/api/v1/billing' });
 app.register(auditRoutes, { prefix: '/api/v1/audit' });
+app.register(notificationRoutes, { prefix: '/api/v1/notifications' });
+app.register(errorReportRoutes, { prefix: '/api/v1/error-reports' });
 app.register(apiContractRoutes);
 
 // Global Error Handler
@@ -592,12 +706,15 @@ app.setErrorHandler((error, request, reply) => {
     logger.warn({ err: error, path: request.url }, error.message);
   }
 
+  const correlationId = reply.getHeader('x-correlation-id') || request.headers['x-correlation-id'];
+
   const payload = {
     success: false,
     error: message,
     message: message,
     code,
     statusCode,
+    correlationId,
   };
 
   // Pre-serialize payload as string to bypass Fastify/AJV route-level response schema stripping

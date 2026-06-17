@@ -1,16 +1,26 @@
 import { Link, useLocation } from "react-router"
 import { cn } from "@/lib/utils"
-import { LayoutDashboard, Megaphone, Newspaper, BarChart3 } from "lucide-react"
+import { LayoutDashboard, GraduationCap, Search, Target, Share2, Play, Award, Activity } from "lucide-react"
+import { useAuthStore } from "@/stores/authStore"
 
 export function MobileNav() {
   const location = useLocation()
+  const { user } = useAuthStore()
+  const userRole = user?.role || "individual"
 
-  const bottomNavItems = [
-    { name: "Dashboard", href: "/", icon: LayoutDashboard },
-    { name: "Campaigns", href: "/campaigns", icon: Megaphone },
-    { name: "Events", href: "/events", icon: Newspaper },
-    { name: "Reports", href: "/reports", icon: BarChart3 },
-  ]
+  const bottomNavItems = userRole === "instructor"
+    ? [
+        { name: "Portal", href: "/instructor", icon: GraduationCap },
+        { name: "SEO", href: "/instructor/simulation/seo", icon: Search },
+        { name: "Google Ads", href: "/instructor/simulation/google-ads", icon: Target },
+        { name: "Meta Ads", href: "/instructor/simulation/meta-ads", icon: Share2 }
+      ]
+    : [
+        { name: "Dashboard", href: "/", icon: LayoutDashboard },
+        { name: "Simulation", href: "/simulation", icon: Play },
+        { name: "Leaderboard", href: "/leaderboard", icon: Award },
+        { name: "Progress", href: "/progress", icon: Activity }
+      ]
 
   const isActive = (href: string) => {
     if (href === "/") {

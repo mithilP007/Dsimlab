@@ -5,7 +5,16 @@ export interface User {
   name: string;
   email: string;
   role: UserRole;
+  institution?: string;
+  planType?: string;
+  phoneNumber?: string;
+  universityRole?: string;
+  age?: number;
+  gender?: string;
+  category?: string;
   createdAt: string;
+  status?: string;
+  classId?: string;
 }
 
 export interface SeoCampaign {

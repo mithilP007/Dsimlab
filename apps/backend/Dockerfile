@@ -1,38 +1,40 @@
-# Stage 1: Install dependencies
-FROM node:20-alpine AS deps
-WORKDIR /app
+# Stage 1: Build
+FROM node:20-alpine AS builder
+
+WORKDIR /usr/src/app
+
 COPY package*.json ./
+COPY tsconfig*.json ./
+
 RUN npm ci
 
-# Stage 2: Build TypeScript and generate Prisma Client
-FROM node:20-alpine AS builder
-WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
-COPY . .
+# Copy src and schema files
+COPY src ./src
+
+# Generate Prisma client and compile TypeScript
 RUN npx prisma generate --schema=src/prisma/schema.prisma
 RUN npm run build
 
-# Stage 3: Production runtime environment
+# Stage 2: Production Run
 FROM node:20-alpine AS runner
-WORKDIR /app
-ENV NODE_ENV=production
+
+WORKDIR /usr/src/app
+
+COPY package*.json ./
 
 # Install only production dependencies
-COPY package*.json ./
 RUN npm ci --only=production
 
-# Copy built files and generated Prisma Client
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=builder /app/node_modules/@prisma/client ./node_modules/@prisma/client
-COPY src/prisma ./src/prisma
+# Copy built files and prisma schema
+COPY --from=builder /usr/src/app/dist ./dist
+COPY --from=builder /usr/src/app/src/prisma ./src/prisma
 
-# Create uploads directory for certificate generation
-RUN mkdir -p uploads/certificates
+# Generate client in production context
+RUN npx prisma generate --schema=src/prisma/schema.prisma
 
-# Expose port (default 5000)
-ENV PORT=5000
 EXPOSE 5000
 
-# Start application using Node
+ENV NODE_ENV=production
+ENV PORT=5000
+
 CMD ["node", "dist/index.js"]

@@ -19,6 +19,7 @@ import { scheduleRoundAdvancement } from '../jobs/queue';
 import { trendClient } from '../services/trends/trend-client';
 import { marketSignalBuilder } from '../services/trends/market-signal-builder';
 import { config } from '../config';
+import { logActivity, createNotification } from '../utils/audit';
 
 
 export async function apiContractRoutes(fastify: FastifyInstance) {
@@ -162,6 +163,7 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
 
     const sim = await prisma.simulationState.findUnique({
       where: { id: parsedParams.data.id },
+      include: { progress: true },
     });
 
     if (!sim) {
@@ -1173,7 +1175,16 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
 
       const studentClass = await prisma.class.findUnique({
         where: { id: classId },
-        include: { scenario: true }
+        include: {
+          scenario: true,
+          instructor: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+            },
+          },
+        },
       });
 
       return reply.status(200).send({
@@ -1376,9 +1387,42 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
    * Lists scenarios
    */
   fastify.get('/api/scenarios', { preHandler: [requireAuth] }, async (_request, reply) => {
-    const scenarios = await prisma.scenario.findMany({
+    let scenarios = await prisma.scenario.findMany({
       orderBy: { name: 'asc' }
     });
+    
+    if (scenarios.length === 0) {
+      await prisma.scenario.createMany({
+        data: [
+          {
+            name: 'Global SaaS Marketing Challenge',
+            description: 'Acquire corporate customers for a collaborative cloud CRM tool in a competitive B2B space.',
+            industry: 'B2B Software',
+            startRound: 1,
+            maxRounds: 10,
+            budgetPerRound: 5000.0,
+            baselineOrganicTraffic: 1500,
+            targetKPI: 'revenue',
+            difficulty: 'medium',
+          },
+          {
+            name: 'Fashion Retail E-Commerce Blitz',
+            description: 'Scale organic and paid social traffic for a sustainable custom apparel brand.',
+            industry: 'Apparel E-Commerce',
+            startRound: 1,
+            maxRounds: 8,
+            budgetPerRound: 3500.0,
+            baselineOrganicTraffic: 3000,
+            targetKPI: 'conversions',
+            difficulty: 'medium',
+          }
+        ]
+      });
+      scenarios = await prisma.scenario.findMany({
+        orderBy: { name: 'asc' }
+      });
+    }
+
     return reply.status(200).send(scenarios);
   });
 
@@ -1838,42 +1882,99 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
       where: { simulationId: sim.id }
     });
 
+    const getBandRank = (band: string): number => {
+      const b = band.toUpperCase();
+      if (b === 'PLATINUM') return 4;
+      if (b === 'GOLD' || b === 'ADVANCED') return 3;
+      if (b === 'SILVER' || b === 'PROFICIENT') return 2;
+      return 1;
+    };
+
+    const skills = ["SEO Optimization", "PPC Bidding Strategy", "Meta Ads Audiences", "ROAS Scaling", "Budget Pacing"];
+
+    if (cert) {
+      const prevRank = getBandRank(cert.band);
+      const newRank = getBandRank(check.band);
+      if (newRank > prevRank) {
+        // Upgrade!
+        await generateCertificatePDF(
+          sim.user.name,
+          (sim as any).class.scenario.industry,
+          check.band,
+          skills,
+          cert.verificationId || cert.verificationHash,
+          new Date()
+        );
+
+        cert = await prisma.certificate.update({
+          where: { id: cert.id },
+          data: {
+            compositeScore: check.compositeScore,
+            band: check.band,
+            issueDate: new Date()
+          }
+        });
+
+        // Notify user about upgrade
+        await createNotification(
+          sim.userId,
+          'achievement',
+          'Certification Upgraded',
+          `Congratulations! Your simulation certification has been upgraded to ${check.band} level!`,
+          'System',
+          '/certificate'
+        );
+      }
+
+      return reply.status(200).send({
+        success: true,
+        certificate: cert,
+        downloadUrl: cert.pdfUrl
+      });
+    }
+
     const year = new Date().getFullYear();
     const random4 = crypto.randomBytes(2).toString('hex').toUpperCase();
     const hash = crypto.createHash('sha256').update(sim.user.name + sim.id).digest('hex').substring(0, 8).toUpperCase();
     const verificationId = `DMSL-${year}-${random4}-${hash}`;
 
-    const skills = ["SEO Optimization", "PPC Bidding Strategy", "Meta Ads Audiences", "ROAS Scaling", "Budget Pacing"];
+    const verificationHash = crypto.createHash('sha256').update(verificationId).digest('hex');
+    const downloadUrl = `/api/certificates/${sim.id}/download`;
 
-    if (!cert) {
-      const verificationHash = crypto.createHash('sha256').update(verificationId).digest('hex');
-      const downloadUrl = `/api/certificates/${sim.id}/download`;
+    // Generate the PDF
+    await generateCertificatePDF(
+      sim.user.name,
+      (sim as any).class.scenario.industry,
+      check.band,
+      skills,
+      verificationId,
+      new Date()
+    );
 
-      // Generate the PDF
-      await generateCertificatePDF(
-        sim.user.name,
-        sim.class.scenario.industry,
-        check.band,
-        skills,
+    cert = await prisma.certificate.create({
+      data: {
+        simulationId: sim.id,
+        userId: sim.userId,
+        recipientName: sim.user.name,
+        issueDate: new Date(),
+        verificationHash,
         verificationId,
-        new Date()
-      );
+        compositeScore: check.compositeScore,
+        pdfUrl: downloadUrl,
+        band: check.band,
+        skills: JSON.stringify(skills)
+      }
+    });
 
-      cert = await prisma.certificate.create({
-        data: {
-          simulationId: sim.id,
-          userId: sim.userId,
-          recipientName: sim.user.name,
-          issueDate: new Date(),
-          verificationHash,
-          verificationId,
-          compositeScore: check.compositeScore,
-          pdfUrl: downloadUrl,
-          band: check.band,
-          skills: JSON.stringify(skills)
-        }
-      });
-    }
+    // Notify student about generation
+    await createNotification(
+      sim.userId,
+      'success',
+      'Certificate Generated',
+      'Your professional pass certificate is ready! View it under Certificate Portal.',
+      'System',
+      '/certificate'
+    );
 
     return reply.status(201).send({
       success: true,
@@ -1923,6 +2024,16 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
       );
     }
 
+    // Notify of download
+    await createNotification(
+      cert.userId,
+      'info',
+      'Certificate Downloaded',
+      `You downloaded the certificate PDF for "${cert.recipientName}".`,
+      'System',
+      '/certificate'
+    );
+
     return reply
       .status(200)
       .header('Content-Type', 'application/pdf')
@@ -1951,7 +2062,11 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
             band: { type: 'string' },
             skills: { type: 'array', items: { type: 'string' } },
             issueDate: { type: 'string' },
+            expirationDate: { type: 'string' },
             status: { type: 'string' },
+            performanceSummary: { type: 'string' },
+            verificationTimestamp: { type: 'string' },
+            institution: { type: 'string' },
             reason: { type: 'string' }
           }
         }
@@ -1970,8 +2085,35 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
     if (!cert) {
       return reply.status(200).send({
         valid: false,
+        status: 'INVALID',
         reason: 'Certificate verification ID is invalid.'
       });
+    }
+
+    // Check expiration date
+    const expirationDate = new Date(cert.issueDate);
+    expirationDate.setFullYear(expirationDate.getFullYear() + 3);
+    const isExpired = new Date() > expirationDate;
+
+    // Check student user details (e.g. status)
+    const user = await prisma.user.findUnique({
+      where: { id: cert.userId }
+    });
+
+    const isRevoked = user?.status === 'suspended';
+
+    let status = 'VERIFIED';
+    let valid = true;
+    let reason = '';
+
+    if (isRevoked) {
+      status = 'REVOKED';
+      valid = false;
+      reason = 'This certificate has been revoked by the institution.';
+    } else if (isExpired) {
+      status = 'EXPIRED';
+      valid = false;
+      reason = 'This certificate has expired.';
     }
 
     let skillsArray: string[] = [];
@@ -1981,13 +2123,79 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
       skillsArray = [];
     }
 
+    // Log the verification request
+    await logActivity(
+      cert.userId,
+      'CERTIFICATE_VERIFICATION',
+      `Certificate ${cert.verificationId} verified publicly.`
+    );
+
+    // Notify student about verification view
+    await createNotification(
+      cert.userId,
+      'info',
+      'Certificate Verified',
+      'Your certificate has been verified via the public verification portal.',
+      'System',
+      '/certificate'
+    );
+
     return reply.status(200).send({
-      valid: true,
+      valid,
       name: cert.recipientName,
       band: cert.band,
       skills: skillsArray,
-      issueDate: cert.issueDate,
-      status: 'VALID'
+      issueDate: cert.issueDate.toISOString(),
+      expirationDate: expirationDate.toISOString(),
+      status,
+      performanceSummary: `Recipient demonstrated professional competence in simulated search optimization and ads deployment at ${cert.band} level.`,
+      verificationTimestamp: new Date().toISOString(),
+      institution: user?.institution || 'Digital Marketing Academy',
+      reason
+    });
+  });
+
+  /**
+   * GET /api/certificates/:id
+   * Authenticated route to get certificate details by simulationId, verificationId, or certificateId
+   */
+  fastify.get('/api/certificates/:id', { preHandler: [requireAuth] }, async (request, reply) => {
+    const authReq = request as AuthenticatedRequest;
+    const paramsSchema = z.object({
+      id: z.string().min(1)
+    });
+
+    const parsedParams = paramsSchema.parse(request.params);
+    const cert = await prisma.certificate.findFirst({
+      where: {
+        OR: [
+          { id: parsedParams.id },
+          { simulationId: parsedParams.id },
+          { verificationId: parsedParams.id }
+        ]
+      },
+      include: {
+        simulation: {
+          include: { class: { include: { scenario: true } } }
+        }
+      }
+    });
+
+    if (!cert) {
+      throw new NotFoundError('Certificate not found.');
+    }
+
+    const isOwner = cert.userId === authReq.user!.id;
+    const isInstructor = authReq.user!.role === 'INSTRUCTOR';
+    const isAdmin = authReq.user!.role === 'ADMIN';
+
+    if (!isOwner && !isInstructor && !isAdmin) {
+      throw new ValidationError('Unauthorized to view this certificate.');
+    }
+
+    return reply.status(200).send({
+      success: true,
+      certificate: cert
     });
   });
 

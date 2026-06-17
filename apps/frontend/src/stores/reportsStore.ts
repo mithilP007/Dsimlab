@@ -33,15 +33,24 @@ interface ReportsState {
   exportFormats: string[]
   scheduledReports: ScheduledReport[]
   
-  seoReport: any | null
-  adsReport: any | null
-  attributionReport: any | null
   isLoading: boolean
+  nbaData: any | null
+  obeData: any | null
+  accreditationData: any | null
+  performanceData: any | null
+  studentData: any | null
+  comparisonsData: any[]
+  aiInsightsData: any | null
 
   // Actions
-  fetchSeoReport: (simulationId: string) => Promise<any>
-  fetchAdsReport: (simulationId: string) => Promise<any>
-  fetchAttribution: (simulationId: string) => Promise<any>
+  fetchNBAReport: (classId: string) => Promise<any>
+  fetchOBEReport: (classId: string) => Promise<any>
+  fetchAccreditationReport: (classId: string) => Promise<any>
+  fetchPerformanceReport: (classId: string) => Promise<any>
+  fetchStudentReport: (studentId: string) => Promise<any>
+  fetchInstructorComparisons: () => Promise<any>
+  fetchAiInsights: (classId: string) => Promise<any>
+
   generateReport: (name: string, type: SimulationReport["type"], filters: ReportFilters) => void
   deleteReport: (id: string) => void
   scheduleReport: (name: string, frequency: ScheduledReport["frequency"], filters: ReportFilters) => void
@@ -87,48 +96,101 @@ export const useReportsStore = create<ReportsState>((set) => ({
       filters: { dateRange: "Last 7 Days", classId: "c_1", studentId: "all", channels: ["seo", "google", "meta"] },
     },
   ],
-  seoReport: null,
-  adsReport: null,
-  attributionReport: null,
   isLoading: false,
+  nbaData: null,
+  obeData: null,
+  accreditationData: null,
+  performanceData: null,
+  studentData: null,
+  comparisonsData: [],
+  aiInsightsData: null,
 
-  fetchSeoReport: async (simulationId) => {
+  fetchNBAReport: async (classId) => {
     set({ isLoading: true })
     try {
-      const res = await api.get<{ success: boolean; report: any }>(`/api/reports/${simulationId}/seo`)
-      const report = res.data?.report || null
-      set({ seoReport: report, isLoading: false })
-      return report
+      const res = await api.get(`/api/v1/report/class/${classId}/nba`)
+      set({ nbaData: res.data, isLoading: false })
+      return res.data
     } catch (err) {
-      console.error("Failed to fetch SEO report:", err)
+      console.error("Failed to fetch NBA report:", err)
       set({ isLoading: false })
       return null
     }
   },
 
-  fetchAdsReport: async (simulationId) => {
+  fetchOBEReport: async (classId) => {
     set({ isLoading: true })
     try {
-      const res = await api.get<{ success: boolean; report: any }>(`/api/reports/${simulationId}/ads`)
-      const report = res.data?.report || null
-      set({ adsReport: report, isLoading: false })
-      return report
+      const res = await api.get(`/api/v1/report/class/${classId}/obe`)
+      set({ obeData: res.data, isLoading: false })
+      return res.data
     } catch (err) {
-      console.error("Failed to fetch Ads report:", err)
+      console.error("Failed to fetch OBE report:", err)
       set({ isLoading: false })
       return null
     }
   },
 
-  fetchAttribution: async (simulationId) => {
+  fetchAccreditationReport: async (classId) => {
     set({ isLoading: true })
     try {
-      const res = await api.get<{ success: boolean; report: any }>(`/api/reports/${simulationId}/attribution`)
-      const report = res.data?.report || null
-      set({ attributionReport: report, isLoading: false })
-      return report
+      const res = await api.get(`/api/v1/report/class/${classId}/accreditation`)
+      set({ accreditationData: res.data, isLoading: false })
+      return res.data
     } catch (err) {
-      console.error("Failed to fetch attribution report:", err)
+      console.error("Failed to fetch accreditation report:", err)
+      set({ isLoading: false })
+      return null
+    }
+  },
+
+  fetchPerformanceReport: async (classId) => {
+    set({ isLoading: true })
+    try {
+      const res = await api.get(`/api/v1/report/class/${classId}/performance`)
+      set({ performanceData: res.data, isLoading: false })
+      return res.data
+    } catch (err) {
+      console.error("Failed to fetch performance report:", err)
+      set({ isLoading: false })
+      return null
+    }
+  },
+
+  fetchStudentReport: async (studentId) => {
+    set({ isLoading: true })
+    try {
+      const res = await api.get(`/api/v1/report/student/${studentId}`)
+      set({ studentData: res.data, isLoading: false })
+      return res.data
+    } catch (err) {
+      console.error("Failed to fetch student report:", err)
+      set({ isLoading: false })
+      return null
+    }
+  },
+
+  fetchInstructorComparisons: async () => {
+    set({ isLoading: true })
+    try {
+      const res = await api.get(`/api/v1/report/instructor/comparisons`)
+      set({ comparisonsData: res.data?.comparisons || [], isLoading: false })
+      return res.data
+    } catch (err) {
+      console.error("Failed to fetch instructor comparisons:", err)
+      set({ isLoading: false })
+      return null
+    }
+  },
+
+  fetchAiInsights: async (classId) => {
+    set({ isLoading: true })
+    try {
+      const res = await api.get(`/api/v1/report/class/${classId}/ai-insights`)
+      set({ aiInsightsData: res.data, isLoading: false })
+      return res.data
+    } catch (err) {
+      console.error("Failed to fetch AI insights:", err)
       set({ isLoading: false })
       return null
     }

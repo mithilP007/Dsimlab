@@ -31,6 +31,9 @@ const envSchema = z.object({
   META_APP_SECRET: z.string().optional(),
   META_ACCESS_TOKEN: z.string().optional(),
   META_AD_ACCOUNT_ID: z.string().optional(),
+  RAZORPAY_KEY_ID: z.string().optional(),
+  RAZORPAY_KEY_SECRET: z.string().optional(),
+  RAZORPAY_WEBHOOK_SECRET: z.string().optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);

@@ -16,7 +16,8 @@ import { rollForEvents } from '../events/trigger';
 import { calculateEventImpacts } from '../events/impact';
 import { advanceRoundState, validateStateTransition, SimulationStatus } from './state-machine';
 import { captureRoundSnapshot } from './snapshot';
-import { calculateStrategicConsistency } from '../certificate/eligibility';
+import { calculateStrategicConsistency, checkCertificateEligibility } from '../certificate/eligibility';
+import { createNotification } from '../../utils/audit';
 import { trendClient } from '../trends/trend-client';
 import { marketSignalBuilder } from '../trends/market-signal-builder';
 
@@ -664,6 +665,9 @@ export async function processSimulationRound(simulationId: string): Promise<any>
   // 9. Update percentiles cohort
   await recalculateCohortPercentiles(sim.classId, currentRound);
 
+  // Evaluate achievements, rank changes, and certification eligibility
+  await evaluateRoundAchievementsAndNotifications(sim.classId, sim.userId, currentRound);
+
   logger.info({ simulationId, round: currentRound }, 'Simulation round advanced successfully');
 
   return {
@@ -704,5 +708,189 @@ async function recalculateCohortPercentiles(classId: string, round: number): Pro
         });
       }
     })
+  );
+}
+
+/**
+ * Evaluates round achievements, rank movements, and certification eligibility to push notifications.
+ */
+async function evaluateRoundAchievementsAndNotifications(classId: string | null, userId: string, round: number): Promise<void> {
+  const sim = await prisma.simulationState.findFirst({
+    where: { userId },
+    include: {
+      scoreBreakdowns: {
+        orderBy: { round: 'desc' }
+      }
+    }
+  });
+  if (!sim) return;
+
+  const latestBreakdown = sim.scoreBreakdowns.find(sb => sb.round === round);
+  if (!latestBreakdown) return;
+
+  let currentRank = 1;
+  const prevRound = round - 1;
+
+  if (classId) {
+    const classSimulations = await prisma.simulationState.findMany({
+      where: { classId },
+      include: {
+        scoreBreakdowns: {
+          orderBy: { round: 'desc' }
+        }
+      },
+      orderBy: { score: 'desc' }
+    });
+
+    currentRank = classSimulations.findIndex(s => s.userId === userId) + 1;
+
+    if (prevRound >= 1) {
+      const prevScores = classSimulations.map(simState => {
+        const pb = simState.scoreBreakdowns.find(b => b.round === prevRound);
+        return {
+          userId: simState.userId,
+          score: pb ? pb.compositeIndex : 0
+        };
+      }).sort((a, b) => b.score - a.score);
+
+      const prevRankIndex = prevScores.findIndex(x => x.userId === userId);
+      if (prevRankIndex !== -1) {
+        const prevRank = prevRankIndex + 1;
+        const rankDiff = prevRank - currentRank;
+        if (rankDiff > 0) {
+          await createNotification(
+            userId,
+            'success',
+            'Rank Increase',
+            `Climbed ${rankDiff} places to Rank #${currentRank} in your class!`,
+            'System',
+            '/leaderboard'
+          );
+        } else if (rankDiff < 0) {
+          await createNotification(
+            userId,
+            'warning',
+            'Rank Drop',
+            `Dropped ${Math.abs(rankDiff)} places to Rank #${currentRank} in your class. Adjust your strategies!`,
+            'System',
+            '/leaderboard'
+          );
+        }
+      }
+    }
+  }
+
+  // Achievements Calculation
+  const achievementsToUnlock: { title: string; message: string }[] = [];
+
+  // Top Performer: Rank = 1
+  if (classId && currentRank === 1) {
+    achievementsToUnlock.push({
+      title: 'Top Performer',
+      message: 'Reached #1 spot on the classroom standings board!'
+    });
+  }
+
+  // SEO Expert: seoScore >= 90
+  if (latestBreakdown.seoScore >= 90) {
+    achievementsToUnlock.push({
+      title: 'SEO Expert',
+      message: `Achieved an outstanding SEO score of ${latestBreakdown.seoScore}% in a round.`
+    });
+  }
+
+  // Ads Strategist: Google Ads or Meta Ads score >= 90
+  if (latestBreakdown.googleAdsScore >= 90 || latestBreakdown.metaAdsScore >= 90) {
+    achievementsToUnlock.push({
+      title: 'Ads Strategist',
+      message: `Achieved an Ads campaign score of 90%+ in a round.`
+    });
+  }
+
+  // ROI Master: efficiencyRoi >= 85
+  if (latestBreakdown.efficiencyRoi >= 85) {
+    achievementsToUnlock.push({
+      title: 'ROI Master',
+      message: `Maximized ROI Efficiency above 85% with disciplined budget deployment.`
+    });
+  }
+
+  // Fast Learner: score improvement >= 15 compared to previous round
+  const prevBreakdown = sim.scoreBreakdowns.find(sb => sb.round === prevRound);
+  if (prevBreakdown && (latestBreakdown.compositeIndex - prevBreakdown.compositeIndex >= 15)) {
+    achievementsToUnlock.push({
+      title: 'Fast Learner',
+      message: `Improved overall composite score by ${Math.round(latestBreakdown.compositeIndex - prevBreakdown.compositeIndex)} points in a single round!`
+    });
+  }
+
+  // Consistency Champion: strategicConsistency >= 85
+  if (latestBreakdown.strategicConsistency >= 85) {
+    achievementsToUnlock.push({
+      title: 'Consistency Champion',
+      message: `Maintained exceptionally high strategic alignment and budget stability (85%+).`
+    });
+  }
+
+  // Adaptive Marketer: adaptability >= 85
+  if (latestBreakdown.adaptability >= 85) {
+    achievementsToUnlock.push({
+      title: 'Adaptive Marketer',
+      message: `Successfully adjusted strategy to navigate volatility and competitor spikes.`
+    });
+  }
+
+  // Fetch existing achievement notifications to avoid duplicates
+  const existingAchievements = await prisma.notification.findMany({
+    where: {
+      userId,
+      type: 'achievement'
+    },
+    select: { title: true }
+  });
+  const unlockedTitles = new Set(existingAchievements.map(ea => ea.title.replace('Achievement Unlocked: ', '')));
+
+  for (const ach of achievementsToUnlock) {
+    if (!unlockedTitles.has(ach.title)) {
+      await createNotification(
+        userId,
+        'achievement',
+        `Achievement Unlocked: ${ach.title}`,
+        ach.message,
+        'System',
+        '/progress'
+      );
+    }
+  }
+
+  // Certification Eligibility check
+  const check = await checkCertificateEligibility(sim.id);
+  if (check.eligible) {
+    const existingCertNotice = await prisma.notification.findFirst({
+      where: {
+        userId,
+        title: 'Certification Eligible'
+      }
+    });
+    if (!existingCertNotice) {
+      await createNotification(
+        userId,
+        'achievement',
+        'Certification Eligible',
+        'Congratulations! You have met all requirements for a pass certificate. Claim it now in your Progress Dashboard.',
+        'System',
+        '/progress'
+      );
+    }
+  }
+
+  // Standard Round Completed notice
+  await createNotification(
+    userId,
+    'success',
+    'Round Completed',
+    `Round ${round} calculations are finished. Review your analytics dashboard!`,
+    'System',
+    '/simulation/results'
   );
 }

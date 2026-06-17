@@ -2,6 +2,7 @@ import { FastifyRequest, FastifyReply } from 'fastify';
 import { auth } from './better-auth';
 import { UserRole } from './roles';
 import { prisma } from '../db/client';
+import { cacheService } from '../utils/caching';
 
 export interface AuthenticatedRequest extends FastifyRequest {
   user?: {
@@ -17,6 +18,19 @@ export interface AuthenticatedRequest extends FastifyRequest {
 
 export async function requireAuth(req: FastifyRequest, reply: FastifyReply) {
   try {
+    const cookieHeader = req.headers.cookie || '';
+    const tokenMatch = cookieHeader.match(/simlab\.session_token=([^;]+)/) || cookieHeader.match(/better-auth\.session_token=([^;]+)/);
+    const sessionToken = tokenMatch ? tokenMatch[1] : null;
+
+    if (sessionToken) {
+      const cacheKey = `auth:session:${sessionToken}`;
+      const cachedUser = await cacheService.get<any>(cacheKey);
+      if (cachedUser) {
+        (req as AuthenticatedRequest).user = cachedUser;
+        return;
+      }
+    }
+
     const headers = new Headers();
     Object.entries(req.headers).forEach(([key, val]) => {
       if (val) {
@@ -50,7 +64,7 @@ export async function requireAuth(req: FastifyRequest, reply: FastifyReply) {
       return;
     }
     
-    (req as AuthenticatedRequest).user = {
+    const userPayload = {
       id: dbUser.id,
       email: dbUser.email,
       name: dbUser.name,
@@ -59,6 +73,13 @@ export async function requireAuth(req: FastifyRequest, reply: FastifyReply) {
       institution: dbUser.institution || null,
       planType: dbUser.planType || null,
     };
+
+    (req as AuthenticatedRequest).user = userPayload;
+
+    if (sessionToken) {
+      const cacheKey = `auth:session:${sessionToken}`;
+      await cacheService.set(cacheKey, userPayload, 120); // Cache resolved user for 2 minutes
+    }
   } catch (error) {
     reply.status(401).header('content-type', 'application/json; charset=utf-8').send(JSON.stringify({
       error: 'Unauthorized'

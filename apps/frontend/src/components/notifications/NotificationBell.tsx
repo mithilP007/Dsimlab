@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useNavigate, Link } from "react-router"
 import { useNotificationStore, type NotificationItem } from "@/stores/notificationStore"
 import {
@@ -12,9 +12,13 @@ import { Bell, Info, CheckCircle2, AlertTriangle, Trophy, Check } from "lucide-r
 import { cn } from "@/lib/utils"
 
 export function NotificationBell() {
-  const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotificationStore()
+  const { notifications, unreadCount, markAsRead, markAllAsRead, fetchNotifications } = useNotificationStore()
   const [open, setOpen] = useState(false)
   const navigate = useNavigate()
+
+  useEffect(() => {
+    fetchNotifications()
+  }, [fetchNotifications])
 
   // Show max 8 notifications in the dropdown
   const visibleNotifications = notifications.slice(0, 8)

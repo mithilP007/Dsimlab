@@ -2,6 +2,7 @@ import { Link, useLocation } from "react-router"
 import { cn } from "@/lib/utils"
 import { useUiStore } from "@/stores/uiStore"
 import { useAuthStore } from "@/stores/authStore"
+import { useState, useEffect } from "react"
 import {
   Tooltip,
   TooltipContent,
@@ -10,28 +11,29 @@ import {
 } from "@/components/ui/tooltip"
 import {
   LayoutDashboard,
-  Search,
-  Target,
-  Share2,
-  Newspaper,
-  BarChart3,
-  Award,
-  GraduationCap,
   ChevronLeft,
   ChevronRight,
+  GraduationCap,
+  Play,
+  Award,
+  Activity,
   Trophy,
-  Shield,
+  FileBarChart,
   Users,
-  School,
-  Settings,
-  Bell,
-  Clock,
+  CreditCard,
+  Receipt,
 } from "lucide-react"
+
+interface SubNavItem {
+  name: string
+  href: string
+}
 
 interface NavItem {
   name: string
-  href: string
+  href?: string
   icon: React.ComponentType<{ className?: string }>
+  subItems?: SubNavItem[]
 }
 
 interface NavGroup {
@@ -48,54 +50,52 @@ const navConfig: NavGroup[] = [
     ]
   },
   {
-    groupName: "Simulation",
+    groupName: "Simulation Lab",
     items: [
-      { name: "SEO", href: "/simulation/seo", icon: Search },
-      { name: "Google Ads", href: "/simulation/google-ads", icon: Target },
-      { name: "Meta Ads", href: "/simulation/meta-ads", icon: Share2 }
+      { name: "Simulation Console", href: "/simulation", icon: Play },
+      { name: "Standing Leaderboard", href: "/leaderboard", icon: Trophy },
+      { name: "Progress Dashboard", href: "/progress", icon: Activity },
+      { name: "Certificate Portal", href: "/certificate", icon: Award }
     ]
   },
   {
-    groupName: "Market Events",
+    groupName: "Billing",
     items: [
-      { name: "Market Events", href: "/events", icon: Newspaper }
-    ]
-  },
-  {
-    groupName: "Reports",
-    items: [
-      { name: "Reports", href: "/reports", icon: BarChart3 },
-      { name: "Leaderboard", href: "/leaderboard", icon: Trophy }
-    ]
-  },
-  {
-    groupName: "Certification",
-    items: [
-      { name: "Certification", href: "/certificates", icon: Award }
-    ]
-  },
-  {
-    groupName: "Updates",
-    items: [
-      { name: "Notifications", href: "/notifications", icon: Bell },
-      { name: "Activity Feed", href: "/activity", icon: Clock }
+      { name: "Plans & Pricing", href: "/pricing", icon: CreditCard },
+      { name: "My Subscription", href: "/subscription", icon: Activity },
+      { name: "Invoices Center", href: "/billing/invoices", icon: Receipt }
     ]
   },
   {
     groupName: "Instructor Panel",
     role: "instructor",
     items: [
-      { name: "Instructor Panel", href: "/instructor", icon: GraduationCap }
+      { name: "Instructor Portal", href: "/instructor", icon: GraduationCap },
+      { name: "Reports Center", href: "/reports", icon: FileBarChart },
+      {
+        name: "Simulation Sandbox",
+        icon: Play,
+        subItems: [
+          { name: "SEO Simulation", href: "/instructor/simulation/seo" },
+          { name: "Google Ads", href: "/instructor/simulation/google-ads" },
+          { name: "Meta Ads", href: "/instructor/simulation/meta-ads" }
+        ]
+      }
     ]
   },
   {
-    groupName: "Admin Panel",
+    groupName: "Admin Console",
     role: "admin",
     items: [
-      { name: "Admin Dashboard", href: "/admin", icon: Shield },
+      { name: "Admin Dashboard", href: "/admin", icon: LayoutDashboard },
       { name: "User Management", href: "/admin/users", icon: Users },
-      { name: "Class Overview", href: "/admin/classes", icon: School },
-      { name: "System Settings", href: "/admin/settings", icon: Settings }
+      { name: "Colleges Tracking", href: "/admin/institutions", icon: GraduationCap },
+      { name: "Usage Analytics", href: "/admin/analytics", icon: Activity },
+      { name: "Billing Analytics", href: "/admin/billing", icon: CreditCard },
+      { name: "Audit Trail Logs", href: "/admin/audit", icon: Award },
+      { name: "Role Permissions", href: "/admin/roles", icon: Trophy },
+      { name: "Platform Health", href: "/admin/system-health", icon: Activity },
+      { name: "Alert Broadcasts", href: "/admin/notifications", icon: Trophy }
     ]
   }
 ]
@@ -108,8 +108,10 @@ export function Sidebar({ className }: SidebarProps) {
   const location = useLocation()
   const { sidebarCollapsed, toggleSidebar } = useUiStore()
   const { user } = useAuthStore()
-
   const userRole = user?.role || "individual"
+  const [expandedMenus, setExpandedMenus] = useState<Record<string, boolean>>({
+    "Simulation Sandbox": true
+  })
 
   const isActive = (href: string) => {
     if (href === "/") {
@@ -120,9 +122,24 @@ export function Sidebar({ className }: SidebarProps) {
 
   // Filter groups by role
   const visibleGroups = navConfig.filter(group => {
-    if (!group.role) return true
-    return group.role === userRole
+    if (group.role && group.role !== userRole) return false
+    // Hide Dashboard for instructors
+    if (group.groupName === "Dashboard" && userRole === "instructor") return false
+    return true
   })
+
+  // Auto-expand menus containing the active sub-item path
+  useEffect(() => {
+    const newExpanded: Record<string, boolean> = {}
+    visibleGroups.forEach(group => {
+      group.items.forEach(item => {
+        if (item.subItems?.some(sub => location.pathname === sub.href)) {
+          newExpanded[item.name] = true
+        }
+      })
+    })
+    setExpandedMenus(prev => ({ ...prev, ...newExpanded }))
+  }, [location.pathname])
 
   return (
     <TooltipProvider delayDuration={100}>
@@ -151,18 +168,115 @@ export function Sidebar({ className }: SidebarProps) {
           {visibleGroups.map((group) => (
             <div key={group.groupName} className="space-y-1.5">
               {!sidebarCollapsed && (
-                <h3 className="px-3 text-[10px] font-bold text-neutral-400 tracking-wider uppercase">
+                <h3 className="px-3 text-[10px] font-bold text-neutral-400 tracking-wider uppercase text-left">
                   {group.groupName}
                 </h3>
               )}
               <div className="space-y-1">
                 {group.items.map((item) => {
                   const Icon = item.icon
-                  const active = isActive(item.href)
 
+                  if (item.subItems) {
+                    const isOpen = !!expandedMenus[item.name]
+                    const hasActiveSubItem = item.subItems.some(sub => location.pathname === sub.href)
+
+                    const itemLink = (
+                      <button
+                        onClick={() => {
+                          setExpandedMenus(prev => ({
+                            ...prev,
+                            [item.name]: !prev[item.name]
+                          }))
+                        }}
+                        className={cn(
+                          "w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm font-semibold transition-all duration-200 group relative text-left",
+                          hasActiveSubItem
+                            ? "bg-neutral-50 text-neutral-900 border-l-2 border-neutral-900 rounded-l-none"
+                            : "text-neutral-600 hover:text-neutral-900 hover:bg-neutral-50"
+                        )}
+                      >
+                        <div className="flex items-center gap-3.5">
+                          <Icon
+                            className={cn(
+                              "h-4 w-4 shrink-0 transition-transform duration-200 group-hover:scale-110",
+                              hasActiveSubItem ? "text-neutral-900" : "text-neutral-500 group-hover:text-neutral-900"
+                            )}
+                          />
+                          {!sidebarCollapsed && (
+                            <span className="truncate">{item.name}</span>
+                          )}
+                        </div>
+                        {!sidebarCollapsed && (
+                          <ChevronRight
+                            className={cn(
+                              "h-3.5 w-3.5 text-neutral-400 transition-transform duration-200",
+                              isOpen && "transform rotate-90"
+                            )}
+                          />
+                        )}
+                      </button>
+                    )
+
+                    if (sidebarCollapsed) {
+                      return (
+                        <Tooltip key={item.name}>
+                          <TooltipTrigger asChild>
+                            {itemLink}
+                          </TooltipTrigger>
+                          <TooltipContent side="right" className="p-2 bg-white border border-neutral-200 shadow-md rounded-lg space-y-1 flex flex-col z-50">
+                            <span className="text-[10px] font-black uppercase tracking-wider text-neutral-400 px-2 pb-1 border-b border-neutral-100 block text-left">{item.name}</span>
+                            {item.subItems.map(sub => (
+                              <Link
+                                key={sub.href}
+                                to={sub.href}
+                                className={cn(
+                                  "block px-2.5 py-1.5 rounded text-xs font-semibold text-left transition-colors whitespace-nowrap",
+                                  location.pathname === sub.href
+                                    ? "bg-neutral-900 text-white font-bold"
+                                    : "text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900"
+                                )}
+                              >
+                                {sub.name}
+                              </Link>
+                            ))}
+                          </TooltipContent>
+                        </Tooltip>
+                      )
+                    }
+
+                    return (
+                      <div key={item.name} className="space-y-1">
+                        {itemLink}
+                        {isOpen && (
+                          <div className="pl-9 space-y-1.5 pt-1 animate-in fade-in slide-in-from-top-1 duration-200 text-left">
+                            {item.subItems.map(sub => {
+                              const subActive = location.pathname === sub.href
+                              return (
+                                <Link
+                                  key={sub.href}
+                                  to={sub.href}
+                                  className={cn(
+                                    "flex items-center gap-2.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors",
+                                    subActive
+                                      ? "text-neutral-900 font-black bg-neutral-100"
+                                      : "text-neutral-600 hover:text-neutral-900 hover:bg-neutral-50"
+                                  )}
+                                >
+                                  {subActive && <span className="h-1.5 w-1.5 rounded-full bg-neutral-900 shrink-0" />}
+                                  <span className="truncate">{sub.name}</span>
+                                </Link>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  }
+
+                  const active = item.href ? isActive(item.href) : false
                   const itemLink = (
                     <Link
-                      to={item.href}
+                      to={item.href || "#"}
                       className={cn(
                         "flex items-center gap-3.5 px-3 py-2 rounded-lg text-sm font-semibold transition-all duration-200 group relative",
                         active

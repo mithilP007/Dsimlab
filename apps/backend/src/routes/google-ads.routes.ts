@@ -3,6 +3,7 @@ import { requireAuth, AuthenticatedRequest } from '../auth/middleware';
 import { prisma } from '../db/client';
 import { z } from 'zod';
 import { ValidationError, NotFoundError } from '../utils/errors';
+import { logActivity, createNotification } from '../utils/audit';
 
 export async function googleAdsRoutes(fastify: FastifyInstance) {
   /**
@@ -87,9 +88,34 @@ export async function googleAdsRoutes(fastify: FastifyInstance) {
       }
     });
 
+    // Write audit log with "fees of operation" (Google Ads budgets spent)
+    const totalGoogleBudget = parsed.data.campaigns.reduce((acc, c) => acc + c.budget, 0);
+    await logActivity(
+      authReq.user!.id,
+      'GOOGLE_ADS_DECISION_SUBMIT',
+      `Submitted Google Ads choices for Round ${sim.currentRound}. Created ${parsed.data.campaigns.length} campaigns. Total Google Ads Budget Spent: $${totalGoogleBudget}.`
+    );
+
+    // Notify instructor
+    const targetClass = await prisma.class.findUnique({
+      where: { id: sim.classId },
+      select: { instructorId: true }
+    });
+    if (targetClass?.instructorId) {
+      await createNotification(
+        targetClass.instructorId,
+        'info',
+        'Google Ads Campaign Updated',
+        `${authReq.user!.name} updated Google Ads campaigns. Total budget spent: $${totalGoogleBudget}.`,
+        authReq.user!.name,
+        '/instructor'
+      );
+    }
+
     return reply.status(200).send({
       success: true,
       campaigns: JSON.parse(decision.googleCampaigns)
     });
   });
 }
+

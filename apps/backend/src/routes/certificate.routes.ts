@@ -2,11 +2,15 @@ import { FastifyInstance } from 'fastify';
 import { requireAuth, AuthenticatedRequest } from '../auth/middleware';
 import { prisma } from '../db/client';
 import { z } from 'zod';
+import * as crypto from 'crypto';
 import { checkCertificateEligibility } from '../services/certificate/eligibility';
 import { generateVerificationHash, verifyCertificateHash } from '../services/certificate/verifier';
 import { generateCertificatePDF } from '../services/certificate/generator';
 import { ValidationError, NotFoundError } from '../utils/errors';
 import { validateStateTransition, SimulationStatus } from '../services/simulation/state-machine';
+import { scheduleCertificateGeneration } from '../jobs/queue';
+import fs from 'fs';
+import path from 'path';
 
 export async function certificateRoutes(fastify: FastifyInstance) {
   /**
@@ -39,7 +43,8 @@ export async function certificateRoutes(fastify: FastifyInstance) {
     const authReq = request as AuthenticatedRequest;
     
     const sim = await prisma.simulationState.findFirst({
-      where: { userId: authReq.user!.id, classId: authReq.user!.classId! }
+      where: { userId: authReq.user!.id, classId: authReq.user!.classId! },
+      include: { class: { include: { scenario: true } } }
     });
 
     if (!sim) {
@@ -81,6 +86,12 @@ export async function certificateRoutes(fastify: FastifyInstance) {
       issueDate
     );
 
+    const year = issueDate.getFullYear();
+    const random4 = crypto.randomBytes(2).toString('hex').toUpperCase();
+    const hash = crypto.createHash('sha256').update(authReq.user!.name + sim.id).digest('hex').substring(0, 8).toUpperCase();
+    const verificationId = `DMSL-${year}-${random4}-${hash}`;
+    const skills = ["SEO Optimization", "PPC Bidding Strategy", "Meta Ads Audiences", "ROAS Scaling", "Budget Pacing"];
+
     const certificate = await prisma.certificate.create({
       data: {
         simulationId: sim.id,
@@ -88,10 +99,23 @@ export async function certificateRoutes(fastify: FastifyInstance) {
         recipientName: authReq.user!.name,
         issueDate,
         verificationHash,
+        verificationId,
         compositeScore: check.compositeScore,
-        pdfUrl: `/api/v1/certificate/download/${sim.id}`
+        pdfUrl: `/api/v1/certificate/download/${sim.id}`,
+        band: check.band || 'COMPETENT',
+        skills: JSON.stringify(skills)
       }
     });
+
+    // Schedule PDF generation in the background queue
+    await scheduleCertificateGeneration(
+      authReq.user!.name,
+      sim.class?.scenario?.industry || 'Digital Marketing',
+      check.band || 'COMPETENT',
+      skills,
+      verificationId,
+      issueDate
+    );
 
     return reply.status(201).send({
       success: true,
@@ -122,18 +146,22 @@ export async function certificateRoutes(fastify: FastifyInstance) {
       }
     });
 
-    if (!cert) {
-      throw new NotFoundError('No certificate generated for this simulation.');
+    const verificationId = cert.verificationId || cert.verificationHash;
+    const certPath = path.join(process.cwd(), 'uploads', 'certificates', `${verificationId}.pdf`);
+    
+    let pdfBuffer: Buffer;
+    if (fs.existsSync(certPath)) {
+      pdfBuffer = fs.readFileSync(certPath);
+    } else {
+      pdfBuffer = await generateCertificatePDF(
+        cert.recipientName,
+        cert.simulation.class.scenario.industry,
+        cert.band || 'COMPETENT',
+        cert.skills ? JSON.parse(cert.skills) : [],
+        verificationId,
+        cert.issueDate
+      );
     }
-
-    const pdfBuffer = await generateCertificatePDF(
-      cert.recipientName,
-      cert.simulation.class.scenario.industry,
-      cert.band,
-      JSON.parse(cert.skills),
-      cert.verificationId || cert.verificationHash,
-      cert.issueDate
-    );
 
     return reply
       .status(200)

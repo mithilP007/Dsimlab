@@ -2,6 +2,7 @@ import { Component } from "react"
 import type { ErrorInfo, ReactNode } from "react"
 import { AlertOctagon, RefreshCw, Home } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import api from "@/lib/api"
 
 interface Props {
   children: ReactNode
@@ -27,6 +28,16 @@ export class ErrorBoundary extends Component<Props, State> {
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error("ErrorBoundary caught an unhandled platform crash:", error, errorInfo)
     this.setState({ errorInfo })
+
+    // Post frontend error report
+    api.post("/api/v1/error-reports", {
+      errorMessage: error.message || error.toString(),
+      errorStack: error.stack || errorInfo.componentStack || "",
+      path: window.location.pathname,
+      userAgent: navigator.userAgent
+    }).catch(err => {
+      console.warn("Failed to report telemetry crash to backend:", err);
+    });
   }
 
   private handleReset = () => {
