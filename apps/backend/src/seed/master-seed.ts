@@ -42,7 +42,9 @@ async function main() {
         certificateLimit: 0,
         reportExportLimit: 1,
         storageLimitMb: 50,
-        features: JSON.stringify(['1 Sandbox Campaign Run', 'Basic SEO Simulator access', 'Email Support'])
+        features: JSON.stringify(['1 Sandbox Campaign Run', 'Basic SEO Simulator access', 'Email Support']),
+        isActive: true,
+        durationDays: 14
       },
       {
         name: 'Individual Basic',
@@ -55,7 +57,9 @@ async function main() {
         certificateLimit: 5,
         reportExportLimit: 5,
         storageLimitMb: 100,
-        features: JSON.stringify(['5 Sandbox Campaign Runs', 'Access to Google & Meta Ads', 'Full Bronze/Silver Certificates', 'Email Support'])
+        features: JSON.stringify(['5 Sandbox Campaign Runs', 'Access to Google & Meta Ads', 'Full Bronze/Silver Certificates', 'Email Support']),
+        isActive: true,
+        durationDays: 30
       },
       {
         name: 'Individual Pro',
@@ -68,7 +72,9 @@ async function main() {
         certificateLimit: -1,
         reportExportLimit: -1,
         storageLimitMb: 500,
-        features: JSON.stringify(['Unlimited Campaign Runs', 'All Ads Engines', 'All Certificates (Platinum included)', 'Priority Support'])
+        features: JSON.stringify(['Unlimited Campaign Runs', 'All Ads Engines', 'All Certificates (Platinum included)', 'Priority Support']),
+        isActive: true,
+        durationDays: 30
       },
       {
         name: 'Instructor',
@@ -81,7 +87,9 @@ async function main() {
         certificateLimit: -1,
         reportExportLimit: -1,
         storageLimitMb: 1024,
-        features: JSON.stringify(['Classroom Management (Up to 30 students)', 'NBA & OBE Accredited Reports', 'Student Analytics Ledgers', 'Export Reports to PDF/CSV'])
+        features: JSON.stringify(['Classroom Management (Up to 30 students)', 'NBA & OBE Accredited Reports', 'Student Analytics Ledgers', 'Export Reports to PDF/CSV']),
+        isActive: true,
+        durationDays: 30
       },
       {
         name: 'College License',
@@ -94,7 +102,9 @@ async function main() {
         certificateLimit: -1,
         reportExportLimit: -1,
         storageLimitMb: 5120,
-        features: JSON.stringify(['Colleges Hub (Up to 10 Instructors, 200 Students)', 'Accreditation Readiness Indexes', 'Bulk Student Imports', 'Premium Dedicated Support'])
+        features: JSON.stringify(['Colleges Hub (Up to 10 Instructors, 200 Students)', 'Accreditation Readiness Indexes', 'Bulk Student Imports', 'Premium Dedicated Support']),
+        isActive: true,
+        durationDays: 365
       },
       {
         name: 'Enterprise License',
@@ -107,7 +117,9 @@ async function main() {
         certificateLimit: -1,
         reportExportLimit: -1,
         storageLimitMb: 20480,
-        features: JSON.stringify(['Unlimited Cohorts, Instructors & Students', 'Custom Scenario Builders', 'SLA Dedicated Account Managers', 'Single Sign-On (SSO) integration'])
+        features: JSON.stringify(['Unlimited Cohorts, Instructors & Students', 'Custom Scenario Builders', 'SLA Dedicated Account Managers', 'Single Sign-On (SSO) integration']),
+        isActive: true,
+        durationDays: 365
       }
     ]
   });

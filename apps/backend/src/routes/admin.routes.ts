@@ -119,6 +119,8 @@ export async function adminRoutes(fastify: FastifyInstance) {
       }
     });
 
+    const dbInstitutions = await prisma.institution.findMany();
+
     // Group users by institution
     const institutionGroups: Record<string, typeof allUsers> = {};
     allUsers.forEach(u => {
@@ -128,6 +130,13 @@ export async function adminRoutes(fastify: FastifyInstance) {
           institutionGroups[name] = institutionGroups[name] || [];
           institutionGroups[name].push(u);
         }
+      }
+    });
+
+    // Ensure all DB institutions exist in the groups
+    dbInstitutions.forEach(di => {
+      if (!institutionGroups[di.name]) {
+        institutionGroups[di.name] = [];
       }
     });
 
@@ -158,8 +167,9 @@ export async function adminRoutes(fastify: FastifyInstance) {
           ? parseFloat(((certsCount / studentsCount) * 100).toFixed(1))
           : 0;
 
-        // Status is active if at least one user is active
-        const status = users.some(u => u.status === 'active') ? 'active' : 'suspended';
+        const dbInst = dbInstitutions.find(di => di.name.toLowerCase() === name.toLowerCase());
+        const code = dbInst ? dbInst.code : "N/A";
+        const status = dbInst ? dbInst.status : (users.some(u => u.status === 'active') ? 'active' : 'suspended');
 
         return {
           name,
@@ -167,7 +177,8 @@ export async function adminRoutes(fastify: FastifyInstance) {
           instructorCount,
           completionRate,
           certificationRate,
-          status
+          status,
+          code
         };
       })
     );
@@ -196,6 +207,11 @@ export async function adminRoutes(fastify: FastifyInstance) {
     const authReq = request as AuthenticatedRequest;
 
     await prisma.$transaction(async (tx) => {
+      await tx.institution.updateMany({
+        where: { name },
+        data: { name: parsed.data.newName }
+      });
+
       await tx.user.updateMany({
         where: { institution: name },
         data: { institution: parsed.data.newName }
@@ -222,6 +238,11 @@ export async function adminRoutes(fastify: FastifyInstance) {
     const authReq = request as AuthenticatedRequest;
 
     await prisma.$transaction(async (tx) => {
+      await tx.institution.updateMany({
+        where: { name },
+        data: { status: 'suspended' }
+      });
+
       await tx.user.updateMany({
         where: { institution: name },
         data: { status: 'suspended' }
@@ -248,6 +269,11 @@ export async function adminRoutes(fastify: FastifyInstance) {
     const authReq = request as AuthenticatedRequest;
 
     await prisma.$transaction(async (tx) => {
+      await tx.institution.updateMany({
+        where: { name },
+        data: { status: 'active' }
+      });
+
       await tx.user.updateMany({
         where: { institution: name },
         data: { status: 'active' }
@@ -263,6 +289,97 @@ export async function adminRoutes(fastify: FastifyInstance) {
     });
 
     return reply.status(200).send({ success: true });
+  });
+
+  /**
+   * POST /api/v1/admin/institutions
+   * Creates a new college/institution with registration code.
+   */
+  fastify.post('/institutions', async (request, reply) => {
+    const bodySchema = z.object({
+      name: z.string().min(1),
+      code: z.string().min(1).toUpperCase()
+    });
+
+    const parsed = bodySchema.safeParse(request.body);
+    if (!parsed.success) {
+      throw new ValidationError(parsed.error.errors[0].message);
+    }
+
+    const { name, code } = parsed.data;
+
+    const existing = await prisma.institution.findFirst({
+      where: {
+        OR: [
+          { name },
+          { code }
+        ]
+      }
+    });
+
+    if (existing) {
+      throw new ValidationError('Institution name or code already registered.');
+    }
+
+    const institution = await prisma.institution.create({
+      data: {
+        name,
+        code,
+        status: 'active'
+      }
+    });
+
+    const authReq = request as AuthenticatedRequest;
+    await prisma.auditLog.create({
+      data: {
+        userId: authReq.user!.id,
+        action: 'INSTITUTION_CREATE',
+        details: `Created new college/institution: "${name}" with code: "${code}"`
+      }
+    });
+
+    return reply.status(201).send({ success: true, institution });
+  });
+
+  /**
+   * PUT /api/v1/admin/users/:id
+   * Updates user records (name, email, role, status, institution).
+   */
+  fastify.put('/users/:id', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const bodySchema = z.object({
+      name: z.string().optional(),
+      email: z.string().email().optional(),
+      role: z.enum(['STUDENT_COLLEGE', 'INDIVIDUAL', 'INSTRUCTOR', 'ADMIN']).optional(),
+      status: z.enum(['active', 'suspended', 'pending']).optional(),
+      institution: z.string().nullable().optional()
+    });
+
+    const parsed = bodySchema.safeParse(request.body);
+    if (!parsed.success) {
+      throw new ValidationError(parsed.error.errors[0].message);
+    }
+
+    const targetUser = await prisma.user.findUnique({ where: { id } });
+    if (!targetUser) {
+      throw new NotFoundError('User not found.');
+    }
+
+    const updatedUser = await prisma.user.update({
+      where: { id },
+      data: parsed.data
+    });
+
+    const authReq = request as AuthenticatedRequest;
+    await prisma.auditLog.create({
+      data: {
+        userId: authReq.user!.id,
+        action: 'USER_UPDATE_OVERRIDE',
+        details: `Updated details for user "${targetUser.email}": ${JSON.stringify(parsed.data)}`
+      }
+    });
+
+    return reply.status(200).send({ success: true, user: updatedUser });
   });
 
   /**

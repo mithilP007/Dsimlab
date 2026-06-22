@@ -17,7 +17,8 @@ import { calculateEventImpacts } from '../events/impact';
 import { advanceRoundState, validateStateTransition, SimulationStatus } from './state-machine';
 import { captureRoundSnapshot } from './snapshot';
 import { calculateStrategicConsistency, checkCertificateEligibility } from '../certificate/eligibility';
-import { createNotification } from '../../utils/audit';
+import { createNotification, logActivity } from '../../utils/audit';
+import { validateAdPolicy } from '../ads/policy-validator';
 import { trendClient } from '../trends/trend-client';
 import { marketSignalBuilder } from '../trends/market-signal-builder';
 
@@ -140,6 +141,77 @@ export async function processSimulationRound(simulationId: string): Promise<any>
     metaCampaigns = JSON.parse(decision.metaCampaigns);
   } catch (err) {
     logger.error({ err }, 'Error parsing decision inputs');
+  }
+
+  // Policy & Budget Hard Violations Check
+  const totalAllocatedBudget = googleCampaigns.reduce((sum: number, c: any) => sum + (c.budget || 0), 0) +
+                               metaCampaigns.reduce((sum: number, c: any) => sum + (c.budget || 0), 0) +
+                               (decision.seoBacklinkBudget || 0);
+
+  if (totalAllocatedBudget > sim.class.scenario.budgetPerRound) {
+    await prisma.hardViolation.create({
+      data: {
+        simulationId,
+        roundNumber: currentRound,
+        type: 'BUDGET_EXCEEDED',
+        severity: 'BLOCKING',
+        message: `Total allocated budget of $${totalAllocatedBudget.toFixed(2)} exceeds the allowed round budget of $${sim.class.scenario.budgetPerRound.toFixed(2)}.`
+      }
+    });
+  }
+
+  // Call policy validator for Google Ads campaigns
+  const googleSoftViolationsCount: Record<string, number> = {};
+  for (const camp of googleCampaigns) {
+    const violations = validateAdPolicy(camp, 'GOOGLE_ADS');
+    let softCount = 0;
+    for (const v of violations) {
+      if (v.severity === 'BLOCKING') {
+        await prisma.hardViolation.create({
+          data: {
+            simulationId,
+            roundNumber: currentRound,
+            studentId: sim.userId,
+            type: v.type,
+            severity: 'BLOCKING',
+            message: `[Google Ads: ${camp.name}] ${v.message}`,
+            source: 'GOOGLE_ADS'
+          }
+        });
+        await logActivity(sim.userId, 'HARD_POLICY_VIOLATION', `Hard violation: ${v.message} in Google Ads campaign "${camp.name}"`);
+      } else {
+        softCount++;
+        await logActivity(sim.userId, 'SOFT_POLICY_WARNING', `Soft warning: ${v.message} in Google Ads campaign "${camp.name}"`);
+      }
+    }
+    googleSoftViolationsCount[camp.name] = softCount;
+  }
+
+  // Call policy validator for Meta Ads campaigns
+  const metaSoftViolationsCount: Record<string, number> = {};
+  for (const camp of metaCampaigns) {
+    const violations = validateAdPolicy(camp, 'META_ADS');
+    let softCount = 0;
+    for (const v of violations) {
+      if (v.severity === 'BLOCKING') {
+        await prisma.hardViolation.create({
+          data: {
+            simulationId,
+            roundNumber: currentRound,
+            studentId: sim.userId,
+            type: v.type,
+            severity: 'BLOCKING',
+            message: `[Meta Ads: ${camp.name}] ${v.message}`,
+            source: 'META_ADS'
+          }
+        });
+        await logActivity(sim.userId, 'HARD_POLICY_VIOLATION', `Hard violation: ${v.message} in Meta Ads campaign "${camp.name}"`);
+      } else {
+        softCount++;
+        await logActivity(sim.userId, 'SOFT_POLICY_WARNING', `Soft warning: ${v.message} in Meta Ads campaign "${camp.name}"`);
+      }
+    }
+    metaSoftViolationsCount[camp.name] = softCount;
   }
 
   // Gather all unique keywords across SEO and Google Ads for the search trend API
@@ -267,17 +339,178 @@ export async function processSimulationRound(simulationId: string): Promise<any>
     ? JSON.parse(mc.platformModifiers as string)
     : (mc.platformModifiers as any);
 
-  // Compute DA and PA
-  const baseDA = 15; // Starting DA benchmark
-  // Fetch previous SEO decisions to count cumulative backlink spend
+  // Fetch previous SEO decisions
   const prevDecisions = await prisma.decision.findMany({
     where: { simulationId, round: { lt: currentRound } }
   });
-  const cumulativeBacklinkSpend = prevDecisions.reduce((sum, d) => sum + d.seoBacklinkBudget, 0) + decision.seoBacklinkBudget;
-  const studentDA = calculateDomainAuthority(cumulativeBacklinkSpend, baseDA);
-  const studentPA = calculatePageAuthority(decision.seoContentQuality, studentDA);
 
-  // Calculate consecutive active rounds for compounding bonus
+  // 1. Analyze submitted content text
+  const focusKeyword = keywords[0] || 'digital marketing';
+  const metaTitle = decision.seoMetaTitle || '';
+  const metaDescription = decision.seoMetaDescription || '';
+  const bodyContent = decision.seoBodyContent || '';
+
+  let contentQualityScore = decision.seoContentQuality || 5.0; // Base: 1 to 10
+  let relevanceScore = 0.85; // Baseline
+
+  if (focusKeyword) {
+    const focusLower = focusKeyword.toLowerCase();
+    const titleLower = metaTitle.toLowerCase();
+    const descLower = metaDescription.toLowerCase();
+    const bodyLower = bodyContent.toLowerCase();
+
+    let keywordHits = 0;
+    if (titleLower.includes(focusLower)) {
+      keywordHits += 1;
+      contentQualityScore = Math.min(10, contentQualityScore + 1.0);
+    }
+    if (descLower.includes(focusLower)) {
+      keywordHits += 1;
+      contentQualityScore = Math.min(10, contentQualityScore + 1.0);
+    }
+
+    // Body keyword density
+    if (bodyContent.length > 0) {
+      const wordCount = bodyContent.split(/\s+/).length || 1;
+      const occurrences = (bodyLower.match(new RegExp(focusLower.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'), 'g')) || []).length;
+      const density = occurrences / wordCount;
+      if (density >= 0.01 && density <= 0.03) {
+        contentQualityScore = Math.min(10, contentQualityScore + 2.0);
+      } else if (density > 0.05) {
+        contentQualityScore = Math.max(1, contentQualityScore - 1.0); // Penalty for keyword stuffing
+      }
+    }
+
+    // Title and description optimal length rewards
+    if (metaTitle.length >= 50 && metaTitle.length <= 60) {
+      contentQualityScore = Math.min(10, contentQualityScore + 0.5);
+    }
+    if (metaDescription.length >= 120 && metaDescription.length <= 160) {
+      contentQualityScore = Math.min(10, contentQualityScore + 0.5);
+    }
+
+    relevanceScore = Math.min(1.0, 0.4 + (keywordHits * 0.2) + (contentQualityScore * 0.04));
+  }
+
+  // 2. Technical Health & HTML check
+  let technicalHealthScore = 80.0; // Default baseline
+  let hasSitemap = true, hasRobots = true, hasSsl = true, isMobileFriendly = true, hasAltTags = false, hasSchema = false;
+
+  if (decision.seoTechnicalConfig) {
+    try {
+      const tc = JSON.parse(decision.seoTechnicalConfig);
+      hasSitemap = tc.hasSitemap ?? true;
+      hasRobots = tc.hasRobots ?? true;
+      hasSsl = tc.hasSsl ?? true;
+      isMobileFriendly = tc.isMobileFriendly ?? true;
+      hasAltTags = tc.hasAltTags ?? false;
+      hasSchema = tc.hasSchema ?? false;
+
+      let techChecklistScore = 0;
+      if (hasSitemap) techChecklistScore += 10;
+      if (hasRobots) techChecklistScore += 10;
+      if (hasSsl) techChecklistScore += 20;
+      if (isMobileFriendly) techChecklistScore += 20;
+      if (hasAltTags) techChecklistScore += 10;
+      if (hasSchema) techChecklistScore += 10;
+
+      technicalHealthScore = 20.0 + techChecklistScore;
+    } catch(e) {}
+  }
+
+  // HTML Validation & Sanitization check on manual bodyContent
+  if (bodyContent.trim().startsWith('<')) {
+    const tags = (bodyContent.match(/<\/?([a-zA-Z1-6]+)(?=>|\s)/g) || []);
+    const stack: string[] = [];
+    let unmatchedCount = 0;
+    for (const tag of tags) {
+      if (tag.startsWith('</')) {
+        const tagName = tag.substring(2);
+        if (stack.length > 0 && stack[stack.length - 1] === tagName) {
+          stack.pop();
+        } else {
+          unmatchedCount++;
+        }
+      } else {
+        const tagName = tag.substring(1);
+        if (!['img', 'br', 'hr', 'input', 'meta', 'link'].includes(tagName.toLowerCase())) {
+          stack.push(tagName);
+        }
+      }
+    }
+    const htmlIssuesCount = unmatchedCount + stack.length;
+    if (htmlIssuesCount > 0) {
+      technicalHealthScore = Math.max(10, technicalHealthScore - Math.min(30, htmlIssuesCount * 5));
+    }
+
+    const deprecatedTags = ['center', 'font', 'frame', 'frameset', 'big', 'strike', 'tt'];
+    deprecatedTags.forEach(tag => {
+      if (bodyContent.toLowerCase().includes(`<${tag}`) || bodyContent.toLowerCase().includes(`</${tag}>`)) {
+        technicalHealthScore = Math.max(10, technicalHealthScore - 5);
+      }
+    });
+  }
+
+  // 3. Internal linking stability
+  const internalLinks = decision.seoInternalLinks || 0;
+  const anchorText = decision.seoAnchorText || '';
+  let internalLinkScore = 50.0;
+  let rankingStabilityMultiplier = 1.0;
+
+  if (internalLinks === 0) {
+    internalLinkScore = 10.0;
+    rankingStabilityMultiplier = 1.5; // High volatility/instability
+  } else if (internalLinks >= 1 && internalLinks <= 3) {
+    internalLinkScore = 85.0;
+    rankingStabilityMultiplier = 0.9;
+  } else if (internalLinks > 3 && internalLinks <= 5) {
+    internalLinkScore = 100.0;
+    rankingStabilityMultiplier = 0.8;
+  } else {
+    internalLinkScore = 70.0;
+    rankingStabilityMultiplier = 1.1;
+  }
+
+  if (anchorText && focusKeyword && anchorText.toLowerCase().includes(focusKeyword.toLowerCase())) {
+    internalLinkScore = Math.min(100, internalLinkScore + 10);
+    rankingStabilityMultiplier = Math.max(0.7, rankingStabilityMultiplier - 0.1);
+  }
+
+  // 4. Authority Growth Compounding & Decay
+  const baseDA = 15;
+  const backlinkQuality = decision.seoBacklinkQuality || 1;
+  const backlinkBudget = decision.seoBacklinkBudget || 0.0;
+  
+  let studentDA = baseDA;
+  if (currentRound > 1 && prevDecisions.length > 0) {
+    let sequentialDA = baseDA;
+    for (let r = 1; r < currentRound; r++) {
+      const rd = prevDecisions.find(pd => pd.round === r);
+      if (rd) {
+        if (rd.seoBacklinkBudget === 0) {
+          sequentialDA = Math.max(10, sequentialDA - 1);
+        } else {
+          const rQuality = rd.seoBacklinkQuality || 1;
+          const rGrowth = (rd.seoBacklinkBudget * rQuality) / 500;
+          sequentialDA = Math.min(100, sequentialDA + rGrowth);
+        }
+      }
+    }
+    studentDA = sequentialDA;
+  }
+
+  if (backlinkBudget === 0) {
+    studentDA = Math.max(10, studentDA - 1);
+  } else {
+    const currentGrowth = (backlinkBudget * backlinkQuality) / 500;
+    studentDA = Math.min(100, studentDA + currentGrowth);
+  }
+
+  const studentPA = calculatePageAuthority(contentQualityScore, studentDA);
+
+  // Cumulative Backlink spend (for backward compatibility in some models)
+  const cumulativeBacklinkSpend = prevDecisions.reduce((sum, d) => sum + d.seoBacklinkBudget, 0) + decision.seoBacklinkBudget;
+
   let consecutiveSEOActiveRounds = 0;
   for (let r = currentRound - 1; r >= 1; r--) {
     const prevDec = prevDecisions.find(pd => pd.round === r);
@@ -317,12 +550,12 @@ export async function processSimulationRound(simulationId: string): Promise<any>
       keyword: kw,
       pageAuthority: studentPA,
       domainAuthority: studentDA,
-      relevanceScore: 0.85, // Mock relevance factor
+      relevanceScore,
       competitors: competitorsSEO,
       keywordDifficulty: difficulty,
-      contentQuality: decision.seoContentQuality,
+      contentQuality: contentQualityScore,
       backlinkBudget: decision.seoBacklinkBudget,
-      technicalScore: 85.0,
+      technicalScore: technicalHealthScore,
       previousBehavior: {
         cumulativeBacklinkSpend,
         consecutiveSEOActiveRounds
@@ -332,9 +565,11 @@ export async function processSimulationRound(simulationId: string): Promise<any>
 
     keywordsRanks.push(rank);
 
+    // rankingStabilityMultiplier affects traffic volatility
+    const volatility = random.nextFloat(1.0 - (0.15 * rankingStabilityMultiplier), 1.0 + (0.15 * rankingStabilityMultiplier));
     const traffic = calculateOrganicTraffic({
       rank,
-      searchVolume: Math.round(searchVolume * seoCTR),
+      searchVolume: Math.round(searchVolume * seoCTR * volatility),
       conversionRate: seoCVR,
     });
 
@@ -367,7 +602,45 @@ export async function processSimulationRound(simulationId: string): Promise<any>
         { id: 'rival-2', name: 'Rival B', bid: random.nextFloat(0.8, 3.0), qualityScore: random.nextInt(5, 8), dailyBudget: dailyCampaignBudget * 0.8 },
       ];
 
-      const qs = calculateQualityScore(adCopy, kwBid.word, landingPage);
+      let qs = calculateQualityScore(adCopy, kwBid.word, landingPage);
+
+      // Apply soft violations penalty (Quality Score reduction)
+      const campaignSoftCount = googleSoftViolationsCount[campaign.name] || 0;
+      if (campaignSoftCount > 0) {
+        qs = Math.max(1, qs - (2.0 * campaignSoftCount));
+      }
+
+      // Extensions modifier
+      const extensions = campaign.extensions || {};
+      const validSitelinks = (extensions.sitelinks || []).filter((s: any) => s && s.title && s.title.trim().length > 0);
+      const validCallouts = (extensions.callouts || []).filter((c: any) => typeof c === 'string' && c.trim().length > 0);
+      const validStructuredSnippets = (extensions.structuredSnippets || []).filter((c: any) => typeof c === 'string' && c.trim().length > 0);
+      const hasPromo = extensions.promotion && extensions.promotion.item && extensions.promotion.item.trim().length > 0;
+      const hasLead = extensions.leadForm && extensions.leadForm.title && extensions.leadForm.title.trim().length > 0;
+      const hasCall = extensions.callExtension && extensions.callExtension.trim().length > 0;
+
+      // Sitelinks: up to 4, +0.25 Quality Score each, +2% CTR multiplier each
+      // Callouts: up to 4, +0.125 Quality Score each, +1% CTR multiplier each
+      // Structured snippets: up to 4, +0.125 Quality Score each, +1% CTR multiplier each
+      // Promotion: if present/valid, +0.25 Quality Score, +2% CTR multiplier
+      // Lead form: if present/valid, +0.25 Quality Score, +2% CTR multiplier
+      // Call extension: if present/valid, +0.125 Quality Score, +1% CTR multiplier
+      let qsBonus = (validSitelinks.length * 0.25) + (validCallouts.length * 0.125) + (validStructuredSnippets.length * 0.125);
+      if (hasPromo) qsBonus += 0.25;
+      if (hasLead) qsBonus += 0.25;
+      if (hasCall) qsBonus += 0.125;
+
+      qs = Math.min(10, qs + qsBonus);
+
+      let ctrModifier = 1.0 + (validSitelinks.length * 0.02) + (validCallouts.length * 0.01) + (validStructuredSnippets.length * 0.01);
+      if (hasPromo) ctrModifier += 0.02;
+      if (hasLead) ctrModifier += 0.02;
+      if (hasCall) ctrModifier += 0.01;
+
+      // Penalize CTR slightly for soft violations
+      if (campaignSoftCount > 0) {
+        ctrModifier = Math.max(0.5, ctrModifier - (0.1 * campaignSoftCount));
+      }
 
       const studentBidder = {
         id: 'student',
@@ -380,7 +653,8 @@ export async function processSimulationRound(simulationId: string): Promise<any>
         campaignType: type,
         biddingStrategy: bidStrategy,
         negativeKeywordsCount: negKws.length,
-        landingPageExperience: (landingPage.pageRelevance + landingPage.mobileFriendly + landingPage.pageSpeed + landingPage.trustSignals + landingPage.offerClarity + landingPage.conversionReadiness) / 6
+        landingPageExperience: (landingPage.pageRelevance + landingPage.mobileFriendly + landingPage.pageSpeed + landingPage.trustSignals + landingPage.offerClarity + landingPage.conversionReadiness) / 6,
+        ctrModifier
       };
 
       const auctionResults = runGoogleAuction(
@@ -453,7 +727,13 @@ export async function processSimulationRound(simulationId: string): Promise<any>
   const metaAdvertisers = metaCampaigns.map((camp: any) => {
     const adCopy = camp.creative || { headline: '', primaryText: '', callToAction: '', mediaQuality: 80 };
     const avgQuality = adCopy.mediaQuality || 80;
-    const creativeQuality = Math.max(1, Math.min(10, Math.round(avgQuality / 10))) || 8;
+    let creativeQuality = Math.max(1, Math.min(10, Math.round(avgQuality / 10))) || 8;
+
+    // Apply soft violations penalty
+    const campaignSoftCount = metaSoftViolationsCount[camp.name] || 0;
+    if (campaignSoftCount > 0) {
+      creativeQuality = Math.max(1, creativeQuality - (2 * campaignSoftCount));
+    }
 
     return {
       id: 'student',
@@ -550,6 +830,19 @@ export async function processSimulationRound(simulationId: string): Promise<any>
     orderBy: { round: 'asc' }
   });
 
+  let reflectionQualityScore = 75.0;
+  if (currentRound > 1) {
+    const cp = await prisma.checkpointValidation.findFirst({
+      where: {
+        simulationId,
+        roundNumber: currentRound - 1,
+      }
+    });
+    if (cp) {
+      reflectionQualityScore = cp.reflectionQualityScore;
+    }
+  }
+
   const dimensionScores = calculateDimensionScores({
     seoKeywordsRanks: keywordsRanks,
     googleAdsCost: googleCost,
@@ -569,7 +862,8 @@ export async function processSimulationRound(simulationId: string): Promise<any>
     googleClicks,
     metaClicks,
     googleImpressions,
-    metaImpressions
+    metaImpressions,
+    reflectionQualityScore
   });
 
   const compositeIndex = calculateCompositeIndex(dimensionScores);

@@ -1,5 +1,5 @@
 import { useLocation, Link } from "react-router"
-import { Check, Info, Search, Target, Share2, Award } from "lucide-react"
+import { Check, Info, Search, Target, Share2, Award, LineChart, FileText } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 interface Step {
@@ -10,10 +10,12 @@ interface Step {
 
 const STEPS: Step[] = [
   { name: "Briefing", href: "/simulation/briefing", icon: Info },
+  { name: "Market Analysis", href: "/simulation/market-analysis", icon: LineChart },
   { name: "SEO", href: "/simulation/seo", icon: Search },
   { name: "Google Ads", href: "/simulation/google-ads", icon: Target },
   { name: "Meta Ads", href: "/simulation/meta-ads", icon: Share2 },
   { name: "Results Summary", href: "/simulation/results", icon: Award },
+  { name: "Checkpoint", href: "/simulation/checkpoint", icon: FileText },
 ]
 
 export function SimulationProgressTracker() {

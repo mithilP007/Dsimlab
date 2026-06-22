@@ -14,10 +14,12 @@ import {
 
 export function SimulationHomePage() {
   const { user } = useAuthStore()
-  const { startSimulation, fetchLatestState } = useSimulationStore()
+  const { fetchLatestState } = useSimulationStore()
   const [loading, setLoading] = useState(true)
   const [fullState, setFullState] = useState<any>(null)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const [checkpointSubmitted, setCheckpointSubmitted] = useState(true)
+  const [isInitializingPath, setIsInitializingPath] = useState(false)
 
   const loadData = async () => {
     setLoading(true)
@@ -29,7 +31,24 @@ export function SimulationHomePage() {
       // Fetch full state directly for scenario / class information
       const res = await api.get<{ success: boolean; state: any }>('/api/v1/simulation/state')
       if (res.data?.success && res.data.state) {
-        setFullState(res.data.state)
+        const stateData = res.data.state
+        setFullState(stateData)
+        
+        // Gate check for college student checkpoint justification
+        const isCollegeStudent = user?.role === "student-college"
+        if (isCollegeStudent && stateData.currentRound > 1) {
+          const checkRes = await api.get<{ success: boolean; checkpoints: any[] }>(`/api/v1/simulation/checkpoint/${stateData.id}`)
+          if (checkRes.data?.success) {
+            const hasPrevCheckpoint = checkRes.data.checkpoints.some(
+              cp => cp.roundNumber === stateData.currentRound - 1
+            )
+            setCheckpointSubmitted(hasPrevCheckpoint)
+          } else {
+            setCheckpointSubmitted(false)
+          }
+        } else {
+          setCheckpointSubmitted(true)
+        }
       } else {
         setErrorMsg("Failed to retrieve simulation state details.")
       }
@@ -45,18 +64,24 @@ export function SimulationHomePage() {
     loadData()
   }, [])
 
-  const handleStartSim = async () => {
-    setLoading(true)
+
+
+  const handleSetupSandbox = async (path: 'beginner' | 'intermediate' | 'advanced') => {
+    setIsInitializingPath(true)
+    const tid = toast.loading(`Provisioning ${path} sandbox track...`)
     try {
-      const data = await startSimulation()
-      if (data) {
-        toast.success("Simulation initialized!")
+      const res = await api.post('/api/simulations/setup-sandbox', { path })
+      if (res.data?.success) {
+        toast.success(`Successfully initialized ${path} sandbox track!`, { id: tid })
         await loadData()
+      } else {
+        toast.error("Failed to provision sandbox track.", { id: tid })
       }
     } catch (err: any) {
-      toast.error(err.response?.data?.message || "Failed to start simulation")
+      console.error(err)
+      toast.error(err.response?.data?.error || err.message || "Failed to setup sandbox.", { id: tid })
     } finally {
-      setLoading(false)
+      setIsInitializingPath(false)
     }
   }
 
@@ -69,29 +94,156 @@ export function SimulationHomePage() {
     )
   }
 
+  const isIndividualOrStaff = user?.role === "individual" || user?.role === "instructor" || user?.role === "admin";
+
   if (errorMsg || !fullState) {
     return (
-      <div className="max-w-md mx-auto mt-12 p-6 bg-white border border-neutral-200 rounded-2xl shadow-sm text-center space-y-4">
-        <ShieldAlert className="h-12 w-12 text-rose-500 mx-auto" />
-        <h2 className="text-lg font-black text-neutral-900">Simulation Not Started</h2>
-        <p className="text-xs text-neutral-500 font-semibold leading-relaxed">
-          {errorMsg || "No active simulation class cohort has been found for your account."}
-        </p>
-        
-        {user?.role === "student-college" && (
-          <div className="text-xs bg-indigo-50 text-indigo-800 p-3.5 rounded-xl border border-indigo-200 font-semibold leading-relaxed">
-            Please make sure you have joined a class cohort with your instructor's invite code in the main dashboard.
-          </div>
-        )}
+      <div className="max-w-5xl mx-auto p-4 sm:p-6 md:p-8 space-y-8 animate-in fade-in duration-300">
+        <div className="text-left space-y-2">
+          <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest bg-indigo-50 px-2.5 py-1 rounded-full w-max block">
+            Sandbox Onboarding
+          </span>
+          <h1 className="text-2xl sm:text-3xl font-black text-neutral-900">
+            Welcome to the Digital Marketing Sandbox
+          </h1>
+          <p className="text-xs sm:text-sm text-neutral-500 font-semibold max-w-2xl">
+            Choose your learning track to initialize a personal sandbox workspace. In sandbox mode, you can test search engines, paid search bidding algorithms, and demographic targeting configurations.
+          </p>
+        </div>
 
-        {(user?.role === "individual" || user?.role === "instructor" || user?.role === "admin") && (
-          <Button 
-            onClick={handleStartSim}
-            className="w-full bg-indigo-600 text-white hover:bg-indigo-700 font-black text-xs h-10 rounded-xl"
-          >
-            <Play className="mr-1.5 h-4 w-4 fill-white" />
-            Initialize Sandbox Simulation
-          </Button>
+        {isIndividualOrStaff ? (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-left">
+            {/* Beginner Card */}
+            <Card className="border border-neutral-200/80 shadow-md hover:shadow-lg transition-all flex flex-col justify-between overflow-hidden bg-white">
+              <div className="p-6 space-y-4">
+                <div className="flex justify-between items-start">
+                  <Badge className="bg-emerald-50 text-emerald-800 border border-emerald-200 font-black text-[10px] uppercase">
+                    Beginner Path
+                  </Badge>
+                  <span className="text-xs font-black text-neutral-400">Easy Mode</span>
+                </div>
+                <h3 className="text-base font-black text-neutral-900">SaaS Marketing Basics</h3>
+                <p className="text-xs text-neutral-500 font-medium leading-relaxed">
+                  Perfect for beginners. Start with a large budget envelope to explore basic SEO density weights and target CPC bidding.
+                </p>
+                <div className="divide-y divide-neutral-100 text-[11px] pt-2">
+                  <div className="py-2 flex justify-between font-semibold">
+                    <span className="text-neutral-450">Scenario</span>
+                    <span className="text-neutral-800">Global SaaS CRM</span>
+                  </div>
+                  <div className="py-2 flex justify-between font-semibold">
+                    <span className="text-neutral-450">Round Budget</span>
+                    <span className="text-emerald-600 font-black">$8,000 / round</span>
+                  </div>
+                  <div className="py-2 flex justify-between font-semibold">
+                    <span className="text-neutral-450">Target KPI</span>
+                    <span className="text-neutral-800">Revenue Generation</span>
+                  </div>
+                </div>
+              </div>
+              <div className="p-6 bg-neutral-50/50 border-t border-neutral-100">
+                <Button 
+                  onClick={() => handleSetupSandbox('beginner')}
+                  disabled={isInitializingPath}
+                  className="w-full bg-slate-900 hover:bg-slate-950 text-white font-black text-xs h-10 rounded-xl"
+                >
+                  Start Beginner Track
+                </Button>
+              </div>
+            </Card>
+
+            {/* Intermediate Card */}
+            <Card className="border border-indigo-200 shadow-md hover:shadow-lg transition-all flex flex-col justify-between overflow-hidden bg-white relative">
+              <div className="absolute top-0 right-0 bg-indigo-600 text-white text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-bl-lg shadow-sm">
+                Recommended
+              </div>
+              <div className="p-6 space-y-4">
+                <div className="flex justify-between items-start">
+                  <Badge className="bg-indigo-50 text-indigo-850 border border-indigo-200 font-black text-[10px] uppercase">
+                    Intermediate Path
+                  </Badge>
+                  <span className="text-xs font-black text-neutral-450">Medium Mode</span>
+                </div>
+                <h3 className="text-base font-black text-neutral-900">SaaS Strategy Challenge</h3>
+                <p className="text-xs text-neutral-500 font-medium leading-relaxed">
+                  The standard platform experience. Manage balanced budgets and competitive ad bidding settings in B2B SaaS space.
+                </p>
+                <div className="divide-y divide-neutral-100 text-[11px] pt-2">
+                  <div className="py-2 flex justify-between font-semibold">
+                    <span className="text-neutral-450">Scenario</span>
+                    <span className="text-neutral-800">Global SaaS CRM</span>
+                  </div>
+                  <div className="py-2 flex justify-between font-semibold">
+                    <span className="text-neutral-450">Round Budget</span>
+                    <span className="text-indigo-650 font-black">$5,000 / round</span>
+                  </div>
+                  <div className="py-2 flex justify-between font-semibold">
+                    <span className="text-neutral-450">Target KPI</span>
+                    <span className="text-neutral-800">Revenue Generation</span>
+                  </div>
+                </div>
+              </div>
+              <div className="p-6 bg-indigo-50/20 border-t border-indigo-100">
+                <Button 
+                  onClick={() => handleSetupSandbox('intermediate')}
+                  disabled={isInitializingPath}
+                  className="w-full bg-indigo-650 hover:bg-indigo-700 text-white font-black text-xs h-10 rounded-xl"
+                >
+                  Start Intermediate Track
+                </Button>
+              </div>
+            </Card>
+
+            {/* Advanced Card */}
+            <Card className="border border-neutral-200/80 shadow-md hover:shadow-lg transition-all flex flex-col justify-between overflow-hidden bg-white">
+              <div className="p-6 space-y-4">
+                <div className="flex justify-between items-start">
+                  <Badge className="bg-amber-50 text-amber-850 border border-amber-200 font-black text-[10px] uppercase">
+                    Advanced Path
+                  </Badge>
+                  <span className="text-xs font-black text-neutral-400">Hard Mode</span>
+                </div>
+                <h3 className="text-base font-black text-neutral-900">E-Commerce App Blitz</h3>
+                <p className="text-xs text-neutral-500 font-medium leading-relaxed">
+                  A high-volatility retail simulation. Stretch tight budgets to convert visitors and maintain high positive CTR efficiency.
+                </p>
+                <div className="divide-y divide-neutral-100 text-[11px] pt-2">
+                  <div className="py-2 flex justify-between font-semibold">
+                    <span className="text-neutral-450">Scenario</span>
+                    <span className="text-neutral-800">Fashion E-Commerce</span>
+                  </div>
+                  <div className="py-2 flex justify-between font-semibold">
+                    <span className="text-neutral-450">Round Budget</span>
+                    <span className="text-amber-700 font-black">$3,500 / round</span>
+                  </div>
+                  <div className="py-2 flex justify-between font-semibold">
+                    <span className="text-neutral-450">Target KPI</span>
+                    <span className="text-neutral-800">Conversion Rate</span>
+                  </div>
+                </div>
+              </div>
+              <div className="p-6 bg-neutral-50/50 border-t border-neutral-100">
+                <Button 
+                  onClick={() => handleSetupSandbox('advanced')}
+                  disabled={isInitializingPath}
+                  className="w-full bg-slate-900 hover:bg-slate-950 text-white font-black text-xs h-10 rounded-xl"
+                >
+                  Start Advanced Track
+                </Button>
+              </div>
+            </Card>
+          </div>
+        ) : (
+          <Card className="max-w-md mx-auto p-6 bg-white border border-neutral-200 rounded-2xl shadow-sm text-center space-y-4">
+            <ShieldAlert className="h-12 w-12 text-rose-500 mx-auto" />
+            <h2 className="text-lg font-black text-neutral-900">Simulation Not Started</h2>
+            <p className="text-xs text-neutral-500 font-semibold leading-relaxed">
+              {errorMsg || "No active simulation class cohort has been found for your account."}
+            </p>
+            <div className="text-xs bg-indigo-50 text-indigo-805 p-3.5 rounded-xl border border-indigo-200 font-semibold leading-relaxed">
+              Please make sure you have joined a class cohort with your instructor's invite code in the main dashboard.
+            </div>
+          </Card>
         )}
       </div>
     )
@@ -209,12 +361,21 @@ export function SimulationHomePage() {
               </Link>
               
               {!isCompleted && (
-                <Link to="/simulation/seo">
-                  <Button className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black h-9 px-4 rounded-xl flex items-center gap-1">
-                    Continue Simulation
-                    <Play className="h-3.5 w-3.5 fill-white" />
-                  </Button>
-                </Link>
+                checkpointSubmitted ? (
+                  <Link to="/simulation/seo">
+                    <Button className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black h-9 px-4 rounded-xl flex items-center gap-1">
+                      Continue Simulation
+                      <Play className="h-3.5 w-3.5 fill-white" />
+                    </Button>
+                  </Link>
+                ) : (
+                  <Link to="/simulation/checkpoint">
+                    <Button className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-black h-9 px-4 rounded-xl flex items-center gap-1">
+                      Complete Checkpoint
+                      <ShieldAlert className="h-3.5 w-3.5 shrink-0" />
+                    </Button>
+                  </Link>
+                )
               )}
 
               {isCompleted && (

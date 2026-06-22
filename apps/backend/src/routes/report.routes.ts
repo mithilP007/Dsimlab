@@ -735,6 +735,11 @@ export async function reportRoutes(fastify: FastifyInstance) {
     });
     const achievements = notices.map(n => n.title.replace('Achievement Unlocked: ', ''));
 
+    const checkpoints = activeSim ? await prisma.checkpointValidation.findMany({
+      where: { simulationId: activeSim.id },
+      orderBy: { roundNumber: 'asc' }
+    }) : [];
+
     const recommendations: string[] = [];
     const latestBreakdown = breakdowns[breakdowns.length - 1];
     if (latestBreakdown) {
@@ -753,7 +758,8 @@ export async function reportRoutes(fastify: FastifyInstance) {
       history: roundMetrics,
       certificate: cert ? { band: cert.band, issueDate: cert.issueDate, verificationId: cert.verificationId } : null,
       achievements,
-      recommendations
+      recommendations,
+      checkpoints
     });
   });
 
@@ -875,6 +881,143 @@ export async function reportRoutes(fastify: FastifyInstance) {
         "Schedule synchronous practice round clinics to let students test campaign variables safely.",
         "Highlight CAC/CPA metrics in class reviews to emphasize budget discipline."
       ]
+    });
+  });
+
+  /**
+   * GET /api/v1/report/class/:classId/grades/export
+   * Exports student grades as a CSV sheet.
+   */
+  fastify.get('/class/:classId/grades/export', { preHandler: [requireRole([UserRole.INSTRUCTOR, UserRole.ADMIN])] }, async (request, reply) => {
+    const authReq = request as AuthenticatedRequest;
+    const { classId } = request.params as { classId: string };
+
+    const targetClass = await prisma.class.findFirst({
+      where: { id: classId, instructorId: authReq.user!.id }
+    });
+    if (!targetClass) throw new NotFoundError('Class cohort not found or unauthorized.');
+
+    const students = await prisma.user.findMany({
+      where: { classId, role: UserRole.STUDENT_COLLEGE },
+      include: {
+        simulations: {
+          include: {
+            scoreBreakdowns: { orderBy: { round: 'desc' }, take: 1 },
+            certificates: true
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 1
+        }
+      }
+    });
+
+    const csvHeaders = [
+      'Student Name',
+      'Email',
+      'Current Round',
+      'Simulation Completed',
+      'Composite Score',
+      'Strategic Alignment',
+      'ROI Efficiency',
+      'Budget Discipline',
+      'Risk Management',
+      'Adaptability Score',
+      'Certificate Band'
+    ].join(',');
+
+    const csvRows = students.map(s => {
+      const sim = s.simulations[0];
+      const score = sim?.scoreBreakdowns[0];
+      const cert = sim?.certificates[0];
+      
+      return [
+        `"${s.name.replace(/"/g, '""')}"`,
+        `"${s.email.replace(/"/g, '""')}"`,
+        sim ? sim.currentRound : 1,
+        sim ? (sim.isCompleted ? 'Yes' : 'No') : 'No',
+        score ? score.compositeIndex.toFixed(1) : '0.0',
+        score ? score.strategicAlignment.toFixed(1) : '0.0',
+        score ? score.efficiencyRoi.toFixed(1) : '0.0',
+        score ? score.budgetDiscipline.toFixed(1) : '0.0',
+        score ? score.riskManagement.toFixed(1) : '0.0',
+        score ? score.adaptability.toFixed(1) : '0.0',
+        cert ? cert.band : 'None'
+      ].join(',');
+    });
+
+    const csvData = [csvHeaders, ...csvRows].join('\n');
+
+    await logActivity(
+      authReq.user!.id,
+      'EXPORT_GRADES',
+      `Exported CSV grades spreadsheet for class cohort: ${targetClass.name}`
+    );
+
+    return reply
+      .header('Content-Type', 'text/csv')
+      .header('Content-Disposition', `attachment; filename=grades_export_${classId}.csv`)
+      .status(200)
+      .send(csvData);
+  });
+
+  /**
+   * GET /api/v1/report/class/:classId/faculty-evaluation
+   * Generates a faculty evaluation analysis and outcome assessment report.
+   */
+  fastify.get('/class/:classId/faculty-evaluation', { preHandler: [requireRole([UserRole.INSTRUCTOR, UserRole.ADMIN])] }, async (request, reply) => {
+    const authReq = request as AuthenticatedRequest;
+    const { classId } = request.params as { classId: string };
+
+    const targetClass = await prisma.class.findFirst({
+      where: { id: classId, instructorId: authReq.user!.id }
+    });
+    if (!targetClass) throw new NotFoundError('Class cohort not found or unauthorized.');
+
+    const students = await prisma.user.findMany({
+      where: { classId, role: UserRole.STUDENT_COLLEGE },
+      include: {
+        simulations: {
+          include: {
+            scoreBreakdowns: { orderBy: { round: 'desc' }, take: 1 }
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 1
+        }
+      }
+    });
+
+    const scores = students
+      .map(s => s.simulations[0]?.scoreBreakdowns[0]?.compositeIndex || 0)
+      .filter(Boolean);
+
+    const averageScore = scores.length > 0 ? parseFloat((scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1)) : 0;
+    const highestScore = scores.length > 0 ? Math.max(...scores) : 0;
+    const completionRate = students.length > 0
+      ? parseFloat(((students.filter(s => s.simulations[0]?.isCompleted).length / students.length) * 100).toFixed(1))
+      : 0;
+
+    let teachingPerformanceRating = 'Satisfactory';
+    if (averageScore >= 80) teachingPerformanceRating = 'Excellent';
+    else if (averageScore >= 70) teachingPerformanceRating = 'Very Good';
+    else if (averageScore >= 60) teachingPerformanceRating = 'Good';
+
+    const selfReflectionSummary = `This faculty evaluation analysis reviews educational outcomes for the course cohort "${targetClass.name}". A total of ${students.length} students enrolled in the simulation workspace, achieving a class average composite index of ${averageScore}%. The highest student score was ${highestScore}%, with an overall simulation completion rate of ${completionRate}%. Based on outcome metrics, the educational performance rating for this session is assessed as "${teachingPerformanceRating}".`;
+
+    return reply.status(200).send({
+      success: true,
+      className: targetClass.name,
+      evaluation: {
+        totalEnrolled: students.length,
+        averageScore,
+        highestScore,
+        completionRate,
+        teachingPerformanceRating,
+        selfReflectionSummary,
+        accreditationStandard: "OBE Criteria III (Accreditation Outcome Alignment)",
+        recommendingAction: averageScore < 70 
+          ? "Recommend scheduling one-on-one review clinics and increasing baseline walkthrough time." 
+          : "Curriculum pacing is highly aligned. Suggest adding intermediate-level scenarios for next term."
+      }
     });
   });
 }

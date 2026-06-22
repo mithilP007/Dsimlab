@@ -9,6 +9,7 @@ import {
   Trophy, Search, ArrowUp, ArrowDown, Minus, 
   Award, Users, Globe, RefreshCw, Sparkles, Activity
 } from "lucide-react"
+import { Link } from "react-router"
 
 export function LeaderboardPage() {
   const { user } = useAuthStore()
@@ -95,6 +96,29 @@ export function LeaderboardPage() {
   const top1 = podiumStudents[0]
   const top2 = podiumStudents[1]
   const top3 = podiumStudents[2]
+
+  const isSandbox = user?.role?.toLowerCase() === "individual" || !user?.classId
+
+  if (isSandbox) {
+    return (
+      <div className="p-4 sm:p-6 md:p-8 max-w-2xl mx-auto text-center space-y-6 mt-12 animate-in fade-in duration-300">
+        <div className="relative overflow-hidden rounded-2xl border border-neutral-200 bg-gradient-to-r from-neutral-900 via-neutral-800 to-neutral-950 p-8 text-white shadow-lg space-y-4">
+          <Trophy className="h-12 w-12 text-amber-400 mx-auto animate-pulse" />
+          <h1 className="text-xl font-black">Sandbox Mode — Leaderboard Offline</h1>
+          <p className="text-xs text-neutral-300 leading-relaxed font-semibold">
+            Cohort leaderboards are active exclusively for institutional classroom courses. In Individual Sandbox mode, you can practice without classroom pressure. Focus on tuning your campaign algorithms, maximizing ROI, and qualifying for certification!
+          </p>
+          <div className="pt-2">
+            <Link to="/simulation" className="inline-block">
+              <Button className="bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs h-10 px-5 rounded-xl">
+                Go to Simulation Console
+              </Button>
+            </Link>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="p-4 sm:p-6 md:p-8 max-w-7xl mx-auto space-y-8 animate-in fade-in duration-300">

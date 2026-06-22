@@ -2,7 +2,9 @@ import { BrowserRouter, Routes, Route, Navigate, Outlet } from "react-router"
 import { AppShell } from "@/components/layout/AppShell"
 import { DashboardPage } from "@/pages/Dashboard"
 import { InstructorPortal } from "@/pages/InstructorPortal"
+import { InstructorGovernance } from "@/pages/InstructorGovernance"
 import { CreateClassPage } from "@/pages/CreateClassPage"
+import { InstructorAssignmentsPage } from "@/pages/InstructorAssignmentsPage"
 import { EditClassPage } from "@/pages/EditClassPage"
 import { ProfilePage } from "@/pages/ProfilePage"
 import { NotificationsPage } from "@/pages/NotificationsPage"
@@ -12,6 +14,9 @@ import { MetaAdsSimulationPage } from "@/pages/simulation/MetaAdsSimulationPage"
 import { SimulationHomePage } from "@/pages/simulation/SimulationHomePage"
 import { ScenarioBriefingPage } from "@/pages/simulation/ScenarioBriefingPage"
 import { SimulationResultsPage } from "@/pages/simulation/SimulationResultsPage"
+import { MarketEventsPage } from "@/pages/simulation/MarketEventsPage"
+import { MarketAnalysisPage } from "@/pages/simulation/MarketAnalysisPage"
+import { MandatoryCheckpointPage } from "@/pages/simulation/MandatoryCheckpointPage"
 import { LoginScreen } from "@/pages/auth/LoginScreen"
 import { LeaderboardPage } from "@/pages/LeaderboardPage"
 import { ProgressDashboardPage } from "@/pages/ProgressDashboardPage"
@@ -23,6 +28,10 @@ import { NotFound } from "@/pages/NotFound"
 import { useAuthStore } from "@/stores/authStore"
 import { useEffect } from "react"
 import { PendingApprovalScreen } from "@/pages/auth/PendingApprovalScreen"
+import { CampaignDashboard } from "@/pages/campaign/CampaignDashboard"
+import { CampaignDecisionPage } from "@/pages/campaign/CampaignDecisionPage"
+import { CampaignResultsPage } from "@/pages/campaign/CampaignResultsPage"
+import { CampaignTimelinePage } from "@/pages/campaign/CampaignTimelinePage"
 
 // Certificate components
 import { CertificatePortal } from "@/pages/CertificatePortal"
@@ -119,10 +128,20 @@ export function AppRouter() {
           {/* Shared Simulation Experience Routes */}
           <Route path="/simulation" element={<SimulationHomePage />} />
           <Route path="/simulation/briefing" element={<ScenarioBriefingPage />} />
+          <Route path="/simulation/market-analysis" element={<MarketAnalysisPage />} />
           <Route path="/simulation/seo" element={<SeoSimulationPage />} />
           <Route path="/simulation/google-ads" element={<GoogleAdsSimulationPage />} />
           <Route path="/simulation/meta-ads" element={<MetaAdsSimulationPage />} />
           <Route path="/simulation/results" element={<SimulationResultsPage />} />
+          <Route path="/simulation/checkpoint" element={<MandatoryCheckpointPage />} />
+          <Route path="/simulation/events" element={<MarketEventsPage />} />
+          
+          {/* Daily Campaign Simulation Routes */}
+          <Route path="/campaign" element={<CampaignDashboard />} />
+          <Route path="/campaign/day/:dayNumber" element={<CampaignDecisionPage />} />
+          <Route path="/campaign/results/day/:dayNumber" element={<CampaignResultsPage />} />
+          <Route path="/campaign/timeline" element={<CampaignTimelinePage />} />
+          
           <Route path="/leaderboard" element={<LeaderboardPage />} />
           <Route path="/progress" element={<ProgressDashboardPage />} />
           
@@ -138,8 +157,10 @@ export function AppRouter() {
           {/* Instructor Only Routes */}
           <Route element={<InstructorLayout />}>
             <Route path="/instructor" element={<InstructorPortal />} />
+            <Route path="/instructor/governance" element={<InstructorGovernance />} />
             <Route path="/instructor/create-class" element={<CreateClassPage />} />
             <Route path="/instructor/edit-class/:classId" element={<EditClassPage />} />
+            <Route path="/instructor/assignments" element={<InstructorAssignmentsPage />} />
             <Route path="/instructor/simulation/seo" element={<SeoSimulationPage />} />
             <Route path="/instructor/simulation/google-ads" element={<GoogleAdsSimulationPage />} />
             <Route path="/instructor/simulation/meta-ads" element={<MetaAdsSimulationPage />} />

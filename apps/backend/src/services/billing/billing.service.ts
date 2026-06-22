@@ -66,7 +66,7 @@ export class BillingService {
 
     // 3. For Free Trials (price is 0)
     if (finalPrice <= 0) {
-      const durationDays = planCode === 'free' ? 14 : 30;
+      const durationDays = plan.durationDays;
       const trialEndDate = new Date();
       trialEndDate.setDate(trialEndDate.getDate() + durationDays + (coupon?.discountType === 'trial_extension' ? coupon.discountValue : 0));
 
@@ -115,9 +115,9 @@ export class BillingService {
     const gatewayOrder = await paymentGateway.createOrder(finalPrice, 'INR');
 
     // Create a pending subscription
-    const trialDuration = 30; // standard month
+    const durationDays = billingCycle === 'yearly' ? 365 : plan.durationDays;
     const futureEndDate = new Date();
-    futureEndDate.setDate(futureEndDate.getDate() + (billingCycle === 'monthly' ? trialDuration : 365));
+    futureEndDate.setDate(futureEndDate.getDate() + durationDays);
 
     const newSub = await prisma.subscription.create({
       data: {
@@ -177,7 +177,8 @@ export class BillingService {
     // Calculate dynamic dates
     const startDate = new Date();
     const endDate = new Date();
-    endDate.setDate(endDate.getDate() + (sub.billingCycle === 'monthly' ? 30 : 365));
+    const durationDays = sub.billingCycle === 'yearly' ? 365 : sub.plan.durationDays;
+    endDate.setDate(endDate.getDate() + durationDays);
 
     let finalPrice = sub.billingCycle === 'monthly' ? sub.plan.priceMonthly : sub.plan.priceYearly;
     let coupon = null;

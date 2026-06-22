@@ -2,6 +2,7 @@ import { useState, useEffect } from "react"
 import { Link } from "react-router"
 import { useSimulationStore } from "@/stores/simulationStore"
 import { useResultsStore } from "@/stores/resultsStore"
+import { useAuthStore } from "@/stores/authStore"
 import { Button } from "@/components/ui/button"
 import { Card, CardTitle, CardDescription } from "@/components/ui/card"
 import { 
@@ -20,6 +21,8 @@ export function SimulationResultsPage() {
     insights, classRank, totalStudents,
     breakdowns, snapshots, leaderboard, events, allMetrics
   } = useResultsStore()
+
+  const { user } = useAuthStore()
 
   const [loading, setLoading] = useState(true)
   const [activeChartTab, setActiveChartTab] = useState<"revenue" | "traffic" | "conversion" | "ctr" | "authority" | "ranking">("revenue")
@@ -864,41 +867,43 @@ export function SimulationResultsPage() {
           </Card>
 
           {/* Sidebar 2: Phase 2H Leaderboard Preview */}
-          <Card className="border-neutral-200/80 shadow-sm bg-white p-5 space-y-4 text-left">
-            <div className="flex justify-between items-baseline">
-              <span className="text-[10px] font-black uppercase tracking-wider text-neutral-400">Leaderboard Preview</span>
-              <span className="text-[9px] font-black text-indigo-600 uppercase">Rank: #{classRank}</span>
-            </div>
-
-            <div className="space-y-3 my-2">
-              {leaderboard.slice(0, 5).map((peer, idx) => {
-                const isUser = peer.id === activeSimulation?.id
-                return (
-                  <div 
-                    key={peer.id || idx}
-                    className={`flex items-center gap-2 p-2 rounded-xl border transition-all ${
-                      isUser 
-                        ? "bg-indigo-50 border-indigo-200 text-indigo-900" 
-                        : "bg-white border-neutral-100 text-neutral-700"
-                    }`}
-                  >
-                    <span className="text-[10px] font-black w-4 text-neutral-400">{idx + 1}</span>
-                    <div className="flex-1 truncate">
-                      <span className="text-xs font-black truncate block">{peer.user?.name || "Peer Student"}</span>
-                      <span className="text-[9px] text-neutral-400 block font-semibold">Round {peer.currentRound || 1}</span>
-                    </div>
-                    <span className="text-xs font-black shrink-0">{Math.round(peer.score || 0)}%</span>
-                  </div>
-                )
-              })}
-            </div>
-            
-            {leaderboard.length > 5 && (
-              <div className="text-[10px] text-neutral-400 text-center font-bold border-t border-neutral-100 pt-2">
-                ...and {leaderboard.length - 5} other students
+          {(!activeSimulation?.classId || user?.role?.toLowerCase() === "individual") ? null : (
+            <Card className="border-neutral-200/80 shadow-sm bg-white p-5 space-y-4 text-left">
+              <div className="flex justify-between items-baseline">
+                <span className="text-[10px] font-black uppercase tracking-wider text-neutral-400">Leaderboard Preview</span>
+                <span className="text-[9px] font-black text-indigo-600 uppercase">Rank: #{classRank}</span>
               </div>
-            )}
-          </Card>
+
+              <div className="space-y-3 my-2">
+                {leaderboard.slice(0, 5).map((peer, idx) => {
+                  const isUser = peer.id === activeSimulation?.id
+                  return (
+                    <div 
+                      key={peer.id || idx}
+                      className={`flex items-center gap-2 p-2 rounded-xl border transition-all ${
+                        isUser 
+                          ? "bg-indigo-50 border-indigo-200 text-indigo-900" 
+                          : "bg-white border-neutral-100 text-neutral-700"
+                      }`}
+                    >
+                      <span className="text-[10px] font-black w-4 text-neutral-400">{idx + 1}</span>
+                      <div className="flex-1 truncate">
+                        <span className="text-xs font-black truncate block">{peer.user?.name || "Peer Student"}</span>
+                        <span className="text-[9px] text-neutral-400 block font-semibold">Round {peer.currentRound || 1}</span>
+                      </div>
+                      <span className="text-xs font-black shrink-0">{Math.round(peer.score || 0)}%</span>
+                    </div>
+                  )
+                })}
+              </div>
+              
+              {leaderboard.length > 5 && (
+                <div className="text-[10px] text-neutral-400 text-center font-bold border-t border-neutral-100 pt-2">
+                  ...and {leaderboard.length - 5} other students
+                </div>
+              )}
+            </Card>
+          )}
 
           {/* Sidebar 3: Quick Checklist */}
           <Card className="border-neutral-200/80 shadow-md bg-white p-6 text-left space-y-4">

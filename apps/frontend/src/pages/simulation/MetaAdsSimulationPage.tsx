@@ -15,6 +15,7 @@ import { useSimulationStore } from "@/stores/simulationStore"
 import { useAuthStore } from "@/stores/authStore"
 import { SimulationProgressTracker } from "@/components/simulation/SimulationProgressTracker"
 import { toast } from "sonner"
+import api from "@/lib/api"
 
 // ─── Meta Campaign Objectives (6 real Meta objectives) ─────────────────────
 const META_OBJECTIVES = [
@@ -155,6 +156,29 @@ export function MetaAdsSimulationPage() {
     }
   }, [isSimulationMode])
 
+  useEffect(() => {
+    const checkGating = async () => {
+      const isCollegeStudent = user?.role === "student-college"
+      if (isSimulationMode && isCollegeStudent && activeSimulation && activeSimulation.currentRound > 1) {
+        try {
+          const checkRes = await api.get<{ success: boolean; checkpoints: any[] }>(`/api/v1/simulation/checkpoint/${activeSimulation.id}`)
+          if (checkRes.data?.success) {
+            const hasPrevCheckpoint = checkRes.data.checkpoints.some(
+              cp => cp.roundNumber === activeSimulation.currentRound - 1
+            )
+            if (!hasPrevCheckpoint) {
+              toast.error("Mandatory checkpoint justification must be submitted before editing decisions.")
+              navigate("/simulation/checkpoint")
+            }
+          }
+        } catch (e) {
+          console.error("Error checking checkpoint gating:", e)
+        }
+      }
+    }
+    checkGating()
+  }, [isSimulationMode, activeSimulation, user, navigate])
+
   const handleSaveAndContinue = async () => {
     setIsSaving(true)
     try {
@@ -203,6 +227,17 @@ export function MetaAdsSimulationPage() {
     } finally {
       setIsSaving(false)
     }
+  }
+
+  const checkPolicyViolation = () => {
+    const text = [
+      primaryText,
+      adHeadline,
+      abTestEnabled ? primaryTextB : "",
+      abTestEnabled ? adHeadlineB : ""
+    ].filter(Boolean).join(" ").toLowerCase()
+    const prohibitedWords = ['guaranteed returns', 'cryptocurrency cash', 'double your money', 'miracle cure', 'replica brand', 'buy votes', 'cheat', 'hack', 'illegal']
+    return prohibitedWords.filter(word => text.includes(word))
   }
 
   const togglePlacement = (placement: string) => {
@@ -615,6 +650,17 @@ export function MetaAdsSimulationPage() {
                       </label>
                     </div>
                   </div>
+
+                  {checkPolicyViolation().length > 0 && (
+                    <div className="bg-rose-50 border border-rose-200 text-rose-800 p-3.5 rounded-xl text-xs font-semibold leading-relaxed flex items-start gap-2.5">
+                      <AlertTriangle className="h-4.5 w-4.5 text-rose-500 shrink-0 mt-0.5" />
+                      <div>
+                        <strong className="block font-black text-rose-900">⚠️ Ad Policy Violation Warning</strong>
+                        Your ad copy contains prohibited words: <span className="font-mono bg-rose-100/50 px-1 py-0.2 rounded font-bold text-rose-950">"{checkPolicyViolation().join(", ")}"</span>. 
+                        Submitting this copy will trigger a blocking policy violation on the backend and disqualify you from certification.
+                      </div>
+                    </div>
+                  )}
 
                   {/* Creative Tabs */}
                   {abTestEnabled && (

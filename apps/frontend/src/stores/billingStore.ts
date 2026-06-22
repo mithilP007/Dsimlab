@@ -15,6 +15,8 @@ export interface Plan {
   reportExportLimit: number;
   storageLimitMb: number;
   features: string[];
+  isActive: boolean;
+  durationDays: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -33,6 +35,12 @@ export interface Subscription {
   createdAt: string;
   updatedAt: string;
   plan: Plan;
+  user?: {
+    id: string;
+    name: string;
+    email: string;
+    role: string;
+  };
 }
 
 export interface Invoice {
@@ -106,6 +114,7 @@ interface BillingState {
   loading: boolean;
   error: string | null;
   
+  subscriptions: Subscription[];
   fetchPlans: () => Promise<Plan[]>;
   fetchSubscription: () => Promise<void>;
   checkout: (planCode: string, billingCycle: 'monthly' | 'yearly', couponCode?: string) => Promise<any>;
@@ -120,6 +129,7 @@ interface BillingState {
   updateInvoiceAddress: (id: string, data: { billingAddress: string; taxDetails?: string }) => Promise<Invoice>;
   validateCoupon: (code: string) => Promise<Coupon>;
   fetchAdminBillingData: () => Promise<void>;
+  fetchSubscriptions: (status?: string, search?: string) => Promise<Subscription[]>;
   fetchCoupons: () => Promise<Coupon[]>;
   createCoupon: (data: {
     code: string;
@@ -128,12 +138,15 @@ interface BillingState {
     durationMonths?: number | null;
     maxRedemptions?: number | null;
   }) => Promise<Coupon>;
+  createPlan: (data: any) => Promise<Plan>;
+  updatePlan: (id: string, data: any) => Promise<Plan>;
 }
 
 export const useBillingStore = create<BillingState>((set, get) => ({
   plans: [],
   subscription: null,
   subscriptionHistory: [],
+  subscriptions: [],
   usage: {
     simulationsUsed: 0,
     studentsUsed: 0
@@ -305,6 +318,50 @@ export const useBillingStore = create<BillingState>((set, get) => ({
       return res.data.coupon;
     } catch (err: any) {
       const msg = err.response?.data?.error || "Coupon provisioning failed";
+      set({ error: msg, loading: false });
+      throw new Error(msg);
+    }
+  },
+
+  createPlan: async (data) => {
+    set({ loading: true, error: null });
+    try {
+      const res = await api.post<{ success: boolean; plan: Plan }>("/api/v1/admin/billing/plans", data);
+      await get().fetchPlans();
+      set({ loading: false });
+      return res.data.plan;
+    } catch (err: any) {
+      const msg = err.response?.data?.error || "Plan provisioning failed";
+      set({ error: msg, loading: false });
+      throw new Error(msg);
+    }
+  },
+
+  updatePlan: async (id, data) => {
+    set({ loading: true, error: null });
+    try {
+      const res = await api.put<{ success: boolean; plan: Plan }>(`/api/v1/admin/billing/plans/${id}`, data);
+      await get().fetchPlans();
+      set({ loading: false });
+      return res.data.plan;
+    } catch (err: any) {
+      const msg = err.response?.data?.error || "Plan updating failed";
+      set({ error: msg, loading: false });
+      throw new Error(msg);
+    }
+  },
+
+  fetchSubscriptions: async (status = 'all', search = '') => {
+    set({ loading: true, error: null });
+    try {
+      const res = await api.get<{ success: boolean; subscriptions: Subscription[] }>(
+        "/api/v1/admin/billing/subscriptions",
+        { params: { status, search } }
+      );
+      set({ subscriptions: res.data.subscriptions, loading: false });
+      return res.data.subscriptions;
+    } catch (err: any) {
+      const msg = err.response?.data?.error || "Failed to load subscription reports";
       set({ error: msg, loading: false });
       throw new Error(msg);
     }

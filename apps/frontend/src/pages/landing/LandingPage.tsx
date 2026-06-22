@@ -16,13 +16,35 @@ import {
   Check,
   ChevronRight,
   ArrowUpRight,
+  Play,
+  Pause,
+  RotateCcw
 } from "lucide-react"
 import { useAuthStore } from "@/stores/authStore"
-import { useEffect } from "react"
+import { useEffect, useState } from "react"
 
 export function LandingPage() {
   const navigate = useNavigate()
   const { isAuthenticated } = useAuthStore()
+
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [playbackProgress, setPlaybackProgress] = useState(0)
+
+  useEffect(() => {
+    let interval: any
+    if (isPlaying) {
+      interval = setInterval(() => {
+        setPlaybackProgress((prev) => {
+          if (prev >= 100) {
+            setIsPlaying(false)
+            return 0
+          }
+          return prev + 1
+        })
+      }, 150)
+    }
+    return () => clearInterval(interval)
+  }, [isPlaying])
 
   // Redirect if already logged in
   useEffect(() => {
@@ -166,6 +188,131 @@ export function LandingPage() {
             </Button>
           </Link>
         </motion.div>
+      </section>
+
+      {/* DEMO VIDEO SECTION */}
+      <section className="py-16 bg-neutral-900 text-white w-full px-6 md:px-12 border-t border-b border-neutral-800">
+        <div className="max-w-7xl mx-auto space-y-10">
+          <div className="text-center space-y-3">
+            <h2 className="text-3xl font-extrabold tracking-tight text-white">SimLab Demo Walkthrough</h2>
+            <p className="text-sm text-neutral-450 max-w-lg mx-auto font-medium">
+              See the Digital Marketing Simulator in action. Tweak SEO structures, bid on keywords, configure placement rules, and view real-time ROI logs.
+            </p>
+          </div>
+
+          {/* Browser Video Frame */}
+          <div className="max-w-4xl mx-auto rounded-2xl border border-neutral-800 bg-neutral-950/60 backdrop-blur-md shadow-2xl overflow-hidden relative">
+            {/* Window controls header */}
+            <div className="bg-neutral-900/80 px-4 py-3 flex items-center justify-between border-b border-neutral-800/80">
+              <div className="flex gap-2">
+                <div className="w-3 h-3 rounded-full bg-rose-500/80" />
+                <div className="w-3 h-3 rounded-full bg-amber-500/80" />
+                <div className="w-3 h-3 rounded-full bg-emerald-500/80" />
+              </div>
+              <div className="bg-neutral-950 px-3 py-1 rounded-md text-[10px] text-neutral-500 font-mono select-none">
+                http://localhost:5173/simulation
+              </div>
+              <div className="w-12" />
+            </div>
+
+            {/* Video Canvas screen */}
+            <div className="aspect-video w-full relative flex items-center justify-center bg-neutral-950 overflow-hidden select-none">
+              {!isPlaying && playbackProgress === 0 ? (
+                // Video Poster Cover state
+                <div className="absolute inset-0 bg-cover bg-center flex flex-col items-center justify-center p-6 transition-all duration-300" style={{ backgroundBlendMode: 'overlay', backgroundColor: 'rgba(10, 10, 10, 0.85)' }}>
+                  {/* Glassmorphic card overlay */}
+                  <div className="bg-neutral-900/60 backdrop-blur-md border border-white/5 p-8 rounded-3xl flex flex-col items-center justify-center text-center space-y-4 max-w-md shadow-xl">
+                    <button 
+                      onClick={() => setIsPlaying(true)}
+                      className="w-16 h-16 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white flex items-center justify-center shadow-lg shadow-indigo-500/20 transform hover:scale-105 active:scale-95 transition-all duration-200"
+                    >
+                      <Play className="h-7 w-7 fill-white translate-x-0.5" />
+                    </button>
+                    <div>
+                      <h3 className="text-base font-extrabold text-white">Watch Platform Walkthrough</h3>
+                      <p className="text-xs text-neutral-400 font-semibold mt-1">See the SEO, Google Ads, and Meta Social Simulation in action (15s).</p>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                // Active video playback simulation state
+                <div className="absolute inset-0 p-6 flex flex-col justify-between bg-neutral-950">
+                  {/* Top Status */}
+                  <div className="flex justify-between items-center text-xs font-mono text-neutral-450 border-b border-neutral-900 pb-3">
+                    <span className="flex items-center gap-1.5 text-indigo-400 font-bold">
+                      <span className="w-2 h-2 rounded-full bg-indigo-500 animate-ping" />
+                      SIMULATING RUN
+                    </span>
+                    <span>Elapsed: {Math.round(playbackProgress * 0.15)}s / 15s</span>
+                  </div>
+
+                  {/* Mid Content: Animated Step cards */}
+                  <div className="flex-1 flex items-center justify-center p-4">
+                    <div className="max-w-md w-full bg-neutral-900/80 border border-neutral-800 p-6 rounded-2xl shadow-xl space-y-4 animate-in zoom-in-95 duration-200">
+                      <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 rounded-xl bg-indigo-900/50 border border-indigo-500/30 flex items-center justify-center text-indigo-400 font-black">
+                          {playbackProgress < 25 ? "1" : playbackProgress < 50 ? "2" : playbackProgress < 75 ? "3" : "4"}
+                        </div>
+                        <div className="text-left font-sans">
+                          <h4 className="text-xs font-black text-white uppercase tracking-wider">
+                            {playbackProgress < 25 ? "SEO Keyword crawling" : playbackProgress < 50 ? "Google Ads Bidding" : playbackProgress < 75 ? "Meta Placements" : "Engine Calc & ROI"}
+                          </h4>
+                          <span className="text-[10px] text-neutral-400 font-bold block mt-0.5">Platform Demo Walkthrough</span>
+                        </div>
+                      </div>
+
+                      <p className="text-xs text-neutral-300 font-semibold leading-relaxed text-left font-sans">
+                        {playbackProgress < 25 && "Simulating on-page keyword density checks, core web vitals speed ranking scores, and crawling backlink authority multipliers."}
+                        {playbackProgress >= 25 && playbackProgress < 50 && "Simulating Google Search objective targets, adding keyword lists, matching negative terms, and tracking click-through rate adjustments."}
+                        {playbackProgress >= 50 && playbackProgress < 75 && "Simulating Meta Social campaign configurations, scaling story and placement bidding formats, and tracking demographic ROAS targets."}
+                        {playbackProgress >= 75 && "Simulating fast-forward round transition. Calculating auction indices, scoring competitor bidding, and generating certificate output report cards."}
+                      </p>
+
+                      {/* Mini visual mockup of calculations inside playback */}
+                      <div className="h-14 w-full bg-neutral-950 rounded-xl border border-neutral-800/60 p-3 flex items-center justify-between text-left font-mono">
+                        <div className="space-y-1">
+                          <span className="text-[9px] text-neutral-500 uppercase block font-bold">Projected Traffic</span>
+                          <span className="text-xs font-black text-indigo-400">
+                            {playbackProgress < 25 ? `${Math.round(200 + playbackProgress * 5)}/mo` : playbackProgress < 50 ? "840 clicks" : playbackProgress < 75 ? "1,250 clicks" : "3,480 total visitors"}
+                          </span>
+                        </div>
+                        <div className="space-y-1 text-right">
+                          <span className="text-[9px] text-neutral-500 uppercase block font-bold">Conversion Value</span>
+                          <span className="text-xs font-black text-emerald-400">
+                            {playbackProgress < 25 ? "₹0.00" : playbackProgress < 50 ? "₹34,500" : playbackProgress < 75 ? "₹82,400" : "₹345,780 Generated"}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Playback Controls */}
+                  <div className="flex items-center gap-4 text-xs font-bold text-neutral-450 border-t border-neutral-900 pt-3">
+                    <button 
+                      onClick={() => setIsPlaying(!isPlaying)}
+                      className="p-2 bg-neutral-900 hover:bg-neutral-800 rounded-lg text-white transition-colors"
+                    >
+                      {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4 fill-white" />}
+                    </button>
+                    <button 
+                      onClick={() => { setPlaybackProgress(0); setIsPlaying(false); }}
+                      className="p-2 bg-neutral-900 hover:bg-neutral-800 rounded-lg text-neutral-450 hover:text-white transition-colors"
+                      title="Reset video"
+                    >
+                      <RotateCcw className="h-4 w-4" />
+                    </button>
+                    <div className="flex-1 h-1.5 bg-neutral-900 rounded-full overflow-hidden relative">
+                      <div className="h-full bg-indigo-500 rounded-full transition-all duration-150" style={{ width: `${playbackProgress}%` }} />
+                    </div>
+                    <span className="font-mono text-[10px] w-20 text-right">
+                      {Math.round(playbackProgress * 0.15)}s / 15s
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       </section>
 
       {/* 2. AUDIENCE SECTION */}

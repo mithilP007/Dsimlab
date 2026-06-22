@@ -249,6 +249,14 @@ export function AdminDashboard() {
                     <span>Alert Broadcasts</span>
                     <ArrowRight className="h-3.5 w-3.5" />
                   </button>
+
+                  <button
+                    onClick={() => navigate("/admin/billing")}
+                    className="w-full justify-between bg-white text-neutral-900 border border-neutral-200 hover:bg-neutral-50 hover:text-black font-semibold h-10 px-4 rounded-lg flex items-center text-xs transition-colors"
+                  >
+                    <span>Billing & Pricing Plans</span>
+                    <ArrowRight className="h-3.5 w-3.5" />
+                  </button>
                 </CardContent>
               </Card>
             </div>

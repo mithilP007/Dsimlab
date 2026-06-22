@@ -15,6 +15,7 @@ import { useSimulationStore } from "@/stores/simulationStore"
 import { useAuthStore } from "@/stores/authStore"
 import { SimulationProgressTracker } from "@/components/simulation/SimulationProgressTracker"
 import { toast } from "sonner"
+import api from "@/lib/api"
 
 // ─── Campaign Objective Config ─────────────────────────────────────────────
 const OBJECTIVES = [
@@ -122,6 +123,15 @@ export function GoogleAdsSimulationPage() {
   const [callouts, setCallouts] = useState(["No Setup Fees", "24/7 Support", "Cancel Anytime", "GDPR Compliant"])
   const [callExtension, setCallExtension] = useState("+1 (800) 000-0000")
   const [hasCallExtension, setHasCallExtension] = useState(true)
+  
+  const [structuredSnippetHeader, setStructuredSnippetHeader] = useState("Services")
+  const [structuredSnippetValues, setStructuredSnippetValues] = useState(["Marketing Consulting", "SEO Audit", "PPC Setup"])
+  const [promotionItem, setPromotionItem] = useState("Summer Special")
+  const [promotionDiscount, setPromotionDiscount] = useState("20% Off")
+  const [promotionCode, setPromotionCode] = useState("SIMLAB20")
+  const [hasPromotion, setHasPromotion] = useState(false)
+  const [leadFormTitle, setLeadFormTitle] = useState("Get a Free Consultation")
+  const [hasLeadForm, setHasLeadForm] = useState(false)
 
   // Load from store on mount in simulation mode
   useEffect(() => {
@@ -153,8 +163,58 @@ export function GoogleAdsSimulationPage() {
         if (copy.description1) setDescription1(copy.description1)
         if (copy.description2) setDescription2(copy.description2)
       }
+
+      // Extensions sync:
+      if (googleAdsStore.sitelinks && googleAdsStore.sitelinks.length > 0) {
+        setSitelinks(googleAdsStore.sitelinks.map(s => ({ title: s.title, desc: "", url: s.url })))
+      }
+      if (googleAdsStore.callouts && googleAdsStore.callouts.length > 0) {
+        setCallouts(googleAdsStore.callouts)
+      }
+      const ext = (googleAdsStore as any).extensions || {}
+      if (ext.structuredSnippets) {
+        setStructuredSnippetHeader(ext.structuredSnippetHeader || "Services")
+        setStructuredSnippetValues(ext.structuredSnippets)
+      }
+      if (ext.promotion) {
+        setHasPromotion(true)
+        setPromotionItem(ext.promotion.item || "")
+        setPromotionDiscount(ext.promotion.discount || "")
+        setPromotionCode(ext.promotion.code || "")
+      }
+      if (ext.leadForm) {
+        setHasLeadForm(true)
+        setLeadFormTitle(ext.leadForm.title || "")
+      }
+      if (ext.callExtension) {
+        setHasCallExtension(true)
+        setCallExtension(ext.callExtension)
+      }
     }
   }, [isSimulationMode])
+
+  useEffect(() => {
+    const checkGating = async () => {
+      const isCollegeStudent = user?.role === "student-college"
+      if (isSimulationMode && isCollegeStudent && activeSimulation && activeSimulation.currentRound > 1) {
+        try {
+          const checkRes = await api.get<{ success: boolean; checkpoints: any[] }>(`/api/v1/simulation/checkpoint/${activeSimulation.id}`)
+          if (checkRes.data?.success) {
+            const hasPrevCheckpoint = checkRes.data.checkpoints.some(
+              cp => cp.roundNumber === activeSimulation.currentRound - 1
+            )
+            if (!hasPrevCheckpoint) {
+              toast.error("Mandatory checkpoint justification must be submitted before editing decisions.")
+              navigate("/simulation/checkpoint")
+            }
+          }
+        } catch (e) {
+          console.error("Error checking checkpoint gating:", e)
+        }
+      }
+    }
+    checkGating()
+  }, [isSimulationMode, activeSimulation, user, navigate])
 
   const googleStoreStrategyToLocal = (strategy: string) => {
     const s = strategy.toLowerCase()
@@ -172,6 +232,20 @@ export function GoogleAdsSimulationPage() {
       if (isReadOnly) {
         navigate("/simulation/meta-ads")
         return
+      }
+
+      // Client-side Policy check
+      const policyRes = checkPolicyViolation()
+      const hasHardViolations = policyRes.hard.length > 0 || policyRes.urlIssues.some(ui => ui.includes('start with http'))
+      
+      if (hasHardViolations) {
+        toast.error(`Hard policy violations detected: ${[...policyRes.hard, ...policyRes.urlIssues.filter(ui => ui.includes('start with http'))].join(', ')}. Hard violations will block certification!`, {
+          duration: 8000
+        });
+      } else if (policyRes.soft.length > 0 || policyRes.urlIssues.length > 0) {
+        toast.warning(`Soft policy warnings: ${[...policyRes.soft, ...policyRes.urlIssues].join(', ')}. These may reduce Quality Score or CTR.`, {
+          duration: 6000
+        });
       }
 
       const { list } = getKeywordsAnalysis()
@@ -204,8 +278,19 @@ export function GoogleAdsSimulationPage() {
           strength: "excellent"
         }],
         locations: targetLocation.split(",").map(l => ({ name: l.trim(), selected: true })),
-        devices: { desktop: searchNetwork, mobile: true, tablet: displayNetwork }
-      })
+        devices: { desktop: searchNetwork, mobile: true, tablet: displayNetwork },
+        sitelinks: sitelinks.map(s => ({ title: s.title, url: s.url })),
+        callouts,
+        extensions: {
+          sitelinks: sitelinks.map(s => ({ title: s.title, url: s.url })),
+          callouts,
+          structuredSnippets: structuredSnippetValues,
+          structuredSnippetHeader,
+          promotion: hasPromotion ? { item: promotionItem, discount: promotionDiscount, code: promotionCode } : null,
+          leadForm: hasLeadForm ? { title: leadFormTitle } : null,
+          callExtension: hasCallExtension ? callExtension : null
+        }
+      } as any)
 
       await saveDecisions()
       toast.success("Google Ads decisions saved successfully!")
@@ -234,6 +319,41 @@ export function GoogleAdsSimulationPage() {
       else broadCount++
     })
     return { list, total: list.length, broadCount, phraseCount, exactCount }
+  }
+
+  const checkPolicyViolation = () => {
+    const text = [headline1, headline2, headline3, description1, description2].join(" ").toLowerCase()
+    
+    // Prohibited words (Hard)
+    const prohibitedWords = [
+      'guaranteed returns', 'cryptocurrency cash', 'double your money', 
+      'miracle cure', 'replica brand', 'buy votes', 'cheat', 'hack', 'illegal'
+    ]
+    // Unrealistic guarantees (Hard)
+    const misleadingKeywords = ['100% success', 'make millions overnight', 'lose 10kg in 2 days']
+    // Exaggerated claims (Soft)
+    const softViolations = ['best in world', 'cheapest ever']
+
+    const hardFound = [...prohibitedWords, ...misleadingKeywords].filter(word => text.includes(word))
+    const softFound = softViolations.filter(word => text.includes(word))
+
+    // CAPS check
+    const words = [headline1, headline2, headline3, description1, description2].join(" ").split(/\s+/)
+    const capsWords = words.filter(w => w.length > 3 && w === w.toUpperCase() && /^[A-Z]+$/.test(w))
+
+    const urlIssues: string[] = []
+    if (!finalUrl || !finalUrl.startsWith('http')) {
+      urlIssues.push('Destination URL must start with http/https')
+    }
+    if (finalUrl && finalUrl.includes('mismatch')) {
+      urlIssues.push('Landing page URL does not match final destination')
+    }
+
+    return {
+      hard: hardFound,
+      soft: [...softFound, ...capsWords],
+      urlIssues
+    }
   }
 
   const handlePublishCampaign = () => {
@@ -640,6 +760,16 @@ export function GoogleAdsSimulationPage() {
                     <h3 className="font-black text-sm text-neutral-800">Responsive Search Ad (RSA)</h3>
                     <p className="text-[11px] text-neutral-400 font-semibold mt-0.5">Google automatically tests combinations of your headlines and descriptions to find the best-performing mix.</p>
                   </div>
+                  {checkPolicyViolation().hard.length > 0 && (
+                    <div className="bg-rose-50 border border-rose-200 text-rose-800 p-3.5 rounded-xl text-xs font-semibold leading-relaxed flex items-start gap-2.5">
+                      <AlertTriangle className="h-4.5 w-4.5 text-rose-500 shrink-0 mt-0.5" />
+                      <div>
+                        <strong className="block font-black text-rose-900">⚠️ Ad Policy Violation Warning</strong>
+                        Your ad copy contains prohibited words: <span className="font-mono bg-rose-100/50 px-1 py-0.2 rounded font-bold text-rose-950">"{checkPolicyViolation().hard.join(", ")}"</span>. 
+                        Submitting this copy will trigger a blocking policy violation on the backend and disqualify you from certification.
+                      </div>
+                    </div>
+                  )}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-1.5">
                       <label className="text-[10px] font-black text-neutral-500 uppercase tracking-wider block" htmlFor="finalUrl">Final URL</label>
@@ -763,6 +893,97 @@ export function GoogleAdsSimulationPage() {
                     </div>
                     {hasCallExtension && (
                       <Input value={callExtension} disabled={isReadOnly} onChange={e => setCallExtension(e.target.value)} placeholder="+1 (800) 000-0000" className="text-xs border-neutral-200 h-9 font-semibold max-w-[200px]" />
+                    )}
+                  </div>
+
+                  {/* Structured Snippets */}
+                  <div className="space-y-2 border-t border-neutral-100 pt-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black text-neutral-700 font-sans">Structured Snippets <Badge className="ml-1.5 bg-sky-50 text-sky-700 border-none text-[9px] font-black">+Relevance</Badge></span>
+                      <span className="text-[9px] text-neutral-400 font-semibold">{structuredSnippetValues.length}/4 added</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <select 
+                        value={structuredSnippetHeader} 
+                        disabled={isReadOnly} 
+                        onChange={e => setStructuredSnippetHeader(e.target.value)} 
+                        className="text-xs p-1.5 border border-neutral-200 rounded bg-white font-semibold text-neutral-700 focus:outline-none"
+                      >
+                        <option value="Services">Services</option>
+                        <option value="Types">Types</option>
+                        <option value="Brands">Brands</option>
+                        <option value="Courses">Courses</option>
+                        <option value="Destinations">Destinations</option>
+                      </select>
+                      <div className="flex flex-wrap gap-2 flex-1">
+                        {structuredSnippetValues.map((val, i) => (
+                          <div key={i} className="flex items-center gap-1 bg-neutral-50 border border-neutral-200 rounded px-2 py-1">
+                            <Input
+                              value={val}
+                              maxLength={25}
+                              disabled={isReadOnly}
+                              onChange={e => { const n = [...structuredSnippetValues]; n[i] = e.target.value; setStructuredSnippetValues(n) }}
+                              className="text-[10px] h-5 border-0 p-0 font-semibold bg-transparent w-20"
+                            />
+                            {!isReadOnly && (
+                              <button onClick={() => setStructuredSnippetValues(structuredSnippetValues.filter((_, j) => j !== i))} className="text-neutral-300 hover:text-rose-500">
+                                <Trash2 className="h-3 w-3" />
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                        {structuredSnippetValues.length < 4 && !isReadOnly && (
+                          <button onClick={() => setStructuredSnippetValues([...structuredSnippetValues, "New Value"])} className="flex items-center gap-1 text-[10px] font-bold text-neutral-500 hover:text-neutral-900 border border-dashed border-neutral-300 rounded px-2 py-1">
+                            <Plus className="h-3 w-3" /> Add
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Promotion Extension */}
+                  <div className="space-y-2 border-t border-neutral-100 pt-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black text-neutral-700 font-sans">Promotion Extension</span>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" checked={hasPromotion} disabled={isReadOnly} onChange={e => setHasPromotion(e.target.checked)} className="sr-only peer" />
+                        <div className="w-9 h-5 bg-neutral-200 rounded-full peer peer-checked:bg-emerald-600 after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4" />
+                      </label>
+                    </div>
+                    {hasPromotion && (
+                      <div className="grid grid-cols-3 gap-2 bg-neutral-50 p-2.5 rounded-lg border border-neutral-100">
+                        <div>
+                          <label className="text-[9px] font-black text-neutral-500 uppercase tracking-wider">Discount</label>
+                          <Input value={promotionDiscount} disabled={isReadOnly} onChange={e => setPromotionDiscount(e.target.value)} placeholder="20% Off" className="text-xs border-neutral-200 h-8 font-semibold" />
+                        </div>
+                        <div>
+                          <label className="text-[9px] font-black text-neutral-500 uppercase tracking-wider">Item/Occasion</label>
+                          <Input value={promotionItem} disabled={isReadOnly} onChange={e => setPromotionItem(e.target.value)} placeholder="Summer Sale" className="text-xs border-neutral-200 h-8 font-semibold" />
+                        </div>
+                        <div>
+                          <label className="text-[9px] font-black text-neutral-500 uppercase tracking-wider">Promo Code</label>
+                          <Input value={promotionCode} disabled={isReadOnly} onChange={e => setPromotionCode(e.target.value)} placeholder="SUMMER20" className="text-xs border-neutral-200 h-8 font-semibold" />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Lead Form Extension */}
+                  <div className="space-y-2 border-t border-neutral-100 pt-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black text-neutral-700 font-sans">Lead Form Extension</span>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" checked={hasLeadForm} disabled={isReadOnly} onChange={e => setHasLeadForm(e.target.checked)} className="sr-only peer" />
+                        <div className="w-9 h-5 bg-neutral-200 rounded-full peer peer-checked:bg-emerald-600 after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4" />
+                      </label>
+                    </div>
+                    {hasLeadForm && (
+                      <div className="space-y-2 bg-neutral-50 p-2.5 rounded-lg border border-neutral-100">
+                        <div>
+                          <label className="text-[9px] font-black text-neutral-500 uppercase tracking-wider">Call-To-Action Button Text</label>
+                          <Input value={leadFormTitle} disabled={isReadOnly} onChange={e => setLeadFormTitle(e.target.value)} placeholder="Get a Free Quote" className="text-xs border-neutral-200 h-8 font-semibold" />
+                        </div>
+                      </div>
                     )}
                   </div>
 

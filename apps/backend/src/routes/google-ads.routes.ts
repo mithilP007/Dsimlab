@@ -67,6 +67,19 @@ export async function googleAdsRoutes(fastify: FastifyInstance) {
       throw new NotFoundError('Simulation not initialized.');
     }
 
+    if (sim.status !== 'DECISION_OPEN') {
+      await prisma.hardViolation.create({
+        data: {
+          simulationId: sim.id,
+          roundNumber: sim.currentRound,
+          type: 'ATTEMPT_TO_EDIT_LOCKED_DECISION',
+          severity: 'BLOCKING',
+          message: `Attempted to update Google Ads decisions when simulation status was locked in "${sim.status}".`
+        }
+      });
+      throw new ValidationError('Simulation is locked. Cannot edit decisions.');
+    }
+
     const decision = await prisma.decision.upsert({
       where: {
         simulationId_round: {

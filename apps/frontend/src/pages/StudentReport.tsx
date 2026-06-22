@@ -292,7 +292,7 @@ export function StudentReport() {
               </CardContent>
             </Card>
 
-            {/* Achievements */}
+             {/* Achievements */}
             <Card className="border-neutral-200/60 shadow-sm print:border-none print:shadow-none">
               <CardHeader>
                 <CardTitle className="text-base font-bold">Simulation Achievements Unlocked</CardTitle>
@@ -315,6 +315,49 @@ export function StudentReport() {
               </CardContent>
             </Card>
           </div>
+
+          {/* Checkpoint Justifications */}
+          <Card className="border-neutral-200/60 shadow-sm print:border-none print:shadow-none">
+            <CardHeader>
+              <CardTitle className="text-base font-bold flex items-center gap-1.5">
+                <FileText className="h-5 w-5 text-neutral-900" />
+                Student Checkpoint Justifications
+              </CardTitle>
+              <CardDescription>Round-by-round strategy justifications submitted by the student.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {studentData.checkpoints && studentData.checkpoints.length > 0 ? (
+                studentData.checkpoints.map((cp: any) => (
+                  <div key={cp.id} className="p-4 bg-neutral-50 border border-neutral-150 rounded-xl space-y-2 text-left">
+                    <div className="flex justify-between items-center border-b border-neutral-200/60 pb-2">
+                      <span className="font-bold text-neutral-800 text-xs">Round {cp.roundNumber} Reflection</span>
+                      <div className="flex items-center gap-2">
+                        <Badge className="bg-neutral-900 text-white font-bold text-[10px] px-2 py-0.5 border-none">
+                          Quality: {cp.reflectionQualityScore}%
+                        </Badge>
+                        <span className="text-[10px] text-neutral-400 font-semibold">
+                          {new Date(cp.submittedAt).toLocaleDateString()}
+                        </span>
+                      </div>
+                    </div>
+                    <p className="text-xs text-neutral-600 font-medium leading-relaxed italic">
+                      "{cp.justificationText}"
+                    </p>
+                    {cp.instructorComment && (
+                      <div className="pt-2 text-[11px] font-semibold text-indigo-700 flex items-start gap-1">
+                        <span className="font-black">Instructor Comment:</span>
+                        <span className="text-neutral-600 italic">"{cp.instructorComment}"</span>
+                      </div>
+                    )}
+                  </div>
+                ))
+              ) : (
+                <div className="text-center py-6 text-xs text-neutral-450 italic">
+                  No checkpoint justifications submitted yet.
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </div>
       )}
     </div>

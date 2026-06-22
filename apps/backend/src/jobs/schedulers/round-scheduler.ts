@@ -25,6 +25,18 @@ export async function setupRoundScheduler(): Promise<void> {
     );
     logger.info('Overnight batch scheduler configured for 12:00 AM daily.');
 
+    // Schedule hourly daily campaign processing sweep ('0 * * * *')
+    await dailyRoundQueue.add(
+      'hourly-campaign-sweep-job',
+      {},
+      {
+        repeat: {
+          pattern: '0 * * * *',
+        },
+      }
+    );
+    logger.info('Hourly daily campaign scheduler configured.');
+
     // Schedule weekly compliance data retention sweep every Sunday at 3:00 AM ('0 3 * * 0')
     await dailyRoundQueue.add(
       'data-retention-pruning-job',
@@ -75,3 +87,12 @@ export async function executeOvernightBatchSweep(): Promise<void> {
     logger.error(err, 'Failed to sweep active simulation sessions during overnight batch.');
   }
 }
+
+/**
+ * Executes the daily campaign processing scheduler
+ */
+export async function executeHourlyCampaignSweep(): Promise<void> {
+  const { executeDailyCampaignScheduler } = await import('./daily-campaign-scheduler');
+  await executeDailyCampaignScheduler();
+}
+

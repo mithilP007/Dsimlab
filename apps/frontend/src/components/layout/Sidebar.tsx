@@ -22,6 +22,8 @@ import {
   Users,
   CreditCard,
   Receipt,
+  Shield,
+  Clock,
 } from "lucide-react"
 
 interface SubNavItem {
@@ -53,9 +55,11 @@ const navConfig: NavGroup[] = [
     groupName: "Simulation Lab",
     items: [
       { name: "Simulation Console", href: "/simulation", icon: Play },
+      { name: "Daily Campaign Run", href: "/campaign", icon: Activity },
       { name: "Standing Leaderboard", href: "/leaderboard", icon: Trophy },
       { name: "Progress Dashboard", href: "/progress", icon: Activity },
-      { name: "Certificate Portal", href: "/certificate", icon: Award }
+      { name: "Certificate Portal", href: "/certificate", icon: Award },
+      { name: "Market Events", href: "/simulation/events", icon: Clock }
     ]
   },
   {
@@ -71,6 +75,7 @@ const navConfig: NavGroup[] = [
     role: "instructor",
     items: [
       { name: "Instructor Portal", href: "/instructor", icon: GraduationCap },
+      { name: "Simulation Governance", href: "/instructor/governance", icon: Shield },
       { name: "Reports Center", href: "/reports", icon: FileBarChart },
       {
         name: "Simulation Sandbox",

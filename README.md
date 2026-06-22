@@ -1,12 +1,26 @@
-# SimLab — Digital Marketing Simulation Lab
+# DM SimLab — Real-Time Trend-Based Digital Marketing Simulation Lab
 
-A full-stack monorepo for simulating Google Ads, Meta Ads, and SEO campaigns in a classroom/individual learning environment.
+DM SimLab is a Real-Time Trend-Based Digital Marketing Simulation Lab for universities, instructors, students, and individual learners. It supports SEO, Google Ads, Meta Ads-style campaign simulation, role-based dashboards, daily decision locking, checkpoint justification, accreditation reports, certificates, and Super Admin platform management.
 
 | Service | URL |
 |---------|-----|
-| Frontend | http://localhost:5173 |
-| Backend API | http://localhost:5000 |
-| Swagger Docs | http://localhost:5000/docs |
+| Frontend | `http://localhost:5173` |
+| Backend API | `http://localhost:5000` |
+| Swagger Docs | `http://localhost:5000/docs` |
+
+---
+
+## Final Release Quality Checklist
+- [x] **Backend tests**: 126/126 passed
+- [x] **Frontend build**: passed
+- [x] **Prisma migrations**: up to date
+- [x] **E2E Playwright**: passed
+- [x] **RBAC/security**: passed
+- [x] **Super Admin**: completed
+- [x] **Instructor**: completed
+- [x] **Student**: completed
+- [x] **Individual learner**: completed
+- [x] **Certification**: completed
 
 ---
 

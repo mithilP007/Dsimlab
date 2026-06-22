@@ -103,7 +103,11 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
         matchType: k.matchType || 'broad',
       })),
       devices: googleStore.devices,
-      locations: googleStore.locations.filter(l => l.selected).map(l => l.name)
+      locations: googleStore.locations.filter(l => l.selected).map(l => l.name),
+      extensions: {
+        sitelinks: googleStore.sitelinks || [],
+        callouts: googleStore.callouts || []
+      }
     }];
 
     // Meta campaigns
@@ -147,6 +151,15 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
       seoBacklinkBudget,
       googleCampaigns,
       metaCampaigns,
+      seoMetaTitle: campaignStore.metaTitle || null,
+      seoMetaDescription: campaignStore.metaDescription || null,
+      seoBodyContent: campaignStore.bodyContent || null,
+      seoUrlSlug: campaignStore.urlSlug || null,
+      seoInternalLinks: campaignStore.internalLinksCount || 0,
+      seoAnchorText: campaignStore.anchorText || null,
+      seoBacklinkQuality: campaignStore.backlinkQuality || 1,
+      seoTechnicalConfig: campaignStore.technicalConfig || '{}',
+      seoCoreWebVitals: campaignStore.webVitals || '{}',
     };
 
     try {

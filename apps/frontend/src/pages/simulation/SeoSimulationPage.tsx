@@ -14,6 +14,7 @@ import { useSimulationStore } from "@/stores/simulationStore"
 import { useAuthStore } from "@/stores/authStore"
 import { SimulationProgressTracker } from "@/components/simulation/SimulationProgressTracker"
 import { toast } from "sonner"
+import api from "@/lib/api"
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 const StatusIcon = ({ status }: { status: string }) => {
@@ -97,6 +98,11 @@ export function SeoSimulationPage() {
   const [backlinkBudget, setBacklinkBudget] = useState(500)
   const [backlinkQuality, setBacklinkQuality] = useState(3)
 
+  // ── Internal Linking ────────────────────────────────────────────────────────
+  const [internalLinksCount, setInternalLinksCount] = useState(3)
+  const [anchorText, setAnchorText] = useState("digital marketing")
+  const [internalLinksScore, setInternalLinksScore] = useState(50)
+
   // ── Results ────────────────────────────────────────────────────────────────
   const [onPageScore, setOnPageScore] = useState(0)
   const [techScore, setTechScore] = useState(0)
@@ -116,6 +122,32 @@ export function SeoSimulationPage() {
       if (campaignStore.metaTitle) setMetaTitle(campaignStore.metaTitle)
       if (campaignStore.metaDescription) setMetaDescription(campaignStore.metaDescription)
       if (campaignStore.bodyContent) setBodyContent(campaignStore.bodyContent)
+      if (campaignStore.urlSlug) setUrlSlug(campaignStore.urlSlug)
+      if (campaignStore.internalLinksCount !== undefined) setInternalLinksCount(campaignStore.internalLinksCount)
+      if (campaignStore.anchorText) setAnchorText(campaignStore.anchorText)
+      if (campaignStore.backlinkQuality !== undefined) setBacklinkQuality(campaignStore.backlinkQuality)
+      
+      if (campaignStore.technicalConfig) {
+        try {
+          const tc = JSON.parse(campaignStore.technicalConfig)
+          if (tc.hasSitemap !== undefined) setHasSitemap(tc.hasSitemap)
+          if (tc.hasRobots !== undefined) setHasRobots(tc.hasRobots)
+          if (tc.hasSsl !== undefined) setHasSsl(tc.hasSsl)
+          if (tc.isMobileFriendly !== undefined) setIsMobileFriendly(tc.isMobileFriendly)
+          if (tc.hasAltTags !== undefined) setHasAltTags(tc.hasAltTags)
+          if (tc.hasSchema !== undefined) setHasSchema(tc.hasSchema)
+        } catch(e) {}
+      }
+      
+      if (campaignStore.webVitals) {
+        try {
+          const wv = JSON.parse(campaignStore.webVitals)
+          if (wv.lcpMs !== undefined) setLcpMs(wv.lcpMs)
+          if (wv.clsScore !== undefined) setClsScore(wv.clsScore)
+          if (wv.fidMs !== undefined) setFidMs(wv.fidMs)
+        } catch(e) {}
+      }
+
       if (campaignStore.selectedKeywords && campaignStore.selectedKeywords.length > 0) {
         const kwId = campaignStore.selectedKeywords[0]
         const kwObj = AVAILABLE_KEYWORDS.find(k => k.id === kwId || k.name === kwId)
@@ -124,6 +156,29 @@ export function SeoSimulationPage() {
       if (campaignStore.budgetSpent) setBacklinkBudget(campaignStore.budgetSpent)
     }
   }, [isSimulationMode])
+
+  useEffect(() => {
+    const checkGating = async () => {
+      const isCollegeStudent = user?.role === "student-college"
+      if (isSimulationMode && isCollegeStudent && activeSimulation && activeSimulation.currentRound > 1) {
+        try {
+          const checkRes = await api.get<{ success: boolean; checkpoints: any[] }>(`/api/v1/simulation/checkpoint/${activeSimulation.id}`)
+          if (checkRes.data?.success) {
+            const hasPrevCheckpoint = checkRes.data.checkpoints.some(
+              cp => cp.roundNumber === activeSimulation.currentRound - 1
+            )
+            if (!hasPrevCheckpoint) {
+              toast.error("Mandatory checkpoint justification must be submitted before editing decisions.")
+              navigate("/simulation/checkpoint")
+            }
+          }
+        } catch (e) {
+          console.error("Error checking checkpoint gating:", e)
+        }
+      }
+    }
+    checkGating()
+  }, [isSimulationMode, activeSimulation, user, navigate])
 
   // Sync scores back to Zustand store
   useEffect(() => {
@@ -146,7 +201,16 @@ export function SeoSimulationPage() {
       const kw = AVAILABLE_KEYWORDS.find(k => k.name.toLowerCase() === focusKeyword.toLowerCase() || k.id === focusKeyword)
       useCampaignStore.setState({ 
         selectedKeywords: [kw ? kw.id : focusKeyword],
-        budgetSpent: backlinkBudget
+        budgetSpent: backlinkBudget,
+        metaTitle,
+        metaDescription,
+        bodyContent,
+        urlSlug,
+        internalLinksCount,
+        anchorText,
+        backlinkQuality,
+        technicalConfig: JSON.stringify({ hasSitemap, hasRobots, hasSsl, isMobileFriendly, hasAltTags, hasSchema }),
+        webVitals: JSON.stringify({ lcpMs, clsScore, fidMs })
       })
 
       await saveDecisions()
@@ -230,7 +294,26 @@ export function SeoSimulationPage() {
     const blQualScore = Math.min(7, backlinkQuality + 1)
     ofScore = blBudgetScore + blQualScore
 
-    const total = Math.min(100, opScore + tScore + ofScore)
+    // Internal link scoring (100 pts scale)
+    const countContribution = Math.min(50, internalLinksCount * 10)
+    const anchorContribution = focusKeyword && anchorText.toLowerCase().includes(focusKeyword.toLowerCase()) ? 50 : 20
+    const linkScoreVal = internalLinksCount > 0 ? Math.min(100, countContribution + anchorContribution) : 0
+    setInternalLinksScore(linkScoreVal)
+
+    // Add internal link audit items
+    if (internalLinksCount >= 3) {
+      items.push({ text: `Internal links count optimal (${internalLinksCount} links)`, status: "green", section: "links" })
+    } else {
+      items.push({ text: `Low internal linking (${internalLinksCount} links) — aim for 3+ for PageRank distribution`, status: "yellow", section: "links" })
+    }
+    if (focusKeyword && anchorText.toLowerCase().includes(focusKeyword.toLowerCase())) {
+      items.push({ text: "Anchor text matches focus keyword", status: "green", section: "links" })
+    } else {
+      items.push({ text: "Anchor text does not include focus keyword — optimization opportunity", status: "yellow", section: "links" })
+    }
+
+    // Weigh total score: On-page + Technical + Off-page + link score bonus up to 100
+    const total = Math.min(100, Math.round(opScore + tScore + ofScore + (linkScoreVal * 0.05)))
     setOnPageScore(opScore)
     setTechScore(tScore)
     setOffPageScore(ofScore)
@@ -249,7 +332,7 @@ export function SeoSimulationPage() {
     const traffic = Math.round(baseTraffic + backlinksBoost + (wordCount * 0.15))
     setProjectedTraffic(traffic)
     setProjectedConversions(Math.round(traffic * 0.042))
-  }, [focusKeyword, metaTitle, metaDescription, bodyContent, hasSitemap, hasRobots, hasSsl, isMobileFriendly, hasAltTags, hasSchema, backlinkBudget, backlinkQuality, lcpMs, clsScore, fidMs])
+  }, [focusKeyword, metaTitle, metaDescription, bodyContent, hasSitemap, hasRobots, hasSsl, isMobileFriendly, hasAltTags, hasSchema, backlinkBudget, backlinkQuality, lcpMs, clsScore, fidMs, internalLinksCount, anchorText])
 
   const handleRunAudit = () => {
     setSimLoading(true)
@@ -465,6 +548,102 @@ export function SeoSimulationPage() {
                     onChange={e => setBodyContent(e.target.value)}
                     className="w-full text-xs p-3 border border-neutral-200 rounded-lg font-medium text-neutral-800 bg-white leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-500"
                   />
+                </div>
+
+                {/* HTML Document Upload */}
+                <div className="space-y-1.5 pt-2">
+                  <label className="text-[10px] font-black text-neutral-500 uppercase tracking-wider block">HTML Document Upload</label>
+                  <div className="border border-dashed border-neutral-200 rounded-xl p-4 bg-neutral-50/50 flex flex-col items-center justify-center text-center gap-2">
+                    <span className="text-[10px] font-semibold text-neutral-500 leading-normal">
+                      Drag & drop or select an HTML file to extract page titles, meta tags, and body content automatically.
+                    </span>
+                    <input
+                      type="file"
+                      accept=".html,.htm"
+                      disabled={isReadOnly}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          const reader = new FileReader();
+                          reader.onload = (event) => {
+                            const html = event.target?.result as string;
+                            // Extract title
+                            const titleMatch = html.match(/<title>([^<]+)<\/title>/i);
+                            if (titleMatch?.[1]) setMetaTitle(titleMatch[1].trim());
+
+                            // Extract meta description
+                            const descMatch = html.match(/<meta\s+name=["']description["']\s+content=["']([^"']+)["']/i) ||
+                                              html.match(/<meta\s+content=["']([^"']+)["']\s+name=["']description["']/i);
+                            if (descMatch?.[1]) setMetaDescription(descMatch[1].trim());
+
+                            // Strip HTML tags for body content
+                            let tempBody = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+                                               .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
+                                               .replace(/<[^>]+>/g, ' ')
+                                               .replace(/\s+/g, ' ')
+                                               .trim();
+                            if (tempBody.length > 1000) tempBody = tempBody.substring(0, 1000) + '...';
+                            setBodyContent(tempBody);
+                            toast.success(`Successfully uploaded and parsed "${file.name}"!`);
+                          };
+                          reader.readAsText(file);
+                        }
+                      }}
+                      className="text-xs text-neutral-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-[11px] file:font-black file:bg-indigo-50 file:text-indigo-750 hover:file:bg-indigo-100 cursor-pointer"
+                    />
+                  </div>
+                </div>
+
+                {/* Internal Linking Optimization */}
+                <div className="space-y-4 pt-4 border-t border-neutral-100">
+                  <div className="flex justify-between items-center">
+                    <h4 className="text-xs font-black text-neutral-900 uppercase">Internal Linking Optimization</h4>
+                    <span className="text-[10px] font-black bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full">
+                      Link Score: {internalLinksScore}%
+                    </span>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black text-neutral-500 uppercase tracking-wider block">
+                        Internal Links Pointing to Page
+                      </label>
+                      <input
+                        type="range"
+                        min="0"
+                        max="10"
+                        value={internalLinksCount}
+                        disabled={isReadOnly}
+                        onChange={(e) => setInternalLinksCount(parseInt(e.target.value))}
+                        className="w-full accent-indigo-600 cursor-pointer"
+                      />
+                      <div className="flex justify-between text-[9px] text-neutral-400 font-bold">
+                        <span>0 Links</span>
+                        <span>5 (Recommended)</span>
+                        <span>10 Links</span>
+                      </div>
+                      <span className="text-[10px] text-neutral-600 font-bold block mt-1">
+                        Active count: {internalLinksCount} incoming internal links
+                      </span>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black text-neutral-500 uppercase tracking-wider block" htmlFor="anchorText">
+                        Target Anchor Text
+                      </label>
+                      <Input
+                        id="anchorText"
+                        value={anchorText}
+                        disabled={isReadOnly}
+                        onChange={(e) => setAnchorText(e.target.value)}
+                        className="text-xs border-neutral-200 font-semibold h-10 focus-visible:ring-indigo-500"
+                        placeholder="e.g. CRM Software or Sustainable Sneakers"
+                      />
+                      <p className="text-[9px] text-neutral-400 font-semibold leading-relaxed mt-1">
+                        Anchor text matching focus keyword enhances indexing topical relevance.
+                      </p>
+                    </div>
+                  </div>
                 </div>
               </CardContent>
             </Card>

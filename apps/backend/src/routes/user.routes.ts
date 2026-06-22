@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { ValidationError, NotFoundError } from '../utils/errors';
 import { logActivity, createNotification } from '../utils/audit';
 import { limitsService } from '../services/billing/limits.service';
+import { hashPassword } from 'better-auth/crypto';
 
 export async function userRoutes(fastify: FastifyInstance) {
   /**
@@ -185,7 +186,7 @@ export async function userRoutes(fastify: FastifyInstance) {
         required: ['userId', 'role'],
         properties: {
           userId: { type: 'string' },
-          role: { type: 'string', enum: Object.values(UserRole) }
+          role: { type: 'string' }
         }
       },
       response: {
@@ -209,12 +210,22 @@ export async function userRoutes(fastify: FastifyInstance) {
   }, async (request, reply) => {
     const bodySchema = z.object({
       userId: z.string().uuid('Invalid user UUID format'),
-      role: z.nativeEnum(UserRole),
+      role: z.string(),
     });
 
     const parsed = bodySchema.safeParse(request.body);
     if (!parsed.success) {
       throw new ValidationError(parsed.error.errors[0].message);
+    }
+
+    let dbRole = parsed.data.role;
+    if (dbRole === 'student') dbRole = 'STUDENT_COLLEGE';
+    else if (dbRole === 'instructor') dbRole = 'INSTRUCTOR';
+    else if (dbRole === 'admin') dbRole = 'ADMIN';
+    else if (dbRole === 'individual') dbRole = 'INDIVIDUAL';
+
+    if (!Object.values(UserRole).includes(dbRole as any)) {
+      throw new ValidationError('Invalid role selection.');
     }
 
     const targetUser = await prisma.user.findUnique({
@@ -227,7 +238,7 @@ export async function userRoutes(fastify: FastifyInstance) {
 
     const updatedUser = await prisma.user.update({
       where: { id: parsed.data.userId },
-      data: { role: parsed.data.role },
+      data: { role: dbRole },
     });
 
     return reply.status(200).send({
@@ -447,15 +458,32 @@ export async function userRoutes(fastify: FastifyInstance) {
     let dbRole = 'STUDENT_COLLEGE';
     if (parsed.data.role === 'instructor') dbRole = 'INSTRUCTOR';
     else if (parsed.data.role === 'admin') dbRole = 'ADMIN';
+    else if (parsed.data.role === 'individual') dbRole = 'INDIVIDUAL';
 
-    const newUser = await prisma.user.create({
-      data: {
-        name: parsed.data.name,
-        email: parsed.data.email,
-        role: dbRole,
-        status: parsed.data.status,
-        emailVerified: true
-      }
+    const defaultPassword = 'ResetPassword123!';
+    const hashedPassword = await hashPassword(defaultPassword);
+
+    const newUser = await prisma.$transaction(async (tx) => {
+      const user = await tx.user.create({
+        data: {
+          name: parsed.data.name,
+          email: parsed.data.email,
+          role: dbRole,
+          status: parsed.data.status,
+          emailVerified: true
+        }
+      });
+
+      await tx.account.create({
+        data: {
+          userId: user.id,
+          accountId: parsed.data.email,
+          providerId: 'credential',
+          password: hashedPassword
+        }
+      });
+
+      return user;
     });
 
     return reply.status(200).send({

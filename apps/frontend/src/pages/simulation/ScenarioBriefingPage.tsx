@@ -203,9 +203,9 @@ export function ScenarioBriefingPage() {
               </p>
             </div>
             
-            <Link to="/simulation/seo" className="block w-full">
+            <Link to="/simulation/market-analysis" className="block w-full">
               <Button className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs h-10 rounded-xl flex items-center justify-center gap-1.5 shadow-md">
-                Configure SEO Decisions
+                Go to Market Analysis
                 <ArrowRight className="h-4 w-4" />
               </Button>
             </Link>

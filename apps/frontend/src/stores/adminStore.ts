@@ -60,6 +60,7 @@ export interface InstitutionProfile {
   completionRate: number
   certificationRate: number
   status: "active" | "suspended"
+  code: string
 }
 
 export interface AuditLogEntry {
@@ -124,6 +125,7 @@ interface AdminStoreState {
   suspendUser: (id: string) => Promise<void>
   activateUser: (id: string) => Promise<void>
   changeUserRole: (id: string, role: "student" | "instructor" | "admin") => Promise<void>
+  updateUserInstitution: (id: string, institution: string | null) => Promise<void>
   deleteUser: (id: string) => Promise<void>
   addUser: (user: Omit<AdminUser, "id" | "joinedAt" | "lastLogin">) => Promise<void>
   resetUserPassword: (id: string) => Promise<void>
@@ -133,6 +135,7 @@ interface AdminStoreState {
   renameInstitution: (name: string, newName: string) => Promise<void>
   deactivateInstitution: (name: string) => Promise<void>
   reactivateInstitution: (name: string) => Promise<void>
+  createInstitution: (name: string, code: string) => Promise<void>
   
   fetchAuditLogs: () => Promise<void>
   fetchAnalyticsOverview: () => Promise<void>
@@ -271,6 +274,18 @@ export const useAdminStore = create<AdminStoreState>()((set, get) => ({
     }
   },
 
+  updateUserInstitution: async (id, institution) => {
+    try {
+      await api.put(`/api/v1/admin/users/${id}`, { institution })
+      set((state) => ({
+        users: state.users.map((u) => (u.id === id ? { ...u, institution: institution || undefined } : u)),
+      }))
+    } catch (err) {
+      console.error("Failed to update user institution", err)
+      throw err
+    }
+  },
+
   deleteUser: async (id) => {
     try {
       await api.delete(`/api/v1/users/${id}`)
@@ -371,6 +386,16 @@ export const useAdminStore = create<AdminStoreState>()((set, get) => ({
       await get().fetchInstitutions()
     } catch (err) {
       console.error("Failed to reactivate institution", err)
+      throw err
+    }
+  },
+
+  createInstitution: async (name, code) => {
+    try {
+      await api.post(`/api/v1/admin/institutions`, { name, code })
+      await get().fetchInstitutions()
+    } catch (err) {
+      console.error("Failed to create institution", err)
       throw err
     }
   },

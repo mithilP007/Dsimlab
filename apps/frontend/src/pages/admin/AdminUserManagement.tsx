@@ -29,7 +29,10 @@ export function AdminUserManagement() {
     addUser,
     resetUserPassword,
     bulkUserAction,
-    isLoading
+    isLoading,
+    institutions,
+    fetchInstitutions,
+    updateUserInstitution
   } = useAdminStore()
 
   // UI local states
@@ -48,7 +51,8 @@ export function AdminUserManagement() {
 
   useEffect(() => {
     fetchUsers()
-  }, [fetchUsers])
+    fetchInstitutions()
+  }, [fetchUsers, fetchInstitutions])
 
   // Filters logic
   const filteredUsers = users.filter((user) => {
@@ -381,8 +385,27 @@ export function AdminUserManagement() {
                         <option value="admin">Admin</option>
                       </select>
                     </td>
-                    <td className="py-3 px-2 text-neutral-600 truncate max-w-[150px]" title={user.institution}>
-                      {user.institution || "Sandbox Sandbox"}
+                     <td className="py-3 px-2">
+                      <select
+                        value={user.institution || ""}
+                        onChange={async (e) => {
+                          const val = e.target.value;
+                          try {
+                            await updateUserInstitution(user.id, val === "" ? null : val);
+                            toast.success("Institution updated successfully");
+                          } catch {
+                            toast.error("Failed to update institution");
+                          }
+                        }}
+                        className="bg-transparent border-none text-neutral-800 text-xs font-bold focus:ring-0 outline-none p-0 cursor-pointer max-w-[155px]"
+                      >
+                        <option value="">No Institution</option>
+                        {institutions.map((inst) => (
+                          <option key={inst.name} value={inst.name}>
+                            {inst.name}
+                          </option>
+                        ))}
+                      </select>
                     </td>
                     <td className="py-3 px-2 text-center font-mono font-bold text-neutral-800">
                       {user.totalScore.toFixed(1)}%

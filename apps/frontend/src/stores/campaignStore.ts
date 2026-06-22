@@ -89,6 +89,12 @@ interface CampaignState {
   metaDescription: string
   h1Header: string
   bodyContent: string
+  urlSlug: string
+  internalLinksCount: number
+  anchorText: string
+  backlinkQuality: number
+  technicalConfig: string
+  webVitals: string
 
   // Submission state
   isSubmitting: boolean
@@ -107,6 +113,12 @@ interface CampaignState {
   setMetaDescription: (desc: string) => void
   setH1Header: (header: string) => void
   setBodyContent: (content: string) => void
+  setUrlSlug: (slug: string) => void
+  setInternalLinksCount: (count: number) => void
+  setAnchorText: (text: string) => void
+  setBacklinkQuality: (quality: number) => void
+  setTechnicalConfig: (config: string) => void
+  setWebVitals: (vitals: string) => void
 
   /**
    * Persist SEO decisions to the backend for the current simulation round.
@@ -143,6 +155,12 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
   metaDescription: "",
   h1Header: "",
   bodyContent: "",
+  urlSlug: "",
+  internalLinksCount: 0,
+  anchorText: "",
+  backlinkQuality: 1,
+  technicalConfig: "{}",
+  webVitals: "{}",
 
   toggleKeyword: (keywordId) =>
     set((state) => {
@@ -220,6 +238,12 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
   setMetaDescription: (desc) => set({ metaDescription: desc }),
   setH1Header: (header) => set({ h1Header: header }),
   setBodyContent: (content) => set({ bodyContent: content }),
+  setUrlSlug: (slug) => set({ urlSlug: slug }),
+  setInternalLinksCount: (count) => set({ internalLinksCount: count }),
+  setAnchorText: (text) => set({ anchorText: text }),
+  setBacklinkQuality: (quality) => set({ backlinkQuality: quality }),
+  setTechnicalConfig: (config) => set({ technicalConfig: config }),
+  setWebVitals: (vitals) => set({ webVitals: vitals }),
 
   submitSeoDecisions: async () => {
     const {
@@ -266,6 +290,12 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
       metaDescription: "",
       h1Header: "",
       bodyContent: "",
+      urlSlug: "",
+      internalLinksCount: 0,
+      anchorText: "",
+      backlinkQuality: 1,
+      technicalConfig: "{}",
+      webVitals: "{}",
     }),
 }))
 

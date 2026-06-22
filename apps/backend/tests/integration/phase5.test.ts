@@ -60,10 +60,23 @@ describe('Phase 5: AI Integration & WebSocket Payload Tests', () => {
       url: '/api/auth/sign-up/email',
       payload: { email: instructorEmail, password, name: 'Instructor P5' },
     });
-    await prisma.user.update({
+    const instUser = await prisma.user.update({
       where: { email: instructorEmail },
       data: { role: 'INSTRUCTOR' },
     });
+    const instPlan = await prisma.plan.findFirst({ where: { code: 'instructor' } });
+    if (instPlan) {
+      await prisma.subscription.create({
+        data: {
+          userId: instUser.id,
+          planId: instPlan.id,
+          status: 'active',
+          billingCycle: 'monthly',
+          startDate: new Date(),
+          endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        },
+      });
+    }
     const instLogin = await app.inject({
       method: 'POST',
       url: '/api/auth/sign-in/email',

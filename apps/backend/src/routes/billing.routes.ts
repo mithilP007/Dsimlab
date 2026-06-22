@@ -4,6 +4,8 @@ import { prisma } from '../db/client';
 import { billingService } from '../services/billing/billing.service';
 import { z } from 'zod';
 import { ValidationError, NotFoundError } from '../utils/errors';
+import { paymentGateway } from '../services/billing/payment.gateway';
+import { config } from '../config';
 
 export async function billingRoutes(fastify: FastifyInstance) {
   /**
@@ -219,6 +221,16 @@ export async function billingRoutes(fastify: FastifyInstance) {
   fastify.post('/webhook', async (request, reply) => {
     const signature = request.headers['x-razorpay-signature'] as string;
     const payload = JSON.stringify(request.body);
+
+    const isValid = paymentGateway.verifyWebhookSignature(
+      payload,
+      signature || '',
+      config.RAZORPAY_WEBHOOK_SECRET || 'rzp_webhook_secret'
+    );
+
+    if (!isValid) {
+      return reply.status(400).send({ success: false, error: 'Invalid webhook signature verification failed' });
+    }
 
     // Record webhook event audit
     const eventLog = await prisma.billingEvent.create({

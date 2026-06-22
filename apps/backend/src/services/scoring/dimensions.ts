@@ -18,6 +18,7 @@ export interface PerformanceInput {
   metaClicks?: number;
   googleImpressions?: number;
   metaImpressions?: number;
+  reflectionQualityScore?: number;
 }
 
 export interface DimensionScores {
@@ -264,6 +265,10 @@ export function calculateDimensionScores(input: PerformanceInput): DimensionScor
         adaptability = 80.0;
       }
     }
+  }
+
+  if (input.reflectionQualityScore !== undefined) {
+    adaptability = (adaptability * 0.7) + (input.reflectionQualityScore * 0.3);
   }
 
   return {

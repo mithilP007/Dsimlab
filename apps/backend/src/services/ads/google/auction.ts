@@ -14,6 +14,7 @@ export interface Advertiser {
   negativeKeywordsCount?: number;
   deviceAdjustments?: { desktop: number; mobile: number; tablet: number };
   landingPageExperience?: number; // 1-10 average
+  ctrModifier?: number;
 }
 
 export interface GoogleAuctionResult {
@@ -122,6 +123,9 @@ export function runGoogleAuction(
     let baseCTR = 0.09 / (position + 0.1); // Position 1: ~8.1%, Position 2: ~4.2%, etc.
     let qsMultiplier = 0.5 + (current.qualityScore / 10.0); // QS 10: 1.5x, QS 1: 0.6x
     let expectedCTR = baseCTR * qsMultiplier;
+    if (current.ctrModifier) {
+      expectedCTR *= current.ctrModifier;
+    }
 
     // Objective modifiers
     let cvrBoost = 1.0;

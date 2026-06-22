@@ -18,8 +18,8 @@ export function MobileNav() {
     : [
         { name: "Dashboard", href: "/", icon: LayoutDashboard },
         { name: "Simulation", href: "/simulation", icon: Play },
-        { name: "Leaderboard", href: "/leaderboard", icon: Award },
-        { name: "Progress", href: "/progress", icon: Activity }
+        { name: "Campaign", href: "/campaign", icon: Activity },
+        { name: "Leaderboard", href: "/leaderboard", icon: Award }
       ]
 
   const isActive = (href: string) => {

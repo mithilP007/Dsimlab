@@ -8,6 +8,14 @@
     "dev": "npm run dev -w apps/frontend",
     "build": "npm run build -w apps/frontend",
     "lint": "npm run lint -w apps/frontend",
-    "preview": "npm run preview -w apps/frontend"
+    "preview": "npm run preview -w apps/frontend",
+    "verify-campaign-integrity": "node scripts/verify-campaign-integrity.js",
+    "seed-pilot": "node scripts/seed-pilot-data.js",
+    "generate-pilot-sheets": "node scripts/generate-pilot-sheets.js",
+    "test:e2e": "node scripts/e2e-qa.js"
+  },
+  "dependencies": {
+    "playwright": "^1.61.0",
+    "@playwright/test": "^1.61.0"
   }
 }

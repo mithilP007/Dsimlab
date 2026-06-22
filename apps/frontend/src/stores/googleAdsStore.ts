@@ -282,6 +282,11 @@ interface GoogleAdsState {
   markDecisionsMade: () => void
   resetCampaign: () => void
 
+  sitelinks: { title: string; url: string }[]
+  callouts: string[]
+  updateSitelink: (index: number, title: string, url: string) => void
+  updateCallout: (index: number, text: string) => void
+
   /**
    * Submit Google Ads campaign configurations to the backend for the current round.
    * POST /api/v1/google-ads/decision
@@ -323,6 +328,22 @@ export const useGoogleAdsStore = create<GoogleAdsState>((set, get) => ({
   estimatedConversions: initialEstimates.estimatedConversions,
   decisionsMade:        false,
   isSubmitting:         false,
+  sitelinks:            [{ title: "", url: "" }, { title: "", url: "" }, { title: "", url: "" }, { title: "", url: "" }],
+  callouts:             ["", "", "", ""],
+
+  updateSitelink: (index, title, url) =>
+    set((state) => {
+      const next = [...state.sitelinks]
+      next[index] = { title, url }
+      return { sitelinks: next }
+    }),
+
+  updateCallout: (index, text) =>
+    set((state) => {
+      const next = [...state.callouts]
+      next[index] = text
+      return { callouts: next }
+    }),
 
   setCampaignName: (name) => set({ campaignName: name }),
 
@@ -495,6 +516,8 @@ export const useGoogleAdsStore = create<GoogleAdsState>((set, get) => ({
       estimatedCtr:         est.estimatedCtr,
       estimatedConversions: est.estimatedConversions,
       decisionsMade:        false,
+      sitelinks:            [{ title: "", url: "" }, { title: "", url: "" }, { title: "", url: "" }, { title: "", url: "" }],
+      callouts:             ["", "", "", ""],
     })
   },
 }))

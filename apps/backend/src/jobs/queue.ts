@@ -82,6 +82,10 @@ export function startQueueWorker(): void {
           const { executeOvernightBatchSweep } = await import('./schedulers/round-scheduler');
           return await executeOvernightBatchSweep();
         }
+        if (job.name === 'hourly-campaign-sweep-job') {
+          const { executeHourlyCampaignSweep } = await import('./schedulers/round-scheduler');
+          return await executeHourlyCampaignSweep();
+        }
         if (job.name === 'data-retention-pruning-job') {
           const { executeDataRetentionPruning } = await import('./schedulers/data-retention');
           return await executeDataRetentionPruning();

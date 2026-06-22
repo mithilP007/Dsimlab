@@ -115,10 +115,10 @@ export function CertificatePortal() {
   const strategicConsistency = eligibility?.strategicConsistency || 0
 
   const levels = [
-    { name: "Bronze", minScore: 70, minConsistency: 65, color: "text-amber-700 bg-amber-50 border-amber-200", badgeColor: "bg-amber-600", desc: "Qualified Simulator Practitioner" },
-    { name: "Silver", minScore: 80, minConsistency: 70, color: "text-slate-500 bg-slate-50 border-slate-200", badgeColor: "bg-slate-500", desc: "Proficient Simulator Strategist" },
-    { name: "Gold", minScore: 90, minConsistency: 80, color: "text-amber-500 bg-amber-50 border-amber-250", badgeColor: "bg-amber-500", desc: "Advanced Marketing Specialist" },
-    { name: "Platinum", minScore: 95, minConsistency: 88, color: "text-indigo-600 bg-indigo-50 border-indigo-200", badgeColor: "bg-indigo-600", desc: "Elite Simulator Specialist" }
+    { name: "Bronze", minScore: 60, minConsistency: 0, color: "text-amber-700 bg-amber-50 border-amber-200", badgeColor: "bg-amber-600", desc: "Qualified Simulator Practitioner" },
+    { name: "Silver", minScore: 70, minConsistency: 0, color: "text-slate-500 bg-slate-50 border-slate-200", badgeColor: "bg-slate-500", desc: "Proficient Simulator Strategist" },
+    { name: "Gold", minScore: 80, minConsistency: 0, color: "text-amber-500 bg-amber-50 border-amber-250", badgeColor: "bg-amber-500", desc: "Advanced Marketing Specialist" },
+    { name: "Platinum", minScore: 90, minConsistency: 0, color: "text-indigo-600 bg-indigo-50 border-indigo-200", badgeColor: "bg-indigo-600", desc: "Elite Simulator Specialist" }
   ]
 
   const activeLevel = levels.slice().reverse().find(lvl => 
@@ -291,9 +291,9 @@ export function CertificatePortal() {
                       </span>
                     </div>
                     <div className="flex justify-between">
-                      <span>Consistency Req</span>
-                      <span className={isConsistencyMet ? "text-emerald-600 font-bold" : "text-neutral-400"}>
-                        {lvl.minConsistency}%
+                      <span>Consistency Score</span>
+                      <span className="text-neutral-800 font-bold">
+                        {strategicConsistency.toFixed(0)}%
                       </span>
                     </div>
                   </div>

@@ -27,7 +27,7 @@ export class LimitsService {
         studentLimit: 5,
         instructorLimit: 0,
         certificateLimit: 0,
-        reportExportLimit: 10,
+        reportExportLimit: 100,
         storageLimitMb: 50,
       };
     }

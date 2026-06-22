@@ -24,6 +24,7 @@ export function AdminInstitutionManagement() {
     renameInstitution,
     deactivateInstitution,
     reactivateInstitution,
+    createInstitution,
     isLoading
   } = useAdminStore()
 
@@ -31,9 +32,33 @@ export function AdminInstitutionManagement() {
   const [editingInstitution, setEditingInstitution] = useState<string | null>(null)
   const [newName, setNewName] = useState("")
 
+  // College registration states
+  const [createName, setCreateName] = useState("")
+  const [createCode, setCreateCode] = useState("")
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
   useEffect(() => {
     fetchInstitutions()
   }, [fetchInstitutions])
+
+  const handleCreateSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!createName.trim() || !createCode.trim()) {
+      toast.error("Please fill in both fields")
+      return
+    }
+    setIsSubmitting(true)
+    try {
+      await createInstitution(createName.trim(), createCode.trim().toUpperCase())
+      toast.success("College registered successfully!")
+      setCreateName("")
+      setCreateCode("")
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || "Failed to register college")
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
 
   const filteredInstitutions = institutions.filter((inst) =>
     inst.name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -156,150 +181,211 @@ export function AdminInstitutionManagement() {
         </div>
       </div>
 
-      {/* Search Bar */}
-      <div className="flex items-center justify-between gap-4 bg-white p-4 border border-neutral-200/60 rounded-xl shadow-sm">
-        <div className="relative w-full md:w-80">
-          <Search className="absolute left-3 top-3 h-4 w-4 text-neutral-400" />
-          <Input
-            placeholder="Search institutions..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9 bg-neutral-50 focus:bg-white text-xs border-neutral-250/70"
-          />
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+        {/* Register College Form */}
+        <div className="lg:col-span-1 bg-white p-6 border border-neutral-200/60 rounded-xl shadow-sm space-y-4 h-fit">
+          <h2 className="text-sm font-black text-neutral-900 uppercase tracking-wider flex items-center gap-1.5">
+            <School className="h-4 w-4 text-neutral-500" />
+            Register New College
+          </h2>
+          <p className="text-xs text-neutral-500 font-semibold leading-relaxed">
+            Provision a new institutional cohort workspace. Instructors and faculty can register using the generated college code.
+          </p>
+          <form onSubmit={handleCreateSubmit} className="space-y-4 pt-2">
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-neutral-500 uppercase">College Name</label>
+              <Input
+                placeholder="e.g. Stanford University"
+                value={createName}
+                onChange={(e) => setCreateName(e.target.value)}
+                required
+                className="text-xs h-9"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-neutral-500 uppercase">Invite Code (Slug)</label>
+              <div className="flex gap-2">
+                <Input
+                  placeholder="e.g. STANFORD2026"
+                  value={createCode}
+                  onChange={(e) => setCreateCode(e.target.value.toUpperCase())}
+                  required
+                  className="text-xs h-9 uppercase font-mono"
+                />
+                <Button
+                  type="button"
+                  onClick={() => {
+                    const randomCode = "SL" + Math.random().toString(36).substring(2, 8).toUpperCase();
+                    setCreateCode(randomCode);
+                  }}
+                  variant="outline"
+                  className="text-neutral-700 h-9 px-2 text-xs font-semibold shrink-0"
+                >
+                  Gen
+                </Button>
+              </div>
+            </div>
+            <Button
+              type="submit"
+              disabled={isSubmitting}
+              className="w-full bg-neutral-900 hover:bg-neutral-800 text-white font-bold text-xs h-9 mt-2"
+            >
+              {isSubmitting ? "Registering..." : "Register College Workspace"}
+            </Button>
+          </form>
+        </div>
+
+        {/* Institutions Registry List */}
+        <div className="lg:col-span-3 space-y-6">
+          {/* Search Bar */}
+          <div className="flex items-center justify-between gap-4 bg-white p-4 border border-neutral-200/60 rounded-xl shadow-sm">
+            <div className="relative w-full md:w-80">
+              <Search className="absolute left-3 top-3 h-4 w-4 text-neutral-400" />
+              <Input
+                placeholder="Search institutions..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9 bg-neutral-50 focus:bg-white text-xs border-neutral-250/70"
+              />
+            </div>
+          </div>
+
+          {isLoading ? (
+            <div className="flex items-center justify-center py-24 text-neutral-500 font-semibold text-sm">
+              <Activity className="h-5 w-5 animate-spin mr-2" />
+              Synchronizing institutional registries...
+            </div>
+          ) : (
+            <Card className="border-neutral-200/60 shadow-sm">
+              <CardContent className="p-0 overflow-x-auto">
+                <table className="w-full text-left border-collapse text-xs font-semibold text-neutral-700">
+                  <thead>
+                    <tr className="border-b border-neutral-200 bg-neutral-50/50">
+                      <th className="py-3 px-4 text-neutral-500 font-bold">Institution Profile</th>
+                      <th className="py-3 px-2 text-center text-neutral-500 font-bold">Invite Code</th>
+                      <th className="py-3 px-2 text-center text-neutral-500 font-bold">Students Count</th>
+                      <th className="py-3 px-2 text-center text-neutral-500 font-bold">Instructors Count</th>
+                      <th className="py-3 px-2 text-center text-neutral-500 font-bold">Avg Completion Rate</th>
+                      <th className="py-3 px-2 text-center text-neutral-500 font-bold">Certification Rate</th>
+                      <th className="py-3 px-2 text-center text-neutral-500 font-bold">Status</th>
+                      <th className="py-3 px-4 text-right text-neutral-500 font-bold">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-100">
+                    {filteredInstitutions.length > 0 ? (
+                      filteredInstitutions.map((inst) => (
+                        <tr key={inst.name} className="hover:bg-neutral-50/40 transition-colors">
+                          <td className="py-4 px-4 font-bold text-neutral-850">
+                            {editingInstitution === inst.name ? (
+                              <div className="flex items-center gap-2 max-w-sm">
+                                <Input
+                                  value={newName}
+                                  onChange={(e) => setNewName(e.target.value)}
+                                  className="text-xs font-bold py-1 h-8"
+                                  placeholder="New institution name"
+                                />
+                                <Button
+                                  onClick={() => handleRenameSubmit(inst.name)}
+                                  size="sm"
+                                  className="bg-neutral-900 hover:bg-neutral-800 text-white font-bold text-[10px]"
+                                >
+                                  Save
+                                </Button>
+                                <Button
+                                  onClick={() => setEditingInstitution(null)}
+                                  variant="outline"
+                                  size="sm"
+                                  className="font-bold text-[10px]"
+                                >
+                                  Cancel
+                                </Button>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-2">
+                                <School className="h-4 w-4 text-neutral-400 shrink-0" />
+                                <span>{inst.name}</span>
+                              </div>
+                            )}
+                          </td>
+                          <td className="py-4 px-2 text-center font-mono font-bold text-indigo-650">
+                            {inst.code || "N/A"}
+                          </td>
+                          <td className="py-4 px-2 text-center font-mono font-bold text-neutral-800">
+                            {inst.studentsCount}
+                          </td>
+                          <td className="py-4 px-2 text-center font-mono font-bold text-neutral-800">
+                            {inst.instructorCount}
+                          </td>
+                          <td className="py-4 px-2 text-center">
+                            <div className="inline-flex items-center gap-1.5">
+                              <span className="font-mono font-bold text-neutral-850">{inst.completionRate}%</span>
+                              <div className="w-12 bg-neutral-100 h-1.5 rounded-full overflow-hidden hidden sm:block">
+                                <div
+                                  className="bg-neutral-900 h-full rounded-full"
+                                  style={{ width: `${Math.min(100, inst.completionRate)}%` }}
+                                />
+                              </div>
+                            </div>
+                          </td>
+                          <td className="py-4 px-2 text-center">
+                            <span className="font-mono font-bold text-neutral-850">{inst.certificationRate}%</span>
+                          </td>
+                          <td className="py-4 px-2 text-center">
+                            <Badge className={`border-none text-[9px] font-bold ${
+                              inst.status === "active"
+                                ? "bg-emerald-50 text-emerald-700"
+                                : "bg-rose-50 text-rose-700"
+                            }`}>
+                              {inst.status.toUpperCase()}
+                            </Badge>
+                          </td>
+                          <td className="py-4 px-4 text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                onClick={() => {
+                                  setEditingInstitution(inst.name)
+                                  setNewName(inst.name)
+                                }}
+                                className="p-1.5 text-neutral-400 hover:text-neutral-900 hover:bg-neutral-50 rounded"
+                                title="Edit Name"
+                              >
+                                <Edit2 className="h-3.5 w-3.5" />
+                              </button>
+                              {inst.status === "active" ? (
+                                <button
+                                  onClick={() => handleDeactivate(inst.name)}
+                                  className="p-1.5 text-rose-450 hover:text-rose-600 hover:bg-rose-50 rounded"
+                                  title="Deactivate Institution"
+                                >
+                                  <PowerOff className="h-3.5 w-3.5 text-rose-500" />
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => handleReactivate(inst.name)}
+                                  className="p-1.5 text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50 rounded"
+                                  title="Reactivate Institution"
+                                >
+                                  <Power className="h-3.5 w-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={8} className="py-8 text-center text-neutral-400 font-medium">
+                          No institutions matching query.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
-
-      {/* Institutions Grid / Table */}
-      {isLoading ? (
-        <div className="flex items-center justify-center py-24 text-neutral-500 font-semibold text-sm">
-          <Activity className="h-5 w-5 animate-spin mr-2" />
-          Synchronizing institutional registries...
-        </div>
-      ) : (
-        <Card className="border-neutral-200/60 shadow-sm">
-          <CardContent className="p-0 overflow-x-auto">
-            <table className="w-full text-left border-collapse text-xs font-semibold text-neutral-700">
-              <thead>
-                <tr className="border-b border-neutral-200 bg-neutral-50/50">
-                  <th className="py-3 px-4 text-neutral-500 font-bold">Institution Profile</th>
-                  <th className="py-3 px-2 text-center text-neutral-500 font-bold">Students Count</th>
-                  <th className="py-3 px-2 text-center text-neutral-500 font-bold">Instructors Count</th>
-                  <th className="py-3 px-2 text-center text-neutral-500 font-bold">Avg Completion Rate</th>
-                  <th className="py-3 px-2 text-center text-neutral-500 font-bold">Certification Rate</th>
-                  <th className="py-3 px-2 text-center text-neutral-500 font-bold">Status</th>
-                  <th className="py-3 px-4 text-right text-neutral-500 font-bold">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-neutral-100">
-                {filteredInstitutions.length > 0 ? (
-                  filteredInstitutions.map((inst) => (
-                    <tr key={inst.name} className="hover:bg-neutral-50/40 transition-colors">
-                      <td className="py-4 px-4 font-bold text-neutral-850">
-                        {editingInstitution === inst.name ? (
-                          <div className="flex items-center gap-2 max-w-sm">
-                            <Input
-                              value={newName}
-                              onChange={(e) => setNewName(e.target.value)}
-                              className="text-xs font-bold py-1 h-8"
-                              placeholder="New institution name"
-                            />
-                            <Button
-                              onClick={() => handleRenameSubmit(inst.name)}
-                              size="sm"
-                              className="bg-neutral-900 hover:bg-neutral-800 text-white font-bold text-[10px]"
-                            >
-                              Save
-                            </Button>
-                            <Button
-                              onClick={() => setEditingInstitution(null)}
-                              variant="outline"
-                              size="sm"
-                              className="font-bold text-[10px]"
-                            >
-                              Cancel
-                            </Button>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-2">
-                            <School className="h-4 w-4 text-neutral-400 shrink-0" />
-                            <span>{inst.name}</span>
-                          </div>
-                        )}
-                      </td>
-                      <td className="py-4 px-2 text-center font-mono font-bold text-neutral-800">
-                        {inst.studentsCount}
-                      </td>
-                      <td className="py-4 px-2 text-center font-mono font-bold text-neutral-800">
-                        {inst.instructorCount}
-                      </td>
-                      <td className="py-4 px-2 text-center">
-                        <div className="inline-flex items-center gap-1.5">
-                          <span className="font-mono font-bold text-neutral-850">{inst.completionRate}%</span>
-                          <div className="w-12 bg-neutral-100 h-1.5 rounded-full overflow-hidden hidden sm:block">
-                            <div
-                              className="bg-neutral-900 h-full rounded-full"
-                              style={{ width: `${Math.min(100, inst.completionRate)}%` }}
-                            />
-                          </div>
-                        </div>
-                      </td>
-                      <td className="py-4 px-2 text-center">
-                        <span className="font-mono font-bold text-neutral-850">{inst.certificationRate}%</span>
-                      </td>
-                      <td className="py-4 px-2 text-center">
-                        <Badge className={`border-none text-[9px] font-bold ${
-                          inst.status === "active"
-                            ? "bg-emerald-50 text-emerald-700"
-                            : "bg-rose-50 text-rose-700"
-                        }`}>
-                          {inst.status.toUpperCase()}
-                        </Badge>
-                      </td>
-                      <td className="py-4 px-4 text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          <button
-                            onClick={() => {
-                              setEditingInstitution(inst.name)
-                              setNewName(inst.name)
-                            }}
-                            className="p-1.5 text-neutral-400 hover:text-neutral-900 hover:bg-neutral-50 rounded"
-                            title="Edit Name"
-                          >
-                            <Edit2 className="h-3.5 w-3.5" />
-                          </button>
-                          {inst.status === "active" ? (
-                            <button
-                              onClick={() => handleDeactivate(inst.name)}
-                              className="p-1.5 text-rose-450 hover:text-rose-600 hover:bg-rose-50 rounded"
-                              title="Deactivate Institution"
-                            >
-                              <PowerOff className="h-3.5 w-3.5 text-rose-500" />
-                            </button>
-                          ) : (
-                            <button
-                              onClick={() => handleReactivate(inst.name)}
-                              className="p-1.5 text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50 rounded"
-                              title="Reactivate Institution"
-                            >
-                              <Power className="h-3.5 w-3.5" />
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={7} className="py-8 text-center text-neutral-400 font-medium">
-                      No institutions matching query.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </CardContent>
-        </Card>
-      )}
     </div>
   )
 }

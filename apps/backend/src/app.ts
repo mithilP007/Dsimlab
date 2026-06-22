@@ -42,6 +42,8 @@ import { requireAuth, AuthenticatedRequest } from './auth/middleware';
 import { apiContractRoutes } from './routes/api-contract.routes';
 import { billingRoutes } from './routes/billing.routes';
 import { billingAdminRoutes } from './routes/billing.admin.routes';
+import { campaignRoutes } from './routes/campaign.routes';
+import { assignmentRoutes } from './routes/assignments.routes';
 
 export const app = Fastify({
   logger: false, // We use custom Pino logger
@@ -534,6 +536,60 @@ app.post('/api/auth/register/student', async (req, reply) => {
   return reply.send(await webResponse.text());
 });
 
+app.post('/api/auth/register/instructor', async (req, reply) => {
+  const method = 'POST';
+  const protocol = req.protocol;
+  const host = req.hostname;
+  const url = `${protocol}://${host}/api/auth/sign-up/email`;
+
+  const headers = new Headers();
+  Object.entries(req.headers).forEach(([key, val]) => {
+    if (val) {
+      if (Array.isArray(val)) {
+        val.forEach(v => headers.append(key, v));
+      } else {
+        headers.set(key, val);
+      }
+    }
+  });
+
+  const rawBody = req.body as Record<string, any>;
+  const body = JSON.stringify({
+    email: rawBody.email,
+    password: rawBody.password,
+    name: rawBody.name,
+    role: 'INSTRUCTOR',
+    institution: rawBody.institution || null,
+  });
+
+  const webRequest = new Request(url, { method, headers, body });
+  const webResponse = await auth.handler(webRequest);
+
+  if (webResponse.status >= 200 && webResponse.status < 300) {
+    try {
+      await prisma.user.update({
+        where: { email: rawBody.email },
+        data: { role: 'INSTRUCTOR', status: 'active' }
+      });
+    } catch (dbErr) {
+      logger.error(dbErr, 'Failed to set INSTRUCTOR role during instructor registration');
+    }
+  }
+
+  webResponse.headers.forEach((value, key) => {
+    if (key.toLowerCase() === 'set-cookie') {
+      const cookies = (webResponse.headers as any).getSetCookie
+        ? (webResponse.headers as any).getSetCookie()
+        : [value];
+      reply.header('set-cookie', cookies);
+    } else {
+      reply.header(key, value);
+    }
+  });
+  reply.status(webResponse.status);
+  return reply.send(await webResponse.text());
+});
+
 app.all('/api/auth/*', {
   config: {
     rateLimit: {
@@ -687,6 +743,8 @@ app.register(reportRoutes, { prefix: '/api/v1/report' });
 app.register(adminRoutes, { prefix: '/api/v1/admin' });
 app.register(billingAdminRoutes, { prefix: '/api/v1/admin/billing' });
 app.register(billingRoutes, { prefix: '/api/v1/billing' });
+app.register(campaignRoutes, { prefix: '/api/v1/campaign' });
+app.register(assignmentRoutes, { prefix: '/api/v1/assignments' });
 app.register(auditRoutes, { prefix: '/api/v1/audit' });
 app.register(notificationRoutes, { prefix: '/api/v1/notifications' });
 app.register(errorReportRoutes, { prefix: '/api/v1/error-reports' });

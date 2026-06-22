@@ -120,6 +120,168 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
   });
 
   /**
+   * POST /api/simulations/setup-sandbox
+   * Sets up or resets a sandbox simulation with a chosen path (beginner, intermediate, advanced)
+   */
+  fastify.post('/api/simulations/setup-sandbox', {
+    preHandler: [requireAuth],
+    schema: {
+      description: 'Sets up or resets a sandbox simulation with a chosen path',
+      tags: ['Simulation'],
+      security: [{ cookieAuth: [] }],
+      body: {
+        type: 'object',
+        required: ['path'],
+        properties: {
+          path: { type: 'string', enum: ['beginner', 'intermediate', 'advanced'] }
+        }
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            success: { type: 'boolean' },
+            simulationId: { type: 'string' },
+            status: { type: 'string' },
+            currentRound: { type: 'number' }
+          }
+        }
+      }
+    }
+  }, async (request, reply) => {
+    const authReq = request as AuthenticatedRequest;
+    const userId = authReq.user!.id;
+    const { path } = request.body as { path: 'beginner' | 'intermediate' | 'advanced' };
+
+    // Define scenario details based on path
+    let scenarioName = 'Global SaaS Marketing Challenge';
+    let difficulty = 'medium';
+    let budgetPerRound = 5000.0;
+    let baselineOrganicTraffic = 1500;
+    let targetKPI = 'revenue';
+    let maxRounds = 10;
+
+    if (path === 'beginner') {
+      scenarioName = 'Beginner SaaS Marketing Challenge';
+      difficulty = 'easy';
+      budgetPerRound = 8000.0;
+      baselineOrganicTraffic = 2000;
+      targetKPI = 'revenue';
+      maxRounds = 10;
+    } else if (path === 'advanced') {
+      scenarioName = 'Advanced Fashion E-Commerce Blitz';
+      difficulty = 'hard';
+      budgetPerRound = 3500.0;
+      baselineOrganicTraffic = 1000;
+      targetKPI = 'conversions';
+      maxRounds = 8;
+    }
+
+    // Find or create the scenario in the database
+    let scenario = await prisma.scenario.findFirst({
+      where: { name: scenarioName }
+    });
+
+    if (!scenario) {
+      scenario = await prisma.scenario.create({
+        data: {
+          name: scenarioName,
+          description: path === 'beginner' 
+            ? 'A guided, high-budget sandbox track for learning core SEO and search ad campaign bidding strategy basics.'
+            : 'Scale traffic and conversions for a sustainable apparel brand in a highly volatile consumer fashion environment.',
+          industry: path === 'beginner' ? 'B2B Software' : 'Apparel E-Commerce',
+          startRound: 1,
+          maxRounds,
+          budgetPerRound,
+          baselineOrganicTraffic,
+          targetKPI,
+          difficulty
+        }
+      });
+    }
+
+    // Find or create sandbox class
+    let sandboxClass = await prisma.class.findFirst({
+      where: { inviteCode: 'SANDBOX' }
+    });
+
+    // Create sandbox instructor if not exists
+    let instructor = await prisma.user.findFirst({ where: { role: 'INSTRUCTOR' } });
+    if (!instructor) {
+      instructor = await prisma.user.create({
+        data: {
+          email: 'sandbox-instructor@simulation.com',
+          emailVerified: true,
+          name: 'Sandbox Instructor',
+          role: 'INSTRUCTOR',
+        }
+      });
+    }
+
+    if (!sandboxClass) {
+      sandboxClass = await prisma.class.create({
+        data: {
+          name: 'Individual Sandbox Cohort',
+          inviteCode: 'SANDBOX',
+          instructorId: instructor.id,
+          scenarioId: scenario.id,
+        }
+      });
+    } else {
+      // Update sandbox class to point to selected scenario
+      sandboxClass = await prisma.class.update({
+        where: { id: sandboxClass.id },
+        data: { scenarioId: scenario.id }
+      });
+    }
+
+    // Link user to sandbox class
+    await prisma.user.update({
+      where: { id: userId },
+      data: { classId: sandboxClass.id }
+    });
+
+    // Delete any existing simulation state for this sandbox class so we start fresh
+    await prisma.simulationState.deleteMany({
+      where: { userId, classId: sandboxClass.id }
+    });
+
+    // Create fresh simulation state
+    const newState = await prisma.simulationState.create({
+      data: {
+        userId,
+        classId: sandboxClass.id,
+        currentRound: 1,
+        isCompleted: false,
+        status: 'DECISION_OPEN',
+      }
+    });
+
+    // Ensure student progress is initialized
+    await prisma.studentSimulationProgress.upsert({
+      where: { simulationId: newState.id },
+      update: {
+        currentDay: 1,
+        totalDays: scenario.durationDays || 30,
+        status: 'DECISION_OPEN'
+      },
+      create: {
+        simulationId: newState.id,
+        currentDay: 1,
+        totalDays: scenario.durationDays || 30,
+        status: 'DECISION_OPEN'
+      }
+    });
+
+    return reply.status(200).send({
+      success: true,
+      simulationId: newState.id,
+      status: newState.status,
+      currentRound: newState.currentRound
+    });
+  });
+
+  /**
    * GET /api/simulations/:id
    * Returns simulation state by ID
    */
@@ -202,7 +364,16 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
           seoContentQuality: { type: 'number', minimum: 1, maximum: 10 },
           seoBacklinkBudget: { type: 'number', minimum: 0 },
           googleCampaigns: { type: 'array', items: { type: 'object' } },
-          metaCampaigns: { type: 'array', items: { type: 'object' } }
+          metaCampaigns: { type: 'array', items: { type: 'object' } },
+          seoMetaTitle: { type: 'string' },
+          seoMetaDescription: { type: 'string' },
+          seoBodyContent: { type: 'string' },
+          seoUrlSlug: { type: 'string' },
+          seoInternalLinks: { type: 'number' },
+          seoAnchorText: { type: 'string' },
+          seoBacklinkQuality: { type: 'number' },
+          seoTechnicalConfig: { type: 'string' },
+          seoCoreWebVitals: { type: 'string' }
         }
       },
       response: {
@@ -222,6 +393,15 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
                 seoBacklinkBudget: { type: 'number' },
                 googleCampaigns: { type: 'array', items: { type: 'object', additionalProperties: true } },
                 metaCampaigns: { type: 'array', items: { type: 'object', additionalProperties: true } },
+                seoMetaTitle: { type: 'string', nullable: true },
+                seoMetaDescription: { type: 'string', nullable: true },
+                seoBodyContent: { type: 'string', nullable: true },
+                seoUrlSlug: { type: 'string', nullable: true },
+                seoInternalLinks: { type: 'number', nullable: true },
+                seoAnchorText: { type: 'string', nullable: true },
+                seoBacklinkQuality: { type: 'number', nullable: true },
+                seoTechnicalConfig: { type: 'string', nullable: true },
+                seoCoreWebVitals: { type: 'string', nullable: true },
                 submitted: { type: 'boolean' }
               }
             }
@@ -258,6 +438,15 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
       seoBacklinkBudget: z.number().nonnegative(),
       googleCampaigns: z.array(z.any()).default([]),
       metaCampaigns: z.array(z.any()).default([]),
+      seoMetaTitle: z.string().optional().nullable(),
+      seoMetaDescription: z.string().optional().nullable(),
+      seoBodyContent: z.string().optional().nullable(),
+      seoUrlSlug: z.string().optional().nullable(),
+      seoInternalLinks: z.number().optional().nullable(),
+      seoAnchorText: z.string().optional().nullable(),
+      seoBacklinkQuality: z.number().optional().nullable(),
+      seoTechnicalConfig: z.string().optional().nullable(),
+      seoCoreWebVitals: z.string().optional().nullable(),
     });
 
     const parsedBody = bodySchema.safeParse(request.body);
@@ -278,6 +467,15 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
         seoBacklinkBudget: parsedBody.data.seoBacklinkBudget,
         googleCampaigns: JSON.stringify(parsedBody.data.googleCampaigns),
         metaCampaigns: JSON.stringify(parsedBody.data.metaCampaigns),
+        seoMetaTitle: parsedBody.data.seoMetaTitle,
+        seoMetaDescription: parsedBody.data.seoMetaDescription,
+        seoBodyContent: parsedBody.data.seoBodyContent,
+        seoUrlSlug: parsedBody.data.seoUrlSlug,
+        seoInternalLinks: parsedBody.data.seoInternalLinks,
+        seoAnchorText: parsedBody.data.seoAnchorText,
+        seoBacklinkQuality: parsedBody.data.seoBacklinkQuality,
+        seoTechnicalConfig: parsedBody.data.seoTechnicalConfig,
+        seoCoreWebVitals: parsedBody.data.seoCoreWebVitals,
         submitted: true
       },
       create: {
@@ -288,6 +486,15 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
         seoBacklinkBudget: parsedBody.data.seoBacklinkBudget,
         googleCampaigns: JSON.stringify(parsedBody.data.googleCampaigns),
         metaCampaigns: JSON.stringify(parsedBody.data.metaCampaigns),
+        seoMetaTitle: parsedBody.data.seoMetaTitle,
+        seoMetaDescription: parsedBody.data.seoMetaDescription,
+        seoBodyContent: parsedBody.data.seoBodyContent,
+        seoUrlSlug: parsedBody.data.seoUrlSlug,
+        seoInternalLinks: parsedBody.data.seoInternalLinks,
+        seoAnchorText: parsedBody.data.seoAnchorText,
+        seoBacklinkQuality: parsedBody.data.seoBacklinkQuality,
+        seoTechnicalConfig: parsedBody.data.seoTechnicalConfig,
+        seoCoreWebVitals: parsedBody.data.seoCoreWebVitals,
         submitted: true
       }
     });
@@ -302,6 +509,15 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
         seoBacklinkBudget: decision.seoBacklinkBudget,
         googleCampaigns: JSON.parse(decision.googleCampaigns),
         metaCampaigns: JSON.parse(decision.metaCampaigns),
+        seoMetaTitle: decision.seoMetaTitle,
+        seoMetaDescription: decision.seoMetaDescription,
+        seoBodyContent: decision.seoBodyContent,
+        seoUrlSlug: decision.seoUrlSlug,
+        seoInternalLinks: decision.seoInternalLinks,
+        seoAnchorText: decision.seoAnchorText,
+        seoBacklinkQuality: decision.seoBacklinkQuality,
+        seoTechnicalConfig: decision.seoTechnicalConfig,
+        seoCoreWebVitals: decision.seoCoreWebVitals,
       }
     });
   });
@@ -3107,8 +3323,8 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
       }
     }
   }, async (request, reply) => {
-    if (config.NODE_ENV !== 'development') {
-      throw new ForbiddenError('Fast-forward is only available in development mode.');
+    if (config.NODE_ENV !== 'development' && config.NODE_ENV !== 'test') {
+      throw new ForbiddenError('Fast-forward is only available in development or test mode.');
     }
 
     const params = request.params as any;

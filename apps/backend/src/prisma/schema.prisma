@@ -42,8 +42,11 @@ model User {
   
   // Student relations
   simulations   SimulationState[]
+  campaignRuns  CampaignRun[]
   auditLogs     AuditLog[]
   notifications Notification[]
+  scenarioAssignments        ScenarioAssignment[]        @relation("ScenarioAssignmentInstructor")
+  scenarioAssignmentStudents ScenarioAssignmentStudent[] @relation("StudentAssignments")
 
   // Billing relations
   subscriptions Subscription[]
@@ -101,6 +104,8 @@ model Class {
   scenario     Scenario          @relation(fields: [scenarioId], references: [id])
   students     User[]            @relation("ClassStudents")
   simulations  SimulationState[]
+  campaignRuns CampaignRun[]
+  scenarioAssignments ScenarioAssignment[]
   createdAt    DateTime          @default(now())
   updatedAt    DateTime          @updatedAt
 
@@ -145,6 +150,8 @@ model Scenario {
   updatedAt                     DateTime @updatedAt
 
   classes                       Class[]
+  campaignRuns                  CampaignRun[]
+  scenarioAssignments           ScenarioAssignment[]
 }
 
 model SimulationState {
@@ -169,6 +176,8 @@ model SimulationState {
   certificates     Certificate[]
   snapshots        RoundSnapshot[]
   progress         StudentSimulationProgress?
+  checkpointValidations CheckpointValidation[]
+  hardViolations        HardViolation[]
 
   @@index([userId, status])
   @@index([classId, isCompleted])
@@ -185,6 +194,17 @@ model Decision {
   seoTargetKeywords  String          // JSON array of strings
   seoContentQuality  Float           @default(5.0) // 1-10 content quality score
   seoBacklinkBudget  Float           @default(0.0)
+  
+  // Extended SEO Decisions
+  seoMetaTitle       String?
+  seoMetaDescription String?
+  seoBodyContent     String?
+  seoUrlSlug         String?
+  seoInternalLinks   Int?            @default(0)
+  seoAnchorText      String?
+  seoBacklinkQuality Int?            @default(1)
+  seoTechnicalConfig String?         // JSON object representing SSL, Sitemap, Robots, etc.
+  seoCoreWebVitals   String?         // JSON object representing LCP, CLS, FID
   
   // Google Ads Campaigns (JSON list of campaign configurations)
   googleCampaigns    String          // JSON array: { name, budget, keywords: { word: string, bid: number }[] }
@@ -312,20 +332,30 @@ model RoundSnapshot {
 }
 
 model TrendSnapshot {
-  id           String          @id @default(uuid())
-  simulationId String
-  roundNumber  Int
-  scenarioId   String
-  industry     String
-  location     String
-  platform     String
-  signals      Json            // Stored TrendSignal array or object
-  sources      Json
-  confidence   Float
-  fetchedAt    DateTime
-  createdAt    DateTime        @default(now())
+  id              String                @id @default(uuid())
+  simulationId    String?
+  roundNumber     Int?
+  scenarioId      String
+  campaignRunId   String?
+  campaignRun     CampaignRun?          @relation(fields: [campaignRunId], references: [id], onDelete: Cascade)
+  dayNumber       Int?
+  industry        String
+  location        String
+  platform        String?
+  signals         Json?                 // Stored TrendSignal array or object (compatibility)
+  sources         Json?                 // compatibility
+  confidence      Float?                // compatibility
+  source          String?               // GOOGLE_TRENDS, FALLBACK, etc.
+  confidenceScore Float?                @default(1.0)
+  trendDataJson   Json?
+  rawPayloadJson  Json?
+  fetchedAt       DateTime              @default(now())
+  createdAt       DateTime              @default(now())
+
+  results         DailyCampaignResult[]
 
   @@index([simulationId, roundNumber])
+  @@index([campaignRunId, dayNumber])
 }
 
 model MarketConditionSnapshot {
@@ -391,6 +421,8 @@ model Plan {
   reportExportLimit Int
   storageLimitMb    Int            @default(50)
   features          String         // JSON array of strings
+  isActive          Boolean        @default(true)
+  durationDays      Int            @default(30)
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
 
@@ -506,5 +538,218 @@ model BillingEvent {
   processed  Boolean  @default(false)
   error      String?
   createdAt  DateTime @default(now())
+}
+
+// Daily Campaign Simulation Models
+model CampaignRun {
+  id                String                        @id @default(uuid())
+  userId            String
+  user              User                          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scenarioId        String
+  scenario          Scenario                      @relation(fields: [scenarioId], references: [id])
+  classId           String?
+  class             Class?                        @relation(fields: [classId], references: [id], onDelete: SetNull)
+  assignmentId      String?
+  assignment        ScenarioAssignment?           @relation(fields: [assignmentId], references: [id], onDelete: SetNull)
+  assignmentStudents ScenarioAssignmentStudent[]
+  durationDays      Int                           @default(30)
+  currentDay        Int                           @default(1)
+  status            String                        @default("INITIALIZED") // INITIALIZED, ACTIVE, COMPLETED
+  startedAt         DateTime                      @default(now())
+  endsAt            DateTime
+  lastProcessedAt   DateTime?
+  nextProcessingAt  DateTime
+
+  decisions         DailyCampaignDecision[]
+  results           DailyCampaignResult[]
+  recommendations   DailyCampaignRecommendation[]
+  snapshots         TrendSnapshot[]
+  processingJobs    CampaignProcessingJob[]
+
+  createdAt         DateTime                      @default(now())
+  updatedAt         DateTime                      @updatedAt
+
+  @@index([userId])
+  @@index([classId])
+  @@index([status])
+  @@index([nextProcessingAt])
+}
+
+model DailyCampaignDecision {
+  id                     String      @id @default(uuid())
+  campaignRunId          String
+  campaignRun            CampaignRun @relation(fields: [campaignRunId], references: [id], onDelete: Cascade)
+  userId                 String
+  dayNumber              Int
+  seoSettingsJson        Json        // targetKeywords, contentQuality, backlinkBudget, metaTitle, metaDescription, h1Header, bodyContent
+  googleAdsSettingsJson  Json        // campaigns: { name, budget, biddingStrategy, keywords: { word, bid }[] }
+  metaAdsSettingsJson    Json        // campaigns: { name, budget, audienceInterest, placement, bidType, bidAmount, creativeQuality, creative: { headline, primaryText } }
+  budgetJson             Json        // total allocated budget
+  submittedAt            DateTime    @default(now())
+  lockedAt               DateTime?
+
+  createdAt              DateTime    @default(now())
+  updatedAt              DateTime    @updatedAt
+
+  @@unique([campaignRunId, dayNumber])
+  @@index([userId])
+}
+
+model DailyCampaignResult {
+  id                String         @id @default(uuid())
+  campaignRunId     String
+  campaignRun       CampaignRun    @relation(fields: [campaignRunId], references: [id], onDelete: Cascade)
+  userId            String
+  dayNumber         Int
+  trendSnapshotId   String?
+  trendSnapshot     TrendSnapshot? @relation(fields: [trendSnapshotId], references: [id], onDelete: SetNull)
+
+  // Paid/Organic details
+  impressions       Int            @default(0)
+  clicks            Int            @default(0)
+  ctr               Float          @default(0.0)
+  cpc               Float          @default(0.0)
+  cpa               Float          @default(0.0)
+  conversions       Int            @default(0)
+  revenue           Float          @default(0.0)
+  spend             Float          @default(0.0)
+  roas              Float          @default(0.0)
+
+  // Platform breakdowns
+  seoTraffic        Int            @default(0)
+  seoRank           Int            @default(0)
+  authorityScore    Float          @default(0.0)
+  metaReach         Int            @default(0)
+  metaEngagement    Int            @default(0)
+
+  // Scores
+  googleAdsScore    Float          @default(0.0)
+  metaAdsScore      Float          @default(0.0)
+  seoScore          Float          @default(0.0)
+  compositeScore    Float          @default(0.0)
+
+  generatedAt       DateTime       @default(now())
+
+  @@unique([campaignRunId, dayNumber])
+  @@index([userId])
+}
+
+model DailyCampaignRecommendation {
+  id                 String      @id @default(uuid())
+  campaignRunId      String
+  campaignRun        CampaignRun @relation(fields: [campaignRunId], references: [id], onDelete: Cascade)
+  dayNumber          Int
+  recommendationType String      // SEO | GOOGLE_ADS | META_ADS | BUDGET
+  message            String
+  priority           String      // HIGH | MEDIUM | LOW
+  expectedImpact     String
+  createdAt          DateTime    @default(now())
+
+  @@index([campaignRunId, dayNumber])
+}
+
+model CampaignProcessingJob {
+  id             String      @id @default(uuid())
+  campaignRunId  String
+  campaignRun    CampaignRun @relation(fields: [campaignRunId], references: [id], onDelete: Cascade)
+  dayNumber      Int
+  jobStatus      String      // PENDING | PROCESSING | COMPLETED | FAILED
+  startedAt      DateTime?
+  completedAt    DateTime?
+  errorMessage   String?
+  retryCount     Int         @default(0)
+  idempotencyKey String      @unique
+
+  @@unique([campaignRunId, dayNumber])
+}
+
+model ScenarioAssignment {
+  id                  String                      @id @default(uuid())
+  instructorId        String
+  instructor          User                        @relation("ScenarioAssignmentInstructor", fields: [instructorId], references: [id], onDelete: Cascade)
+  institutionId       String?
+  classId             String
+  class               Class                       @relation(fields: [classId], references: [id], onDelete: Cascade)
+  scenarioId          String
+  scenario            Scenario                    @relation(fields: [scenarioId], references: [id], onDelete: Cascade)
+  targetType          String                      // CLASS, GROUP, STUDENT
+  targetStudentIdsJson String                     // Storing student IDs as JSON string e.g. '["id1","id2"]'
+  assignmentName      String
+  durationDays        Int                         @default(30) // 15 or 30
+  startDate           DateTime
+  endDate             DateTime
+  dailyProcessingTime String                      // e.g., "09:00"
+  dailyBudgetCap      Float
+  difficulty          String
+  autoStart           Boolean                     @default(false)
+  status              String                      @default("DRAFT") // DRAFT, SCHEDULED, ACTIVE, COMPLETED, CANCELLED
+  createdAt           DateTime                    @default(now())
+  updatedAt           DateTime                    @updatedAt
+
+  students            ScenarioAssignmentStudent[]
+  campaignRuns        CampaignRun[]
+
+  @@index([instructorId])
+  @@index([classId])
+  @@index([scenarioId])
+  @@index([status])
+}
+
+model ScenarioAssignmentStudent {
+  id            String             @id @default(uuid())
+  assignmentId  String
+  assignment    ScenarioAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  studentId     String
+  student       User               @relation("StudentAssignments", fields: [studentId], references: [id], onDelete: Cascade)
+  campaignRunId String?
+  campaignRun   CampaignRun?       @relation(fields: [campaignRunId], references: [id], onDelete: SetNull)
+  status        String             @default("ASSIGNED") // ASSIGNED, STARTED, COMPLETED, CANCELLED
+  assignedAt    DateTime           @default(now())
+  startedAt     DateTime?
+  completedAt   DateTime?
+
+  @@unique([assignmentId, studentId])
+  @@index([studentId])
+}
+
+model Institution {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  code      String   @unique // Registration/Invite code for this college
+  status    String   @default("active") // active, suspended
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model CheckpointValidation {
+  id                     String          @id @default(uuid())
+  simulationId           String
+  simulation             SimulationState @relation(fields: [simulationId], references: [id], onDelete: Cascade)
+  roundNumber            Int
+  studentId              String
+  justificationText      String
+  reflectionQualityScore Float           @default(0.0)
+  submittedAt            DateTime        @default(now())
+  status                 String          @default("SUBMITTED") // SUBMITTED, APPROVED, REJECTED
+  instructorComment      String?
+
+  @@index([simulationId])
+  @@index([studentId])
+}
+
+model HardViolation {
+  id           String          @id @default(uuid())
+  simulationId String
+  simulation   SimulationState @relation(fields: [simulationId], references: [id], onDelete: Cascade)
+  roundNumber  Int
+  studentId    String?
+  type         String          // e.g. BUDGET_EXCEEDED, POLICY_VIOLATION, CHECKPOINT_MISSING
+  severity     String          @default("BLOCKING") // WARNING, CRITICAL, BLOCKING
+  message      String
+  source       String?         // e.g. GOOGLE_ADS, META_ADS, SEO, SYSTEM
+  createdAt    DateTime        @default(now())
+
+  @@index([simulationId])
+  @@index([studentId])
 }
 
