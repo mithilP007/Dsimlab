@@ -38,12 +38,12 @@ jobs:
 
     steps:
       - name: Checkout Code Repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup NodeJS Runtime
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'npm'
 
       - name: Install Dependencies
@@ -51,6 +51,11 @@ jobs:
 
       - name: Generate Prisma Clients
         run: npx prisma generate --schema=apps/backend/src/prisma/schema.prisma
+
+      - name: Run Database Migrations
+        env:
+          DATABASE_URL: postgresql://postgres:testpassword@localhost:5432/simlab_test?schema=public
+        run: npx prisma db push --skip-generate --schema=apps/backend/src/prisma/schema.prisma
 
       - name: Run Backend Tests
         env:
@@ -75,12 +80,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code Repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup NodeJS Runtime
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Audit NPM Packages
         run: npm audit --audit-level=high || true
