@@ -36,7 +36,9 @@ jobs:
         cache: 'npm'
 
     - name: Install Monorepo Dependencies
-      run: npm ci
+      run: |
+        npm ci
+        npm install --no-save @tailwindcss/oxide-linux-x64-gnu
 
     - name: Backend Lint & Typecheck
       run: |

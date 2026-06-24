@@ -47,7 +47,9 @@ jobs:
           cache: 'npm'
 
       - name: Install Dependencies
-        run: npm ci
+        run: |
+          npm ci
+          npm install --no-save @tailwindcss/oxide-linux-x64-gnu
 
       - name: Generate Prisma Clients
         run: npx prisma generate --schema=apps/backend/src/prisma/schema.prisma
