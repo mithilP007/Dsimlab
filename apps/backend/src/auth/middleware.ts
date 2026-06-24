@@ -13,6 +13,7 @@ export interface AuthenticatedRequest extends FastifyRequest {
     classId?: string | null;
     institution?: string | null;
     planType?: string | null;
+    status?: string;
   };
 }
 
@@ -72,6 +73,7 @@ export async function requireAuth(req: FastifyRequest, reply: FastifyReply) {
       classId: dbUser.classId || null,
       institution: dbUser.institution || null,
       planType: dbUser.planType || null,
+      status: dbUser.status || 'active',
     };
 
     (req as AuthenticatedRequest).user = userPayload;
