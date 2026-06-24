@@ -11,11 +11,28 @@ import {
 import { SimulationProgressTracker } from "@/components/simulation/SimulationProgressTracker"
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts"
 
+import { useSimulationStore } from "@/stores/simulationStore"
+
 export function MarketAnalysisPage() {
   const navigate = useNavigate()
   const [loading, setLoading] = useState(true)
   const [fullState, setFullState] = useState<any>(null)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
+
+  const activeSimulation = useSimulationStore(state => state.activeSimulation)
+  const allowed = activeSimulation?.allowedPlatforms || ["SEO", "GOOGLE_ADS", "META_ADS"]
+
+  const getFirstStrategyPath = () => {
+    if (allowed.includes("SEO")) return '/simulation/seo'
+    if (allowed.includes("GOOGLE_ADS")) return '/simulation/google-ads'
+    return '/simulation/meta-ads'
+  }
+
+  const getFirstStrategyLabel = () => {
+    if (allowed.includes("SEO")) return 'Configure SEO Strategy'
+    if (allowed.includes("GOOGLE_ADS")) return 'Configure Google Ads Strategy'
+    return 'Configure Meta Ads Strategy'
+  }
 
   useEffect(() => {
     async function loadData() {
@@ -117,10 +134,10 @@ export function MarketAnalysisPage() {
         </div>
 
         <Button
-          onClick={() => navigate('/simulation/seo')}
+          onClick={() => navigate(getFirstStrategyPath())}
           className="bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs h-11 px-5 rounded-xl shadow-md flex items-center gap-1.5 shrink-0"
         >
-          Configure SEO Decisions
+          {getFirstStrategyLabel()}
           <ArrowRight className="h-4 w-4" />
         </Button>
       </div>

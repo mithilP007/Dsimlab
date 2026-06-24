@@ -1,6 +1,7 @@
 import { useLocation, Link } from "react-router"
 import { Check, Info, Search, Target, Share2, Award, LineChart, FileText } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useSimulationStore } from "@/stores/simulationStore"
 
 interface Step {
   name: string
@@ -8,21 +9,33 @@ interface Step {
   icon: React.ComponentType<{ className?: string }>
 }
 
-const STEPS: Step[] = [
-  { name: "Briefing", href: "/simulation/briefing", icon: Info },
-  { name: "Market Analysis", href: "/simulation/market-analysis", icon: LineChart },
-  { name: "SEO", href: "/simulation/seo", icon: Search },
-  { name: "Google Ads", href: "/simulation/google-ads", icon: Target },
-  { name: "Meta Ads", href: "/simulation/meta-ads", icon: Share2 },
-  { name: "Results Summary", href: "/simulation/results", icon: Award },
-  { name: "Checkpoint", href: "/simulation/checkpoint", icon: FileText },
-]
-
 export function SimulationProgressTracker() {
   const location = useLocation()
+  const activeSimulation = useSimulationStore(state => state.activeSimulation)
+  const allowed = activeSimulation?.allowedPlatforms || ["SEO", "GOOGLE_ADS", "META_ADS"]
+
+  const steps: Step[] = [
+    { name: "Briefing", href: "/simulation/briefing", icon: Info },
+    { name: "Market Analysis", href: "/simulation/market-analysis", icon: LineChart },
+  ]
+
+  if (allowed.includes("SEO")) {
+    steps.push({ name: "SEO Strategy", href: "/simulation/seo", icon: Search })
+  }
+  if (allowed.includes("GOOGLE_ADS")) {
+    steps.push({ name: "Google Ads Strategy", href: "/simulation/google-ads", icon: Target })
+  }
+  if (allowed.includes("META_ADS")) {
+    steps.push({ name: "Meta Ads Strategy", href: "/simulation/meta-ads", icon: Share2 })
+  }
+
+  steps.push(
+    { name: "Results", href: "/simulation/results", icon: Award },
+    { name: "Checkpoint", href: "/simulation/checkpoint", icon: FileText }
+  )
   
   const getStepIndex = (pathname: string) => {
-    return STEPS.findIndex(s => pathname.startsWith(s.href))
+    return steps.findIndex(s => pathname.startsWith(s.href))
   }
 
   const currentStepIndex = getStepIndex(location.pathname)
@@ -35,10 +48,10 @@ export function SimulationProgressTracker() {
         <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2 h-0.5 bg-neutral-100 hidden md:block z-0" />
         <div 
           className="absolute left-0 top-1/2 -translate-y-1/2 h-0.5 bg-indigo-600 transition-all duration-500 hidden md:block z-0" 
-          style={{ width: `${(Math.max(0, currentStepIndex) / (STEPS.length - 1)) * 100}%` }}
+          style={{ width: `${steps.length > 1 ? (Math.max(0, currentStepIndex) / (steps.length - 1)) * 100 : 0}%` }}
         />
 
-        {STEPS.map((step, idx) => {
+        {steps.map((step, idx) => {
           const Icon = step.icon
           const isCompleted = idx < currentStepIndex
           const isActive = idx === currentStepIndex

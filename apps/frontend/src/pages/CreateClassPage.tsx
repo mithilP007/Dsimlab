@@ -32,9 +32,26 @@ export function CreateClassPage() {
   const [baselineOrganicTraffic, setBaselineOrganicTraffic] = useState(1000)
   const [targetKPI, setTargetKPI] = useState<"revenue" | "clicks" | "conversions">("revenue")
   const [difficulty, setDifficulty] = useState("medium")
+  const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([
+    "SEO",
+    "GOOGLE_ADS",
+    "META_ADS"
+  ])
 
   // Submission State
   const [isLoading, setIsLoading] = useState(false)
+
+  const handlePlatformToggle = (platform: string) => {
+    if (selectedPlatforms.includes(platform)) {
+      if (selectedPlatforms.length === 1) {
+        toast.error("At least one platform must be enabled.")
+        return
+      }
+      setSelectedPlatforms(selectedPlatforms.filter((p) => p !== platform))
+    } else {
+      setSelectedPlatforms([...selectedPlatforms, platform])
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -79,7 +96,8 @@ export function CreateClassPage() {
         budgetPerRound: Number(budgetPerRound),
         baselineOrganicTraffic: Number(baselineOrganicTraffic),
         targetKPI,
-        difficulty
+        difficulty,
+        allowedPlatforms: JSON.stringify(selectedPlatforms)
       }
 
       const newScenario = await createCustomScenario(scenarioData)
@@ -302,6 +320,49 @@ export function CreateClassPage() {
                   disabled={isLoading}
                   required
                 />
+              </div>
+
+              {/* Enabled Platforms */}
+              <div className="space-y-2 border-t border-neutral-100 pt-4">
+                <label className="text-[10px] font-black text-neutral-500 uppercase tracking-wider block">
+                  Enabled Simulation Platforms
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {[
+                    { id: "SEO", label: "SEO Optimization", desc: "Organic search, content quality, and keywords" },
+                    { id: "GOOGLE_ADS", label: "Google Ads", desc: "Paid search campaigns, budgets, and bidding" },
+                    { id: "META_ADS", label: "Meta Ads", desc: "Social reach, demographics, and creatives" }
+                  ].map((p) => {
+                    const isChecked = selectedPlatforms.includes(p.id)
+                    return (
+                      <div
+                        key={p.id}
+                        onClick={() => handlePlatformToggle(p.id)}
+                        className={`flex flex-col p-3 rounded-xl border cursor-pointer transition-all ${
+                          isChecked
+                            ? "border-indigo-650 bg-indigo-50/20 text-indigo-950"
+                            : "border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => {}} // toggled by parent div click
+                            className="rounded border-neutral-300 text-indigo-650 focus:ring-indigo-500 h-3.5 w-3.5 pointer-events-none"
+                          />
+                          <span className="text-xs font-bold">{p.label}</span>
+                        </div>
+                        <p className="text-[10px] text-neutral-400 mt-1 leading-tight font-medium">
+                          {p.desc}
+                        </p>
+                      </div>
+                    )
+                  })}
+                </div>
+                <span className="text-[10px] text-neutral-400 block leading-tight">
+                  Select which digital marketing modules are active for this scenario. Disabled modules will be hidden.
+                </span>
               </div>
 
               {/* Grid for budget, rounds, organic traffic, and KPI */}

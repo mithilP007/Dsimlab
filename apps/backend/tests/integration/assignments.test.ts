@@ -93,6 +93,14 @@ describe('Flexible Scenario Assignment Integration Tests', () => {
       data: { role: 'STUDENT_COLLEGE', status: 'active', classId }
     });
     student1Id = s1.id;
+    await prisma.classEnrollment.create({
+      data: {
+        classId,
+        studentId: student1Id,
+        studentEmail: student1Email,
+        status: 'ACTIVE'
+      }
+    });
 
     const s1Login = await app.inject({
       method: 'POST',
@@ -112,6 +120,14 @@ describe('Flexible Scenario Assignment Integration Tests', () => {
       data: { role: 'STUDENT_COLLEGE', status: 'active', classId }
     });
     student2Id = s2.id;
+    await prisma.classEnrollment.create({
+      data: {
+        classId,
+        studentId: student2Id,
+        studentEmail: student2Email,
+        status: 'ACTIVE'
+      }
+    });
 
     const s2Login = await app.inject({
       method: 'POST',

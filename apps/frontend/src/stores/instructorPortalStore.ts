@@ -83,11 +83,12 @@ interface InstructorPortalState {
     baselineOrganicTraffic?: number
     targetKPI: 'revenue' | 'clicks' | 'conversions'
     difficulty: string
+    allowedPlatforms?: string
   }) => Promise<any>
   archiveClass: (id: string) => Promise<any>
   deleteClass: (id: string) => Promise<any>
   inviteStudent: (classId: string, email: string) => Promise<void>
-  removeStudent: (classId: string, studentId: string) => Promise<any>
+  removeStudent: (classId: string, studentId: string, reason?: string) => Promise<any>
   approveStudent: (studentId: string) => Promise<any>
   resetStudentSimulation: (studentId: string) => Promise<any>
   selectClass: (id: string | null) => void
@@ -104,11 +105,12 @@ interface InstructorPortalState {
     baselineOrganicTraffic?: number
     targetKPI?: 'revenue' | 'clicks' | 'conversions'
     difficulty?: string
+    allowedPlatforms?: string
   }) => Promise<any>
   fetchClassWithScenario: (classId: string) => Promise<any>
   fetchPendingRequests: () => Promise<void>
   approveJoinRequest: (classId: string, studentId: string) => Promise<void>
-  rejectJoinRequest: (classId: string, studentId: string) => Promise<void>
+  rejectJoinRequest: (classId: string, studentId: string, reason?: string) => Promise<void>
 }
 
 // ─── Initial Mock Data ────────────────────────────────────────────────────────
@@ -350,7 +352,7 @@ export const useInstructorPortalStore = create<InstructorPortalState>((set, get)
     })
   },
 
-  removeStudent: async (classId, studentId) => {
+  removeStudent: async (classId, studentId, reason) => {
     if (studentId.startsWith("s_new_")) {
       // It's a locally invited student who is not in DB. Remove locally.
       set((state) => {
@@ -371,7 +373,7 @@ export const useInstructorPortalStore = create<InstructorPortalState>((set, get)
     }
 
     try {
-      const res = await api.post<{ success: boolean }>(`/api/v1/users/${studentId}/remove-from-class`)
+      const res = await api.post<{ success: boolean }>(`/api/classes/${classId}/students/${studentId}/kick`, { reason: reason || "Kicked by instructor" })
       if (classId) {
         await get().fetchClassDetails(classId)
       }
@@ -385,17 +387,27 @@ export const useInstructorPortalStore = create<InstructorPortalState>((set, get)
   },
 
   approveStudent: async (studentId) => {
-    try {
-      const res = await api.post<{ success: boolean }>(`/api/v1/users/${studentId}/approve`)
-      const classId = get().selectedClassId
-      if (classId) {
-        await get().fetchClassDetails(classId)
-      }
-      return res.data
-    } catch (err) {
-      console.error("Failed to approve student:", err)
-      throw err
+    // Find classId from student
+    const student = get().students.find(s => s.id === studentId);
+    const classId = get().selectedClassId || student?.classId;
+    if (!classId) throw new Error("No class selected");
+
+    // Approve requires enrollmentId if matching, but wait, if we only have studentId:
+    // We can fetch pending requests first, find request for this student
+    await get().fetchPendingRequests();
+    const req = get().pendingRequests.find(p => p.email === student?.email && p.classId === classId);
+    
+    if (req) {
+      await api.post(`/api/classes/${classId}/enrollments/${req.id}/approve`);
+    } else {
+      // Fallback to legacy endpoint if no classEnrollment record found
+      await api.post(`/api/v1/users/${studentId}/approve`);
     }
+
+    if (get().selectedClassId) {
+      await get().fetchClassDetails(get().selectedClassId!);
+    }
+    return { success: true };
   },
 
   resetStudentSimulation: async (studentId) => {
@@ -498,26 +510,26 @@ export const useInstructorPortalStore = create<InstructorPortalState>((set, get)
       const classes = get().classes
       if (classes.length === 0) return
 
-      // Fetch pending students across all classes in parallel
+      // Fetch pending student requests across all classes in parallel
       const results = await Promise.all(
         classes.map(c =>
-          api.get<{ success: boolean; students: any[] }>(`/api/v1/class/${c.id}/pending-students`)
-            .then(r => ({ classId: c.id, className: c.name, students: r.data?.students || [] }))
-            .catch(() => ({ classId: c.id, className: c.name, students: [] }))
+          api.get<{ success: boolean; requests: any[] }>(`/api/classes/${c.id}/enrollment-requests`)
+            .then(r => ({ classId: c.id, className: c.name, requests: r.data?.requests || [] }))
+            .catch(() => ({ classId: c.id, className: c.name, requests: [] }))
         )
       )
 
-      const pending: import("./instructorPortalStore").PendingStudent[] = []
-      results.forEach(({ classId, className, students }) => {
-        students.forEach(s => {
+      const pending: PendingStudent[] = []
+      results.forEach(({ classId, className, requests }) => {
+        requests.forEach((r: any) => {
           pending.push({
-            id: s.id,
-            name: s.name,
-            email: s.email,
-            institution: s.institution || null,
+            id: r.id, // enrollmentId
+            name: r.studentName,
+            email: r.studentEmail,
+            institution: null,
             classId,
             className,
-            requestedAt: s.updatedAt || s.createdAt,
+            requestedAt: r.requestedAt,
           })
         })
       })
@@ -528,21 +540,26 @@ export const useInstructorPortalStore = create<InstructorPortalState>((set, get)
     }
   },
 
-  approveJoinRequest: async (classId, studentId) => {
-    await api.post(`/api/v1/class/${classId}/approve/${studentId}`)
-    // Remove from pending list optimistically
+  approveJoinRequest: async (classId, enrollmentId) => {
+    await api.post(`/api/classes/${classId}/enrollments/${enrollmentId}/approve`)
     set(state => ({
-      pendingRequests: state.pendingRequests.filter(p => !(p.id === studentId && p.classId === classId))
+      pendingRequests: state.pendingRequests.filter(p => p.id !== enrollmentId)
     }))
-    // Refresh class counts
     await get().fetchClasses()
+    if (get().selectedClassId === classId) {
+      await get().fetchClassDetails(classId)
+    }
   },
 
-  rejectJoinRequest: async (classId, studentId) => {
-    await api.post(`/api/v1/class/${classId}/reject/${studentId}`)
+  rejectJoinRequest: async (classId, enrollmentId, reason) => {
+    await api.post(`/api/classes/${classId}/enrollments/${enrollmentId}/reject`, { reason: reason || "Rejected by instructor" })
     set(state => ({
-      pendingRequests: state.pendingRequests.filter(p => !(p.id === studentId && p.classId === classId))
+      pendingRequests: state.pendingRequests.filter(p => p.id !== enrollmentId)
     }))
+    await get().fetchClasses()
+    if (get().selectedClassId === classId) {
+      await get().fetchClassDetails(classId)
+    }
   },
 }))
 

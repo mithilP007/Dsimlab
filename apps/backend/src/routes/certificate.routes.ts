@@ -90,7 +90,21 @@ export async function certificateRoutes(fastify: FastifyInstance) {
     const random4 = crypto.randomBytes(2).toString('hex').toUpperCase();
     const hash = crypto.createHash('sha256').update(authReq.user!.name + sim.id).digest('hex').substring(0, 8).toUpperCase();
     const verificationId = `DMSL-${year}-${random4}-${hash}`;
-    const skills = ["SEO Optimization", "PPC Bidding Strategy", "Meta Ads Audiences", "ROAS Scaling", "Budget Pacing"];
+    const allowed = sim.class?.scenario?.allowedPlatforms
+      ? JSON.parse(sim.class.scenario.allowedPlatforms)
+      : ["SEO", "GOOGLE_ADS", "META_ADS"];
+
+    const skills: string[] = [];
+    if (allowed.includes("SEO")) {
+      skills.push("SEO Optimization", "Organic Search Analytics");
+    }
+    if (allowed.includes("GOOGLE_ADS")) {
+      skills.push("PPC Bidding Strategy", "Google Auction Optimization");
+    }
+    if (allowed.includes("META_ADS")) {
+      skills.push("Meta Ads Audiences", "Demographic Ad Targeting");
+    }
+    skills.push("ROAS Scaling", "Budget Pacing");
 
     const certificate = await prisma.certificate.create({
       data: {

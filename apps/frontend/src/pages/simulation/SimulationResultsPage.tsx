@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import { Link } from "react-router"
+import { Link, useNavigate } from "react-router"
 import { useSimulationStore } from "@/stores/simulationStore"
 import { useResultsStore } from "@/stores/resultsStore"
 import { useAuthStore } from "@/stores/authStore"
@@ -11,21 +11,32 @@ import {
   Download, Printer, Eye, Sparkles, Clock, Users,
   CheckCircle
 } from "lucide-react"
+import api from "@/lib/api"
 import { SimulationProgressTracker } from "@/components/simulation/SimulationProgressTracker"
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, LineChart, Line, Legend } from "recharts"
 
 export function SimulationResultsPage() {
-  const { activeSimulation, fetchLatestState, advanceSimulation, isLoading, loadingMessage } = useSimulationStore()
+  const { activeSimulation, fetchLatestState, isLoading, loadingMessage } = useSimulationStore()
   const { 
     fetchResults, currentRound, overallScore, channelScores, 
     insights, classRank, totalStudents,
     breakdowns, snapshots, leaderboard, events, allMetrics
   } = useResultsStore()
 
+  const navigate = useNavigate()
   const { user } = useAuthStore()
 
   const [loading, setLoading] = useState(true)
   const [activeChartTab, setActiveChartTab] = useState<"revenue" | "traffic" | "conversion" | "ctr" | "authority" | "ranking">("revenue")
+  const [checkpointSubmitted, setCheckpointSubmitted] = useState(true)
+
+  const allowed = activeSimulation?.allowedPlatforms || ["SEO", "GOOGLE_ADS", "META_ADS"]
+
+  const getFirstStrategyPath = () => {
+    if (allowed.includes("SEO")) return "/simulation/seo"
+    if (allowed.includes("GOOGLE_ADS")) return "/simulation/google-ads"
+    return "/simulation/meta-ads"
+  }
 
   const loadData = async () => {
     setLoading(true)
@@ -33,6 +44,27 @@ export function SimulationResultsPage() {
       const state = await fetchLatestState()
       if (state?.id) {
         await fetchResults(state.id)
+        
+        // Check checkpoint submission
+        const isCollegeStudent = user?.role === "student-college"
+        if (isCollegeStudent && state.currentRound > 1) {
+          try {
+            const checkRes = await api.get<{ success: boolean; checkpoints: any[] }>(`/api/v1/simulation/checkpoint/${state.id}`)
+            if (checkRes.data?.success) {
+              const hasPrevCheckpoint = checkRes.data.checkpoints.some(
+                (cp: any) => cp.roundNumber === state.currentRound - 1
+              )
+              setCheckpointSubmitted(hasPrevCheckpoint)
+            } else {
+              setCheckpointSubmitted(false)
+            }
+          } catch (e) {
+            console.error("Failed to fetch checkpoints", e)
+            setCheckpointSubmitted(false)
+          }
+        } else {
+          setCheckpointSubmitted(true)
+        }
       }
     } catch (err) {
       console.error("Failed to load results:", err)
@@ -52,13 +84,7 @@ export function SimulationResultsPage() {
     }
   }, [activeSimulation?.currentRound, isLoading])
 
-  const handleAdvance = async () => {
-    try {
-      await advanceSimulation()
-    } catch (err) {
-      console.error("Failed to advance simulation:", err)
-    }
-  }
+  // handleAdvance is unused since submissions are handled on the last strategy page.
 
   // ─── Mathematical Aggregations ──────────────────────────────────────────────
 
@@ -274,6 +300,17 @@ export function SimulationResultsPage() {
     }
   ]
 
+  const filteredKpis = kpis.filter((kpi) => {
+    const label = kpi.label;
+    if (label === "Authority Score" || label === "Ranking Position") {
+      return allowed.includes("SEO");
+    }
+    if (["Ad Clicks", "CTR", "CPC", "CPA", "ROAS", "Lead Generation"].includes(label)) {
+      return allowed.includes("GOOGLE_ADS") || allowed.includes("META_ADS");
+    }
+    return true;
+  });
+
   // Strategic alignment breakdowns
   const latestBreakdown = breakdowns.find((b) => b.round === currentRound - 1)
   const strategicScores = [
@@ -431,13 +468,23 @@ export function SimulationResultsPage() {
         {/* Next Round CTA / Monitoring Badge */}
         <div className="flex items-center gap-2.5 shrink-0 print:hidden">
           {!activeSimulation?.isCompleted && (
-            <Button
-              onClick={handleAdvance}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs h-11 px-5 rounded-xl shadow-md flex items-center gap-1.5"
-            >
-              Advance to Round {currentRound}
-              <ArrowRight className="h-4 w-4" />
-            </Button>
+            checkpointSubmitted ? (
+              <Button
+                onClick={() => navigate(getFirstStrategyPath())}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs h-11 px-5 rounded-xl shadow-md flex items-center gap-1.5"
+              >
+                Proceed to Day {currentRound} Strategy
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+            ) : (
+              <Button
+                onClick={() => navigate("/simulation/checkpoint")}
+                className="bg-amber-600 hover:bg-amber-700 text-white font-black text-xs h-11 px-5 rounded-xl shadow-md flex items-center gap-1.5"
+              >
+                Write Checkpoint Justification
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+            )
           )}
         </div>
       </div>
@@ -457,7 +504,7 @@ export function SimulationResultsPage() {
                 <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest bg-indigo-50 px-2 py-0.5 rounded-full">
                   Performance Index
                 </span>
-                <CardTitle className="text-sm font-black text-neutral-900 mt-2">ROUND OVERVIEW</CardTitle>
+                <CardTitle className="text-sm font-black text-neutral-900 mt-2">Day {currentRound - 1 || 1} Performance Overview</CardTitle>
               </div>
               
               <div className="my-4 space-y-2">
@@ -514,7 +561,7 @@ export function SimulationResultsPage() {
               Key Performance Indicator Analytics (12-Channel Analysis)
             </h2>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 text-left">
-              {kpis.map((kpi) => {
+              {filteredKpis.map((kpi) => {
                 const KpiIcon = kpi.icon
                 const isPositive = kpi.growth.trend === "up"
                 const isNegative = kpi.growth.trend === "down"
@@ -762,26 +809,43 @@ export function SimulationResultsPage() {
 
               {/* Actionable recommendations panel */}
               <Card className="border-neutral-200/80 shadow-sm bg-white p-5 space-y-4">
-                <div>
-                  <h4 className="text-xs font-black text-neutral-900 uppercase">SEO Recommendations</h4>
-                  <p className="text-xs text-neutral-500 font-bold leading-relaxed mt-1">
-                    {insights.find((i) => i.title.toLowerCase().includes("seo"))?.description || 
-                     "Organic indexing stability is key. Retain Content Quality scores at 7+ to increase Domain authority conversion rate."}
-                  </p>
-                </div>
+                {allowed.includes("SEO") && (
+                  <div>
+                    <h4 className="text-xs font-black text-neutral-900 uppercase">SEO Recommendations</h4>
+                    <p className="text-xs text-neutral-500 font-bold leading-relaxed mt-1">
+                      {insights.find((i) => i.title.toLowerCase().includes("seo"))?.description || 
+                       "Organic indexing stability is key. Retain Content Quality scores at 7+ to increase Domain authority conversion rate."}
+                    </p>
+                  </div>
+                )}
                 
-                <div className="border-t border-neutral-100 pt-3">
-                  <h4 className="text-xs font-black text-neutral-900 uppercase">Paid Advertising recommendations</h4>
-                  <p className="text-xs text-neutral-500 font-bold leading-relaxed mt-1">
-                    {insights.find((i) => i.title.toLowerCase().includes("google") || i.title.toLowerCase().includes("meta"))?.description ||
-                     "Tighten CPC bidding allocations. Focus ad copywriting around target location modifiers to boost Conversion rate."}
-                  </p>
-                </div>
+                {(allowed.includes("GOOGLE_ADS") || allowed.includes("META_ADS")) && (
+                  <div className={allowed.includes("SEO") ? "border-t border-neutral-100 pt-3" : ""}>
+                    <h4 className="text-xs font-black text-neutral-900 uppercase">Paid Advertising recommendations</h4>
+                    <p className="text-xs text-neutral-500 font-bold leading-relaxed mt-1">
+                      {insights.find((i) => i.title.toLowerCase().includes("google") || i.title.toLowerCase().includes("meta"))?.description ||
+                       "Tighten CPC bidding allocations. Focus ad copywriting around target location modifiers to boost Conversion rate."}
+                    </p>
+                  </div>
+                )}
 
                 <div className="border-t border-neutral-100 pt-3">
                   <h4 className="text-xs font-black text-indigo-600 uppercase tracking-wider">Next Round pacing Strategy</h4>
-                  <p className="text-xs text-neutral-600 font-bold leading-relaxed mt-1">
-                    Maintain budget pacing velocity. Divide the scenario's round budget 40% SEO Keywords content indexing, 35% Google Ads Search, and 25% Meta social to maximize conversion values.
+                  <p className="text-xs text-neutral-650 font-bold leading-relaxed mt-1">
+                    {allowed.includes("SEO") && allowed.includes("GOOGLE_ADS") && allowed.includes("META_ADS")
+                      ? "Maintain budget pacing velocity. Divide the scenario's round budget 40% SEO Keywords content indexing, 35% Google Ads Search, and 25% Meta social to maximize conversion values."
+                      : allowed.includes("GOOGLE_ADS") && allowed.includes("META_ADS")
+                        ? "Maintain budget pacing velocity. Focus your daily budget on high-performing Google Ads search keywords and Meta Ads interest-based creatives to maximize conversions."
+                        : allowed.includes("SEO") && allowed.includes("GOOGLE_ADS")
+                          ? "Maintain budget pacing velocity. Divide budget between SEO keyword content optimization and Google Ads PPC bidding strategies."
+                          : allowed.includes("SEO") && allowed.includes("META_ADS")
+                            ? "Maintain budget pacing velocity. Focus on high-quality content indexing and backlink acquisition alongside targeted Meta Ads campaigns."
+                            : allowed.includes("SEO")
+                              ? "Focus entirely on organic search traffic. Invest your budget into high-DA backlink outreach and optimizing keyword density to climb the SERP."
+                              : allowed.includes("GOOGLE_ADS")
+                                ? "Optimize search campaigns. Prune low-CTR keywords, improve ad relevance, and set competitive bids to maximize impression share and conversions."
+                                : "Focus on social media campaigns. Revamp creative designs to avoid ad fatigue and target high-affinity lookalike audiences."
+                    }
                   </p>
                 </div>
               </Card>
@@ -911,10 +975,10 @@ export function SimulationResultsPage() {
             
             <div className="space-y-3">
               {[
-                { label: "Refine On-Page keywords & backlinks", path: "/simulation/seo" },
-                { label: "Update Google PPC search bids", path: "/simulation/google-ads" },
-                { label: "Revamp Meta social ad creatives", path: "/simulation/meta-ads" },
-              ].map((item, idx) => (
+                allowed.includes("SEO") && { label: "Refine On-Page keywords & backlinks", path: "/simulation/seo" },
+                allowed.includes("GOOGLE_ADS") && { label: "Update Google PPC search bids", path: "/simulation/google-ads" },
+                allowed.includes("META_ADS") && { label: "Revamp Meta social ad creatives", path: "/simulation/meta-ads" },
+              ].filter(Boolean).map((item: any, idx) => (
                 <Link key={idx} to={item.path} className="flex items-start gap-2.5 group">
                   <CheckCircle className="h-4.5 w-4.5 text-neutral-300 group-hover:text-indigo-500 shrink-0 mt-0.5 transition-colors" />
                   <span className="text-xs font-bold text-neutral-600 group-hover:text-indigo-600 leading-snug transition-colors">

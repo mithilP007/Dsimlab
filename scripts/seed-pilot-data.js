@@ -191,26 +191,56 @@ async function run() {
   console.log('Enrolling students into cohorts...');
   // Students 1-4 in class1
   for (let i = 1; i <= 4; i++) {
-    await prisma.user.update({
+    const student = await prisma.user.update({
       where: { email: `student${i}@simlab.run` },
       data: { classId: class1.id }
+    });
+    // Create ClassEnrollment
+    await prisma.classEnrollment.create({
+      data: {
+        classId: class1.id,
+        studentId: student.id,
+        studentEmail: student.email,
+        status: 'ACTIVE',
+        approvedAt: new Date()
+      }
     });
   }
   // Students 5-8 in class2
   for (let i = 5; i <= 8; i++) {
-    await prisma.user.update({
+    const student = await prisma.user.update({
       where: { email: `student${i}@simlab.run` },
       data: { classId: class2.id }
+    });
+    // Create ClassEnrollment
+    await prisma.classEnrollment.create({
+      data: {
+        classId: class2.id,
+        studentId: student.id,
+        studentEmail: student.email,
+        status: 'ACTIVE',
+        approvedAt: new Date()
+      }
     });
   }
   // Students 9-10 in class3
   for (let i = 9; i <= 10; i++) {
-    await prisma.user.update({
+    const student = await prisma.user.update({
       where: { email: `student${i}@simlab.run` },
       data: { classId: class3.id }
     });
+    // Create ClassEnrollment
+    await prisma.classEnrollment.create({
+      data: {
+        classId: class3.id,
+        studentId: student.id,
+        studentEmail: student.email,
+        status: 'ACTIVE',
+        approvedAt: new Date()
+      }
+    });
   }
-  console.log('- Distributed students across classes');
+  console.log('- Distributed students across classes and created ACTIVE enrollment records');
 
   await prisma.$disconnect();
   console.log('=== PILOT SEEDING COMPLETED SUCCESSFULLY ===');

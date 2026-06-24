@@ -44,6 +44,23 @@ export function EditClassPage() {
   const [baselineOrganicTraffic, setBaselineOrganicTraffic] = useState(1000)
   const [targetKPI, setTargetKPI] = useState<"revenue" | "clicks" | "conversions">("revenue")
   const [difficulty, setDifficulty] = useState("medium")
+  const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([
+    "SEO",
+    "GOOGLE_ADS",
+    "META_ADS"
+  ])
+
+  const handlePlatformToggle = (platform: string) => {
+    if (selectedPlatforms.includes(platform)) {
+      if (selectedPlatforms.length === 1) {
+        toast.error("At least one platform must be enabled.")
+        return
+      }
+      setSelectedPlatforms(selectedPlatforms.filter((p) => p !== platform))
+    } else {
+      setSelectedPlatforms([...selectedPlatforms, platform])
+    }
+  }
 
   // ── Load existing data ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -70,6 +87,16 @@ export function EditClassPage() {
           setBaselineOrganicTraffic(sc.baselineOrganicTraffic ?? 1000)
           setTargetKPI((sc.targetKPI as any) || "revenue")
           setDifficulty(sc.difficulty || "medium")
+          if (sc.allowedPlatforms) {
+            try {
+              const platforms = JSON.parse(sc.allowedPlatforms)
+              if (Array.isArray(platforms)) {
+                setSelectedPlatforms(platforms)
+              }
+            } catch (e) {
+              console.error("Failed to parse allowedPlatforms:", e)
+            }
+          }
         }
       })
       .catch(() => setFetchError("Failed to load class data. Please try again."))
@@ -105,6 +132,7 @@ export function EditClassPage() {
           baselineOrganicTraffic: Number(baselineOrganicTraffic),
           targetKPI,
           difficulty,
+          allowedPlatforms: JSON.stringify(selectedPlatforms),
         })
       }
 
@@ -359,6 +387,50 @@ export function EditClassPage() {
                   className="text-xs border-neutral-200 min-h-[90px] font-semibold text-neutral-800 bg-white focus-visible:ring-violet-500 disabled:opacity-50"
                   disabled={isLoading || !scenarioId}
                 />
+              </div>
+
+              {/* Enabled Platforms */}
+              <div className="space-y-2 border-t border-neutral-100 pt-4">
+                <label className="text-[10px] font-black text-neutral-500 uppercase tracking-wider block">
+                  Enabled Simulation Platforms
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {[
+                    { id: "SEO", label: "SEO Optimization", desc: "Organic search, content quality, and keywords" },
+                    { id: "GOOGLE_ADS", label: "Google Ads", desc: "Paid search campaigns, budgets, and bidding" },
+                    { id: "META_ADS", label: "Meta Ads", desc: "Social reach, demographics, and creatives" }
+                  ].map((p) => {
+                    const isChecked = selectedPlatforms.includes(p.id)
+                    return (
+                      <div
+                        key={p.id}
+                        onClick={() => scenarioId && handlePlatformToggle(p.id)}
+                        className={`flex flex-col p-3 rounded-xl border cursor-pointer transition-all ${
+                          isChecked
+                            ? "border-violet-655 bg-violet-50/20 text-violet-950"
+                            : "border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50"
+                        } ${!scenarioId ? "opacity-50 cursor-not-allowed" : ""}`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => {}} // toggled by parent div click
+                            className="rounded border-neutral-300 text-violet-650 focus:ring-violet-500 h-3.5 w-3.5 pointer-events-none"
+                            disabled={!scenarioId}
+                          />
+                          <span className="text-xs font-bold">{p.label}</span>
+                        </div>
+                        <p className="text-[10px] text-neutral-400 mt-1 leading-tight font-medium">
+                          {p.desc}
+                        </p>
+                      </div>
+                    )
+                  })}
+                </div>
+                <span className="text-[10px] text-neutral-400 block leading-tight">
+                  Select which digital marketing modules are active for this scenario. Disabled modules will be hidden.
+                </span>
               </div>
 
               {/* Budget, Rounds, Traffic, KPI */}

@@ -20,6 +20,7 @@ export function SimulationHomePage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [checkpointSubmitted, setCheckpointSubmitted] = useState(true)
   const [isInitializingPath, setIsInitializingPath] = useState(false)
+  const [selectedSimType, setSelectedSimType] = useState<'SEO' | 'GOOGLE_ADS' | 'META_ADS' | 'FULL'>('FULL')
 
   const loadData = async () => {
     setLoading(true)
@@ -64,13 +65,11 @@ export function SimulationHomePage() {
     loadData()
   }, [])
 
-
-
   const handleSetupSandbox = async (path: 'beginner' | 'intermediate' | 'advanced') => {
     setIsInitializingPath(true)
-    const tid = toast.loading(`Provisioning ${path} sandbox track...`)
+    const tid = toast.loading(`Provisioning ${path} ${selectedSimType} sandbox track...`)
     try {
-      const res = await api.post('/api/simulations/setup-sandbox', { path })
+      const res = await api.post('/api/simulations/setup-sandbox', { path, simulationType: selectedSimType })
       if (res.data?.success) {
         toast.success(`Successfully initialized ${path} sandbox track!`, { id: tid })
         await loadData()
@@ -107,131 +106,162 @@ export function SimulationHomePage() {
             Welcome to the Digital Marketing Sandbox
           </h1>
           <p className="text-xs sm:text-sm text-neutral-500 font-semibold max-w-2xl">
-            Choose your learning track to initialize a personal sandbox workspace. In sandbox mode, you can test search engines, paid search bidding algorithms, and demographic targeting configurations.
+            Choose your learning track and simulation type to initialize a personal sandbox workspace. In sandbox mode, you can focus on specific digital channels or run the full combined simulation.
           </p>
         </div>
 
         {isIndividualOrStaff ? (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-left">
-            {/* Beginner Card */}
-            <Card className="border border-neutral-200/80 shadow-md hover:shadow-lg transition-all flex flex-col justify-between overflow-hidden bg-white">
-              <div className="p-6 space-y-4">
-                <div className="flex justify-between items-start">
-                  <Badge className="bg-emerald-50 text-emerald-800 border border-emerald-200 font-black text-[10px] uppercase">
-                    Beginner Path
-                  </Badge>
-                  <span className="text-xs font-black text-neutral-400">Easy Mode</span>
-                </div>
-                <h3 className="text-base font-black text-neutral-900">SaaS Marketing Basics</h3>
-                <p className="text-xs text-neutral-500 font-medium leading-relaxed">
-                  Perfect for beginners. Start with a large budget envelope to explore basic SEO density weights and target CPC bidding.
-                </p>
-                <div className="divide-y divide-neutral-100 text-[11px] pt-2">
-                  <div className="py-2 flex justify-between font-semibold">
-                    <span className="text-neutral-450">Scenario</span>
-                    <span className="text-neutral-800">Global SaaS CRM</span>
-                  </div>
-                  <div className="py-2 flex justify-between font-semibold">
-                    <span className="text-neutral-450">Round Budget</span>
-                    <span className="text-emerald-600 font-black">$8,000 / round</span>
-                  </div>
-                  <div className="py-2 flex justify-between font-semibold">
-                    <span className="text-neutral-450">Target KPI</span>
-                    <span className="text-neutral-800">Revenue Generation</span>
-                  </div>
-                </div>
-              </div>
-              <div className="p-6 bg-neutral-50/50 border-t border-neutral-100">
-                <Button 
-                  onClick={() => handleSetupSandbox('beginner')}
-                  disabled={isInitializingPath}
-                  className="w-full bg-slate-900 hover:bg-slate-950 text-white font-black text-xs h-10 rounded-xl"
-                >
-                  Start Beginner Track
-                </Button>
+          <div className="space-y-6">
+            {/* Simulation Type Selector */}
+            <Card className="p-5 border-neutral-200/80 shadow-sm bg-white text-left space-y-3">
+              <span className="text-[10px] font-black text-neutral-405 uppercase tracking-wider block">1. Choose Simulation Type</span>
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+                {[
+                  { key: 'FULL', label: 'Full Digital Marketing', desc: 'SEO + Google Ads + Meta Ads' },
+                  { key: 'SEO', label: 'SEO Simulation', desc: 'Search engine optimization only' },
+                  { key: 'GOOGLE_ADS', label: 'Google Ads Simulation', desc: 'Google Search Ads bidding only' },
+                  { key: 'META_ADS', label: 'Meta Ads Simulation', desc: 'Meta Paid Social delivery only' },
+                ].map(t => (
+                  <button
+                    key={t.key}
+                    onClick={() => setSelectedSimType(t.key as any)}
+                    className={`p-3.5 rounded-xl border-2 text-left transition-all flex flex-col justify-between ${
+                      selectedSimType === t.key ? "border-indigo-600 bg-indigo-50/25 text-indigo-900 font-extrabold" : "border-neutral-200 hover:border-neutral-300 bg-white"
+                    }`}
+                  >
+                    <span className="text-xs font-black block">{t.label}</span>
+                    <span className="text-[9px] text-neutral-400 font-semibold leading-snug mt-1 block">{t.desc}</span>
+                  </button>
+                ))}
               </div>
             </Card>
 
-            {/* Intermediate Card */}
-            <Card className="border border-indigo-200 shadow-md hover:shadow-lg transition-all flex flex-col justify-between overflow-hidden bg-white relative">
-              <div className="absolute top-0 right-0 bg-indigo-600 text-white text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-bl-lg shadow-sm">
-                Recommended
-              </div>
-              <div className="p-6 space-y-4">
-                <div className="flex justify-between items-start">
-                  <Badge className="bg-indigo-50 text-indigo-850 border border-indigo-200 font-black text-[10px] uppercase">
-                    Intermediate Path
-                  </Badge>
-                  <span className="text-xs font-black text-neutral-450">Medium Mode</span>
+            {/* Path Selection Cards */}
+            <div className="space-y-2 text-left">
+              <span className="text-[10px] font-black text-neutral-405 uppercase tracking-wider block">2. Select Learning Path & Budget Level</span>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-left">
+              {/* Beginner Card */}
+              <Card className="border border-neutral-200/80 shadow-md hover:shadow-lg transition-all flex flex-col justify-between overflow-hidden bg-white">
+                <div className="p-6 space-y-4">
+                  <div className="flex justify-between items-start">
+                    <Badge className="bg-emerald-50 text-emerald-800 border border-emerald-200 font-black text-[10px] uppercase">
+                      Beginner Path
+                    </Badge>
+                    <span className="text-xs font-black text-neutral-400">Easy Mode</span>
+                  </div>
+                  <h3 className="text-base font-black text-neutral-900">SaaS Marketing Basics</h3>
+                  <p className="text-xs text-neutral-500 font-medium leading-relaxed">
+                    Perfect for beginners. Start with a large budget envelope to explore basic SEO density weights and target CPC bidding.
+                  </p>
+                  <div className="divide-y divide-neutral-100 text-[11px] pt-2">
+                    <div className="py-2 flex justify-between font-semibold">
+                      <span className="text-neutral-450">Scenario</span>
+                      <span className="text-neutral-800">Global SaaS CRM</span>
+                    </div>
+                    <div className="py-2 flex justify-between font-semibold">
+                      <span className="text-neutral-450">Round Budget</span>
+                      <span className="text-emerald-600 font-black">$8,000 / round</span>
+                    </div>
+                    <div className="py-2 flex justify-between font-semibold">
+                      <span className="text-neutral-450">Target KPI</span>
+                      <span className="text-neutral-800">Revenue Generation</span>
+                    </div>
+                  </div>
                 </div>
-                <h3 className="text-base font-black text-neutral-900">SaaS Strategy Challenge</h3>
-                <p className="text-xs text-neutral-500 font-medium leading-relaxed">
-                  The standard platform experience. Manage balanced budgets and competitive ad bidding settings in B2B SaaS space.
-                </p>
-                <div className="divide-y divide-neutral-100 text-[11px] pt-2">
-                  <div className="py-2 flex justify-between font-semibold">
-                    <span className="text-neutral-450">Scenario</span>
-                    <span className="text-neutral-800">Global SaaS CRM</span>
-                  </div>
-                  <div className="py-2 flex justify-between font-semibold">
-                    <span className="text-neutral-450">Round Budget</span>
-                    <span className="text-indigo-650 font-black">$5,000 / round</span>
-                  </div>
-                  <div className="py-2 flex justify-between font-semibold">
-                    <span className="text-neutral-450">Target KPI</span>
-                    <span className="text-neutral-800">Revenue Generation</span>
-                  </div>
+                <div className="p-6 bg-neutral-50/50 border-t border-neutral-100">
+                  <Button 
+                    onClick={() => handleSetupSandbox('beginner')}
+                    disabled={isInitializingPath}
+                    className="w-full bg-slate-900 hover:bg-slate-950 text-white font-black text-xs h-10 rounded-xl"
+                  >
+                    Start Beginner Track
+                  </Button>
                 </div>
-              </div>
-              <div className="p-6 bg-indigo-50/20 border-t border-indigo-100">
-                <Button 
-                  onClick={() => handleSetupSandbox('intermediate')}
-                  disabled={isInitializingPath}
-                  className="w-full bg-indigo-650 hover:bg-indigo-700 text-white font-black text-xs h-10 rounded-xl"
-                >
-                  Start Intermediate Track
-                </Button>
-              </div>
-            </Card>
+              </Card>
 
-            {/* Advanced Card */}
-            <Card className="border border-neutral-200/80 shadow-md hover:shadow-lg transition-all flex flex-col justify-between overflow-hidden bg-white">
-              <div className="p-6 space-y-4">
-                <div className="flex justify-between items-start">
-                  <Badge className="bg-amber-50 text-amber-850 border border-amber-200 font-black text-[10px] uppercase">
-                    Advanced Path
-                  </Badge>
-                  <span className="text-xs font-black text-neutral-400">Hard Mode</span>
+              {/* Intermediate Card */}
+              <Card className="border border-indigo-200 shadow-md hover:shadow-lg transition-all flex flex-col justify-between overflow-hidden bg-white relative">
+                <div className="absolute top-0 right-0 bg-indigo-600 text-white text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-bl-lg shadow-sm">
+                  Recommended
                 </div>
-                <h3 className="text-base font-black text-neutral-900">E-Commerce App Blitz</h3>
-                <p className="text-xs text-neutral-500 font-medium leading-relaxed">
-                  A high-volatility retail simulation. Stretch tight budgets to convert visitors and maintain high positive CTR efficiency.
-                </p>
-                <div className="divide-y divide-neutral-100 text-[11px] pt-2">
-                  <div className="py-2 flex justify-between font-semibold">
-                    <span className="text-neutral-450">Scenario</span>
-                    <span className="text-neutral-800">Fashion E-Commerce</span>
+                <div className="p-6 space-y-4">
+                  <div className="flex justify-between items-start">
+                    <Badge className="bg-indigo-50 text-indigo-850 border border-indigo-200 font-black text-[10px] uppercase">
+                      Intermediate Path
+                    </Badge>
+                    <span className="text-xs font-black text-neutral-455">Medium Mode</span>
                   </div>
-                  <div className="py-2 flex justify-between font-semibold">
-                    <span className="text-neutral-450">Round Budget</span>
-                    <span className="text-amber-700 font-black">$3,500 / round</span>
-                  </div>
-                  <div className="py-2 flex justify-between font-semibold">
-                    <span className="text-neutral-450">Target KPI</span>
-                    <span className="text-neutral-800">Conversion Rate</span>
+                  <h3 className="text-base font-black text-neutral-900">SaaS Strategy Challenge</h3>
+                  <p className="text-xs text-neutral-500 font-medium leading-relaxed">
+                    The standard platform experience. Manage balanced budgets and competitive ad bidding settings in B2B SaaS space.
+                  </p>
+                  <div className="divide-y divide-neutral-100 text-[11px] pt-2">
+                    <div className="py-2 flex justify-between font-semibold">
+                      <span className="text-neutral-450">Scenario</span>
+                      <span className="text-neutral-800">Global SaaS CRM</span>
+                    </div>
+                    <div className="py-2 flex justify-between font-semibold">
+                      <span className="text-neutral-450">Round Budget</span>
+                      <span className="text-indigo-650 font-black">$5,000 / round</span>
+                    </div>
+                    <div className="py-2 flex justify-between font-semibold">
+                      <span className="text-neutral-450">Target KPI</span>
+                      <span className="text-neutral-800">Revenue Generation</span>
+                    </div>
                   </div>
                 </div>
-              </div>
-              <div className="p-6 bg-neutral-50/50 border-t border-neutral-100">
-                <Button 
-                  onClick={() => handleSetupSandbox('advanced')}
-                  disabled={isInitializingPath}
-                  className="w-full bg-slate-900 hover:bg-slate-950 text-white font-black text-xs h-10 rounded-xl"
-                >
-                  Start Advanced Track
-                </Button>
-              </div>
-            </Card>
+                <div className="p-6 bg-indigo-50/20 border-t border-indigo-100">
+                  <Button 
+                    onClick={() => handleSetupSandbox('intermediate')}
+                    disabled={isInitializingPath}
+                    className="w-full bg-indigo-650 hover:bg-indigo-700 text-white font-black text-xs h-10 rounded-xl"
+                  >
+                    Start Intermediate Track
+                  </Button>
+                </div>
+              </Card>
+
+              {/* Advanced Card */}
+              <Card className="border border-neutral-200/80 shadow-md hover:shadow-lg transition-all flex flex-col justify-between overflow-hidden bg-white">
+                <div className="p-6 space-y-4">
+                  <div className="flex justify-between items-start">
+                    <Badge className="bg-amber-50 text-amber-850 border border-amber-200 font-black text-[10px] uppercase">
+                      Advanced Path
+                    </Badge>
+                    <span className="text-xs font-black text-neutral-400">Hard Mode</span>
+                  </div>
+                  <h3 className="text-base font-black text-neutral-900">E-Commerce App Blitz</h3>
+                  <p className="text-xs text-neutral-500 font-medium leading-relaxed">
+                    A high-volatility retail simulation. Stretch tight budgets to convert visitors and maintain high positive CTR efficiency.
+                  </p>
+                  <div className="divide-y divide-neutral-100 text-[11px] pt-2">
+                    <div className="py-2 flex justify-between font-semibold">
+                      <span className="text-neutral-450">Scenario</span>
+                      <span className="text-neutral-800">Fashion E-Commerce</span>
+                    </div>
+                    <div className="py-2 flex justify-between font-semibold">
+                      <span className="text-neutral-450">Round Budget</span>
+                      <span className="text-amber-700 font-black">$3,500 / round</span>
+                    </div>
+                    <div className="py-2 flex justify-between font-semibold">
+                      <span className="text-neutral-450">Target KPI</span>
+                      <span className="text-neutral-800">Conversion Rate</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="p-6 bg-neutral-50/50 border-t border-neutral-100">
+                  <Button 
+                    onClick={() => handleSetupSandbox('advanced')}
+                    disabled={isInitializingPath}
+                    className="w-full bg-slate-900 hover:bg-slate-950 text-white font-black text-xs h-10 rounded-xl"
+                  >
+                    Start Advanced Track
+                  </Button>
+                </div>
+              </Card>
+            </div>
           </div>
         ) : (
           <Card className="max-w-md mx-auto p-6 bg-white border border-neutral-200 rounded-2xl shadow-sm text-center space-y-4">
@@ -247,6 +277,16 @@ export function SimulationHomePage() {
         )}
       </div>
     )
+  }
+
+  const allowed = fullState?.class?.scenario?.allowedPlatforms
+    ? JSON.parse(fullState.class.scenario.allowedPlatforms)
+    : ["SEO", "GOOGLE_ADS", "META_ADS"];
+
+  const getFirstStrategyPath = () => {
+    if (allowed.includes("SEO")) return "/simulation/seo";
+    if (allowed.includes("GOOGLE_ADS")) return "/simulation/google-ads";
+    return "/simulation/meta-ads";
   }
 
   const scenario = fullState.class?.scenario
@@ -362,7 +402,7 @@ export function SimulationHomePage() {
               
               {!isCompleted && (
                 checkpointSubmitted ? (
-                  <Link to="/simulation/seo">
+                  <Link to={getFirstStrategyPath()}>
                     <Button className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black h-9 px-4 rounded-xl flex items-center gap-1">
                       Continue Simulation
                       <Play className="h-3.5 w-3.5 fill-white" />

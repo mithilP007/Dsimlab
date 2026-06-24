@@ -219,7 +219,10 @@ export function MetaAdsSimulationPage() {
       })
 
       await saveDecisions()
-      toast.success("Meta Ads decisions saved successfully!")
+      
+      const { advanceSimulation } = useSimulationStore.getState()
+      await advanceSimulation()
+      toast.success("Decisions submitted and locked!")
       navigate("/simulation/results")
     } catch (error) {
       console.error(error)
@@ -922,7 +925,7 @@ export function MetaAdsSimulationPage() {
                 disabled={isSaving}
                 className="w-full bg-slate-900 text-white hover:bg-slate-950 font-black text-xs h-11 rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-md"
               >
-                {isSaving ? "Saving Decisions..." : isReadOnly ? "View Round Summary" : "Save & View Summary"}
+                {isSaving ? "Saving Decisions..." : isReadOnly ? "Next: Results" : "Submit & Lock Decisions"}
                 <ArrowRight className="h-4 w-4" />
               </Button>
             )}

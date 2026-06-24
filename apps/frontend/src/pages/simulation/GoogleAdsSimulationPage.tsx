@@ -226,11 +226,29 @@ export function GoogleAdsSimulationPage() {
     return "manual_cpc"
   }
 
+  const allowed = activeSimulation?.allowedPlatforms || ["SEO", "GOOGLE_ADS", "META_ADS"]
+
+  const getNextStepPath = () => {
+    if (allowed.includes("META_ADS")) return "/simulation/meta-ads"
+    return "/simulation/results"
+  }
+
+  const getButtonText = () => {
+    const nextPath = getNextStepPath()
+    if (isSaving) return "Saving Decisions..."
+    if (nextPath === "/simulation/results") {
+      return isReadOnly ? "Next: Results" : "Submit & Lock Decisions"
+    } else {
+      return isReadOnly ? "Next: Meta Ads" : "Save & Continue"
+    }
+  }
+
   const handleSaveAndContinue = async () => {
     setIsSaving(true)
+    const nextPath = getNextStepPath()
     try {
       if (isReadOnly) {
-        navigate("/simulation/meta-ads")
+        navigate(nextPath)
         return
       }
 
@@ -293,8 +311,15 @@ export function GoogleAdsSimulationPage() {
       } as any)
 
       await saveDecisions()
-      toast.success("Google Ads decisions saved successfully!")
-      navigate("/simulation/meta-ads")
+      
+      if (nextPath === "/simulation/results") {
+        const { advanceSimulation } = useSimulationStore.getState()
+        await advanceSimulation()
+        toast.success("Decisions submitted and locked!")
+      } else {
+        toast.success("Google Ads decisions saved successfully!")
+      }
+      navigate(nextPath)
     } catch (error) {
       console.error(error)
       toast.error("Failed to save decisions.")
@@ -1089,7 +1114,7 @@ export function GoogleAdsSimulationPage() {
                 disabled={isSaving}
                 className="w-full bg-slate-900 text-white hover:bg-slate-950 font-black text-xs h-11 rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-md"
               >
-                {isSaving ? "Saving Decisions..." : isReadOnly ? "Next: Meta Ads" : "Save & Continue"}
+                {getButtonText()}
                 <ArrowRight className="h-4 w-4" />
               </Button>
             )}

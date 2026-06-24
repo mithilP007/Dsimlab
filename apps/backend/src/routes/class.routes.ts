@@ -277,6 +277,59 @@ export async function classRoutes(fastify: FastifyInstance) {
       data: { status: 'active' },
     });
 
+    // Sync with ClassEnrollment system
+    const enrollment = await prisma.classEnrollment.findFirst({
+      where: { studentId, classId: id }
+    });
+
+    if (enrollment) {
+      await prisma.classEnrollment.update({
+        where: { id: enrollment.id },
+        data: { status: 'ACTIVE', approvedAt: new Date(), actionByInstructorId: authReq.user!.id }
+      });
+    } else {
+      await prisma.classEnrollment.create({
+        data: {
+          classId: id,
+          studentId,
+          studentEmail: student.email,
+          status: 'ACTIVE',
+          approvedAt: new Date(),
+          actionByInstructorId: authReq.user!.id
+        }
+      });
+    }
+
+    // Initialize SimulationState if it doesn't exist
+    const existingState = await prisma.simulationState.findFirst({
+      where: { userId: studentId, classId: id }
+    });
+
+    if (!existingState) {
+      const newState = await prisma.simulationState.create({
+        data: {
+          userId: studentId,
+          classId: id,
+          currentRound: 1,
+          isCompleted: false,
+          status: 'DECISION_OPEN'
+        }
+      });
+
+      const totalDays = targetClass.scenarioId
+        ? (await prisma.scenario.findUnique({ where: { id: targetClass.scenarioId } }))?.durationDays || 30
+        : 30;
+
+      await prisma.studentSimulationProgress.create({
+        data: {
+          simulationId: newState.id,
+          currentDay: 1,
+          totalDays,
+          status: 'DECISION_OPEN'
+        }
+      });
+    }
+
     return reply.status(200).send({ success: true, message: 'Student approved.' });
   });
 
@@ -304,6 +357,12 @@ export async function classRoutes(fastify: FastifyInstance) {
     await prisma.user.update({
       where: { id: studentId },
       data: { classId: null, status: 'active' },
+    });
+
+    // Update ClassEnrollment to REJECTED
+    await prisma.classEnrollment.updateMany({
+      where: { studentId, classId: id },
+      data: { status: 'REJECTED', rejectedAt: new Date(), actionByInstructorId: authReq.user!.id }
     });
 
     return reply.status(200).send({ success: true, message: 'Student request rejected.' });

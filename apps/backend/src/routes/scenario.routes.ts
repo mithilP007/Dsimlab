@@ -68,6 +68,7 @@ export async function scenarioRoutes(fastify: FastifyInstance) {
       baselineOrganicTraffic: z.number().int().positive().default(1000),
       targetKPI: z.enum(['revenue', 'clicks', 'conversions']).default('revenue'),
       difficulty: z.string().default('medium'),
+      allowedPlatforms: z.string().optional(),
     });
 
     const parsed = bodySchema.safeParse(request.body);
@@ -101,6 +102,7 @@ export async function scenarioRoutes(fastify: FastifyInstance) {
       baselineOrganicTraffic: z.number().int().min(0).optional(),
       targetKPI: z.enum(['revenue', 'clicks', 'conversions']).optional(),
       difficulty: z.string().optional(),
+      allowedPlatforms: z.string().optional(),
     });
 
     const parsed = bodySchema.safeParse(request.body);

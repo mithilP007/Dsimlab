@@ -28,6 +28,7 @@ import { NotFound } from "@/pages/NotFound"
 import { useAuthStore } from "@/stores/authStore"
 import { useEffect } from "react"
 import { PendingApprovalScreen } from "@/pages/auth/PendingApprovalScreen"
+import { BlockedScreen } from "@/pages/auth/BlockedScreen"
 import { CampaignDashboard } from "@/pages/campaign/CampaignDashboard"
 import { CampaignDecisionPage } from "@/pages/campaign/CampaignDecisionPage"
 import { CampaignResultsPage } from "@/pages/campaign/CampaignResultsPage"
@@ -73,8 +74,13 @@ function ProtectedLayout() {
     return <Navigate to="/landing" replace />
   }
 
-  if (user?.role === "student-college" && user?.status === "pending") {
-    return <PendingApprovalScreen />
+  if (user?.role === "student-college") {
+    if (user.status === "pending") {
+      return <PendingApprovalScreen />
+    }
+    if (user.status && ["rejected", "terminated", "removed"].includes(user.status)) {
+      return <BlockedScreen />
+    }
   }
 
   return <AppShell />

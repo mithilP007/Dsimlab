@@ -32,6 +32,7 @@ import { metricsRoutes } from './routes/metrics.routes';
 import { eventsRoutes } from './routes/events.routes';
 import { scoringRoutes } from './routes/scoring.routes';
 import { classRoutes } from './routes/class.routes';
+import { classesRoutes } from './routes/classes.routes';
 import { scenarioRoutes } from './routes/scenario.routes';
 import { certificateRoutes } from './routes/certificate.routes';
 import { reportRoutes } from './routes/report.routes';
@@ -156,6 +157,89 @@ app.addHook('preHandler', async (request, reply) => {
         cacheService.set(cacheKey, res, 300).catch(err => logger.error(err, 'Failed to cache idempotency response'));
         return originalSend.call(this, payload);
       };
+    }
+  }
+});
+
+// Student-College Enrollment Status Guard Hook
+app.addHook('preHandler', async (request, reply) => {
+  const path = request.url;
+  
+  // Only apply enrollment guard to student simulation and work routes
+  const isStudentWorkRoute = 
+    path.startsWith('/api/simulations') || 
+    path.startsWith('/api/v1/simulation') || 
+    path.startsWith('/api/v1/campaign') ||
+    path.startsWith('/api/v1/report/student');
+
+  if (!isStudentWorkRoute) {
+    return;
+  }
+
+  const authReq = request as AuthenticatedRequest;
+  if (!authReq.user) {
+    try {
+      await requireAuth(request, reply);
+    } catch (e) {
+      return;
+    }
+  }
+
+  if (reply.sent) return;
+
+  const user = authReq.user;
+  if (!user) return;
+
+  const role = user.role.toUpperCase().replace('-', '_');
+  if (role === 'STUDENT_COLLEGE') {
+    const classId = user.classId;
+    if (!classId) {
+      reply.status(403).header('content-type', 'application/json; charset=utf-8').send(JSON.stringify({
+        success: false,
+        error: 'Your class access request is pending instructor approval.',
+        message: 'Your class access request is pending instructor approval.',
+        code: 'FORBIDDEN',
+        statusCode: 403
+      }));
+      return;
+    }
+
+    const enrollment = await prisma.classEnrollment.findFirst({
+      where: { studentId: user.id, classId }
+    });
+
+    if (!enrollment || enrollment.status === 'PENDING') {
+      await logActivity(
+        user.id,
+        'ACCESS_BLOCKED_PENDING',
+        `Blocked attempt to access ${path} (status: PENDING).`
+      ).catch(() => {});
+
+      reply.status(403).header('content-type', 'application/json; charset=utf-8').send(JSON.stringify({
+        success: false,
+        error: 'Your class access request is pending instructor approval.',
+        message: 'Your class access request is pending instructor approval.',
+        code: 'FORBIDDEN',
+        statusCode: 403
+      }));
+      return;
+    }
+
+    if (['REJECTED', 'REMOVED', 'TERMINATED'].includes(enrollment.status)) {
+      await logActivity(
+        user.id,
+        'ACCESS_BLOCKED_TERMINATED',
+        `Blocked attempt to access ${path} (status: ${enrollment.status}).`
+      ).catch(() => {});
+
+      reply.status(403).header('content-type', 'application/json; charset=utf-8').send(JSON.stringify({
+        success: false,
+        error: 'Your access to this class has been terminated by the instructor.',
+        message: 'Your access to this class has been terminated by the instructor.',
+        code: 'FORBIDDEN',
+        statusCode: 403
+      }));
+      return;
     }
   }
 });
@@ -502,6 +586,16 @@ app.post('/api/auth/register/student', async (req, reply) => {
         data: { status: 'pending' }
       });
 
+      // Create ClassEnrollment record
+      await prisma.classEnrollment.create({
+        data: {
+          classId: targetClass.id,
+          studentId: updatedUser.id,
+          studentEmail: updatedUser.email,
+          status: 'PENDING',
+        }
+      });
+
       // Notify the instructor
       await createNotification(
         targetClass.instructorId,
@@ -737,6 +831,7 @@ app.register(metricsRoutes, { prefix: '/api/v1/metrics' });
 app.register(eventsRoutes, { prefix: '/api/v1/events' });
 app.register(scoringRoutes, { prefix: '/api/v1/scoring' });
 app.register(classRoutes, { prefix: '/api/v1/class' });
+app.register(classesRoutes, { prefix: '/api/classes' });
 app.register(scenarioRoutes, { prefix: '/api/v1/scenario' });
 app.register(certificateRoutes, { prefix: '/api/v1/certificate' });
 app.register(reportRoutes, { prefix: '/api/v1/report' });

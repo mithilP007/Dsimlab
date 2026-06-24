@@ -85,6 +85,14 @@ describe('Phase 3: Scoring & API Contract Integration Tests', () => {
       where: { id: studentId },
       data: { classId }
     });
+    await prisma.classEnrollment.create({
+      data: {
+        classId,
+        studentId,
+        studentEmail,
+        status: 'ACTIVE'
+      }
+    });
 
     const studLogin = await app.inject({
       method: 'POST',

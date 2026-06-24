@@ -3,6 +3,8 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import api from "@/lib/api"
+import { useAuthStore } from "@/stores/authStore"
+import { useInstructorPortalStore } from "@/stores/instructorPortalStore"
 import {
   Calendar,
   AlertTriangle,
@@ -26,29 +28,51 @@ interface MarketEvent {
 }
 
 export function MarketEventsPage() {
+  const { user } = useAuthStore()
+  const { classes, selectedClassId, selectClass, fetchClasses } = useInstructorPortalStore()
   const [events, setEvents] = useState<MarketEvent[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [backendMessage, setBackendMessage] = useState<string | null>(null)
+
+  const isInstructor = user?.role === "instructor" || user?.role === "admin"
 
   const fetchEvents = async () => {
+    if (isInstructor && !selectedClassId) {
+      setEvents([])
+      setBackendMessage("Please select a class to view market events.")
+      return
+    }
+
     setLoading(true)
     setError(null)
+    setBackendMessage(null)
     try {
-      const res = await api.get<{ success: boolean; events: MarketEvent[] }>("/api/v1/events")
+      const params = isInstructor ? { classId: selectedClassId } : {}
+      const res = await api.get<{ success: boolean; events: MarketEvent[]; message?: string }>("/api/v1/events", { params })
       if (res.data?.success) {
         setEvents(res.data.events)
+        if (res.data.message) {
+          setBackendMessage(res.data.message)
+        }
       }
     } catch (err: any) {
       console.error(err)
-      setError(err.response?.data?.error || "Failed to load market events history. Ensure your simulation is initialized.")
+      setError(err.response?.data?.error || "Failed to load market events history.")
     } finally {
       setLoading(false)
     }
   }
 
   useEffect(() => {
-    fetchEvents()
-  }, [])
+    if (isInstructor) {
+      fetchClasses().then(() => {
+        fetchEvents()
+      })
+    } else {
+      fetchEvents()
+    }
+  }, [selectedClassId, isInstructor])
 
   // Helper to get styling based on event type
   const getEventBadge = (type: string) => {
@@ -69,7 +93,7 @@ export function MarketEventsPage() {
       return "Algorithm tweaks compress default organic impressions. To adapt, optimize keyword densities inside your SEO metadata, and increase paid CPC bid ceilings to capture missing lead volumes."
     }
     if (t.includes("SEASONAL") || t.includes("SPIKE")) {
-      return `Demand multiplier expanded by ${((impact - 1) * 100).toFixed(0)}%. Capitalize on higher search intents by raising Google Ads budgets and scaling Meta placement reach to Instagram feeds.`
+      return `Demand multiplier expanded by ${((impact - 1) * 105).toFixed(0)}%. Capitalize on higher search intents by raising Google Ads budgets and scaling Meta placement reach to Instagram feeds.`
     }
     return "Competitor price reductions reduce conversion readiness. Adapt by highlighting product USP differentiators in your Meta creative texts and increasing offer clarity on your landing page."
   }
@@ -83,7 +107,7 @@ export function MarketEventsPage() {
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-2">
             <div className="flex items-center gap-2">
-              <Compass className="h-5 w-5 text-amber-405 animate-spin" style={{ animationDuration: '6s' }} />
+              <Compass className="h-5 w-5 text-amber-400 animate-spin" style={{ animationDuration: "6s" }} />
               <span className="text-xs font-extrabold uppercase tracking-widest text-amber-300">Market Intelligence Feed</span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">Market Events Timeline</h1>
@@ -96,11 +120,28 @@ export function MarketEventsPage() {
             disabled={loading}
             className="bg-white hover:bg-neutral-100 text-neutral-900 text-xs font-black h-10 px-4 rounded-xl flex items-center justify-center gap-1.5 shadow shrink-0 self-start md:self-auto"
           >
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
             Refresh Timeline
           </Button>
         </div>
       </div>
+
+      {/* Class Selector Dropdown for Instructors */}
+      {isInstructor && (
+        <div className="flex justify-start items-center gap-3 bg-white p-4 rounded-xl border border-neutral-200 shadow-sm text-left">
+          <span className="text-xs font-bold text-neutral-600">Active Classroom Cohort:</span>
+          <select
+            value={selectedClassId || ""}
+            onChange={(e) => selectClass(e.target.value || null)}
+            className="p-2 border border-neutral-300 rounded-lg text-xs font-semibold bg-white max-w-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+          >
+            <option value="">-- Select a Classroom --</option>
+            {classes.map(c => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {/* 2. Main content timeline */}
       <div className="space-y-6">
@@ -108,7 +149,7 @@ export function MarketEventsPage() {
         {loading && events.length === 0 ? (
           <div className="py-20 flex flex-col items-center justify-center space-y-3">
             <RefreshCw className="h-8 w-8 text-indigo-650 animate-spin" />
-            <p className="text-xs font-semibold text-neutral-450">Retrieving simulation events timeline...</p>
+            <p className="text-xs font-semibold text-neutral-455">Retrieving simulation events timeline...</p>
           </div>
         ) : error ? (
           <Card className="border-rose-200 bg-rose-50 text-rose-700 p-6 text-left">
@@ -121,10 +162,20 @@ export function MarketEventsPage() {
               </div>
             </div>
           </Card>
+        ) : isInstructor && !selectedClassId ? (
+          <Card className="border-2 border-dashed border-neutral-200 rounded-2xl p-12 text-center bg-neutral-50/20">
+            <Calendar className="h-10 w-10 text-neutral-300 mx-auto" />
+            <h3 className="font-extrabold text-sm text-neutral-800 mt-3">Select a Class to View Market Events</h3>
+            <p className="text-xs text-neutral-450 font-semibold max-w-xs mx-auto mt-1 leading-relaxed">
+              Please choose an active class cohort from the dropdown above to audit historical market event logs.
+            </p>
+          </Card>
         ) : events.length === 0 ? (
           <Card className="border-2 border-dashed border-neutral-200 rounded-2xl p-12 text-center bg-neutral-50/20">
             <Calendar className="h-10 w-10 text-neutral-300 mx-auto" />
-            <h3 className="font-extrabold text-sm text-neutral-800 mt-3">No Market Incident Logs</h3>
+            <h3 className="font-extrabold text-sm text-neutral-800 mt-3">
+              {backendMessage || "No Market Incident Logs"}
+            </h3>
             <p className="text-xs text-neutral-450 font-semibold max-w-xs mx-auto mt-1 leading-relaxed">
               No market events have been injected for the current round. Advancing rounds will trigger random search and social fluctuations.
             </p>
@@ -152,8 +203,8 @@ export function MarketEventsPage() {
                         {/* Impact Multiplier Badge */}
                         <div className={`flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-black border ${
                           isBoost 
-                            ? "bg-emerald-50 text-emerald-700 border-emerald-150" 
-                            : "bg-rose-50 text-rose-700 border-rose-150"
+                             ? "bg-emerald-50 text-emerald-700 border-emerald-150" 
+                             : "bg-rose-50 text-rose-700 border-rose-150"
                         }`}>
                           {isBoost ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
                           <span>{event.impactMultiplier.toFixed(2)}x Impact</span>
@@ -168,7 +219,7 @@ export function MarketEventsPage() {
                       </p>
                       
                       {/* Recommendation adaptation block */}
-                      <div className="p-4 border border-indigo-100 bg-indigo-50/15 rounded-xl space-y-1.5">
+                      <div className="p-4 border border-indigo-105 bg-indigo-50/15 rounded-xl space-y-1.5">
                         <span className="text-[10px] font-black text-indigo-900 uppercase tracking-widest flex items-center gap-1.5">
                           <Sparkles className="h-4 w-4 text-indigo-550" />
                           Recommended Adaptation Action
@@ -197,4 +248,5 @@ export function MarketEventsPage() {
     </div>
   )
 }
+
 export default MarketEventsPage

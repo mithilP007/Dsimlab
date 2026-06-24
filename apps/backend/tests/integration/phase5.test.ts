@@ -108,6 +108,14 @@ describe('Phase 5: AI Integration & WebSocket Payload Tests', () => {
       where: { id: studentId },
       data: { classId },
     });
+    await prisma.classEnrollment.create({
+      data: {
+        classId,
+        studentId,
+        studentEmail,
+        status: 'ACTIVE'
+      }
+    });
 
     console.log('DEBUG: updatedUser in DB =', updatedUser);
 

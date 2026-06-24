@@ -753,3 +753,22 @@ model HardViolation {
   @@index([studentId])
 }
 
+model ClassEnrollment {
+  id                    String    @id @default(uuid())
+  classId               String
+  studentId             String
+  studentEmail          String
+  status                String    @default("PENDING") // PENDING, ACTIVE, REJECTED, REMOVED, TERMINATED
+  requestedAt           DateTime  @default(now())
+  approvedAt            DateTime?
+  rejectedAt            DateTime?
+  removedAt             DateTime?
+  actionByInstructorId  String?
+  rejectionReason       String?
+  removalReason         String?
+
+  @@index([classId])
+  @@index([studentId])
+  @@index([studentEmail])
+}
+

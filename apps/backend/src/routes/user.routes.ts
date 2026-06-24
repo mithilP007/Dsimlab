@@ -148,6 +148,27 @@ export async function userRoutes(fastify: FastifyInstance) {
       data: { classId: targetClass.id, status: 'pending' },
     });
 
+    // Sync with ClassEnrollment system
+    const existing = await prisma.classEnrollment.findFirst({
+      where: { studentId: authReq.user!.id, classId: targetClass.id }
+    });
+
+    if (!existing) {
+      await prisma.classEnrollment.create({
+        data: {
+          classId: targetClass.id,
+          studentId: authReq.user!.id,
+          studentEmail: authReq.user!.email,
+          status: 'PENDING',
+        }
+      });
+    } else {
+      await prisma.classEnrollment.update({
+        where: { id: existing.id },
+        data: { status: 'PENDING' }
+      });
+    }
+
     // Notify the instructor
     await createNotification(
       targetClass.instructorId,
@@ -549,6 +570,29 @@ export async function userRoutes(fastify: FastifyInstance) {
 
     const classId = student.classId;
     if (classId) {
+      // Sync with ClassEnrollment system
+      const enrollment = await prisma.classEnrollment.findFirst({
+        where: { studentId: id, classId }
+      });
+
+      if (enrollment) {
+        await prisma.classEnrollment.update({
+          where: { id: enrollment.id },
+          data: { status: 'ACTIVE', approvedAt: new Date(), actionByInstructorId: authReq.user!.id }
+        });
+      } else {
+        await prisma.classEnrollment.create({
+          data: {
+            classId,
+            studentId: id,
+            studentEmail: student.email,
+            status: 'ACTIVE',
+            approvedAt: new Date(),
+            actionByInstructorId: authReq.user!.id
+          }
+        });
+      }
+
       const existingState = await prisma.simulationState.findFirst({
         where: {
           userId: id,

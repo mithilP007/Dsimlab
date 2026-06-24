@@ -190,11 +190,32 @@ export function SeoSimulationPage() {
     }
   }, [onPageScore, techScore, offPageScore, isSimulationMode])
 
+  const allowed = activeSimulation?.allowedPlatforms || ["SEO", "GOOGLE_ADS", "META_ADS"]
+
+  const getNextStepPath = () => {
+    if (allowed.includes("GOOGLE_ADS")) return "/simulation/google-ads"
+    if (allowed.includes("META_ADS")) return "/simulation/meta-ads"
+    return "/simulation/results"
+  }
+
+  const getButtonText = () => {
+    const nextPath = getNextStepPath()
+    if (isSaving) return "Saving Decisions..."
+    if (nextPath === "/simulation/results") {
+      return isReadOnly ? "Next: Results" : "Submit & Lock Decisions"
+    } else {
+      return isReadOnly 
+        ? (nextPath === "/simulation/google-ads" ? "Next: Google Ads" : "Next: Meta Ads") 
+        : "Save & Continue"
+    }
+  }
+
   const handleSaveAndContinue = async () => {
     setIsSaving(true)
+    const nextPath = getNextStepPath()
     try {
       if (isReadOnly) {
-        navigate("/simulation/google-ads")
+        navigate(nextPath)
         return
       }
       // Set keywords
@@ -214,8 +235,15 @@ export function SeoSimulationPage() {
       })
 
       await saveDecisions()
-      toast.success("SEO decisions saved successfully!")
-      navigate("/simulation/google-ads")
+      
+      if (nextPath === "/simulation/results") {
+        const { advanceSimulation } = useSimulationStore.getState()
+        await advanceSimulation()
+        toast.success("Decisions submitted and locked!")
+      } else {
+        toast.success("SEO decisions saved successfully!")
+      }
+      navigate(nextPath)
     } catch (error) {
       console.error(error)
       toast.error("Failed to save decisions.")
@@ -932,7 +960,7 @@ export function SeoSimulationPage() {
                 disabled={isSaving}
                 className="w-full bg-slate-900 text-white hover:bg-slate-950 font-black text-xs h-11 rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-md"
               >
-                {isSaving ? "Saving Decisions..." : isReadOnly ? "Next: Google Ads" : "Save & Continue"}
+                {getButtonText()}
                 <ArrowRight className="h-4 w-4" />
               </Button>
             )}

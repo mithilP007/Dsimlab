@@ -4,6 +4,7 @@ import { useInstructorPortalStore } from "@/stores/instructorPortalStore"
 import { useCertificationStore } from "@/stores/certificationStore"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { toast } from "sonner"
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -80,6 +81,8 @@ export function InstructorPortal() {
     selectClass,
     pendingRequests,
     fetchPendingRequests,
+    approveJoinRequest,
+    rejectJoinRequest,
   } = useInstructorPortalStore()
 
   // UI Local States
@@ -90,6 +93,7 @@ export function InstructorPortal() {
   const [loadingEvaluation, setLoadingEvaluation] = useState(false)
   const [issuingStudentId, setIssuingStudentId] = useState<string | null>(null)
   const [isExporting, setIsExporting] = useState(false)
+  const [rejectionReasons, setRejectionReasons] = useState<Record<string, string>>({})
 
   // Certifications store actions
   const {
@@ -138,6 +142,12 @@ export function InstructorPortal() {
     }
   }, [classes.length]) // eslint-disable-line
 
+  useEffect(() => {
+    if (selectedClassId) {
+      fetchPendingRequests()
+    }
+  }, [selectedClassId, fetchPendingRequests])
+
   // Classroom Management Actions
   const handleManageClass = async (classId: string) => {
     selectClass(classId)
@@ -165,11 +175,14 @@ export function InstructorPortal() {
   }
 
   const handleRemoveStudent = async (studentId: string) => {
-    if (confirm("Are you sure you want to remove this student from the classroom?")) {
-      try {
-        await removeStudent(selectedClassId!, studentId)
-      } catch (err) {
-        console.error(err)
+    if (confirm("This will revoke the student’s access to this class and simulation. Continue?")) {
+      const reason = prompt("Enter removal reason (optional):")
+      if (reason !== null) {
+        try {
+          await removeStudent(selectedClassId!, studentId, reason)
+        } catch (err) {
+          console.error(err)
+        }
       }
     }
   }
@@ -803,6 +816,96 @@ export function InstructorPortal() {
                           </div>
                         </Card>
                       </div>
+                    )
+                  })()}
+
+                  {/* Student Access Requests */}
+                  {(() => {
+                    const classPendingRequests = pendingRequests.filter((r) => r.classId === selectedClassId)
+                    if (classPendingRequests.length === 0) return null
+                    return (
+                      <Card className="border border-neutral-200/80 shadow-md bg-white mb-6">
+                        <CardHeader className="border-b border-neutral-100 p-5">
+                          <div className="text-left">
+                            <CardTitle className="text-sm font-black text-rose-600 uppercase tracking-wider flex items-center gap-1.5">
+                              <Clock className="h-4.5 w-4.5" />
+                              Student Access Requests
+                            </CardTitle>
+                            <CardDescription className="text-xs font-semibold text-neutral-400 mt-0.5">
+                              Approve or reject students requesting to join this classroom.
+                            </CardDescription>
+                          </div>
+                        </CardHeader>
+                        <CardContent className="p-0 overflow-x-auto text-left">
+                          <table className="w-full text-xs text-left">
+                            <thead className="bg-neutral-50 text-[10px] font-black text-neutral-400 uppercase tracking-wider border-b border-neutral-100">
+                              <tr>
+                                <th className="px-5 py-3.5">Name / Email</th>
+                                <th className="px-5 py-3.5">Requested Date</th>
+                                <th className="px-5 py-3.5">Status</th>
+                                <th className="px-5 py-3.5 text-right">Actions</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-neutral-100 font-semibold text-neutral-700">
+                              {classPendingRequests.map((req) => (
+                                <tr key={req.id} className="hover:bg-neutral-50/40 transition-colors">
+                                  <td className="px-5 py-3.5">
+                                    <div className="font-bold text-neutral-800">{req.name}</div>
+                                    <div className="text-[10px] text-neutral-400 font-semibold mt-0.5">{req.email}</div>
+                                  </td>
+                                  <td className="px-5 py-3.5 text-neutral-500">
+                                    {req.requestedAt ? new Date(req.requestedAt).toLocaleDateString() : "Pending"}
+                                  </td>
+                                  <td className="px-5 py-3.5">
+                                    <Badge className="bg-amber-50 text-amber-700 hover:bg-amber-100 border-none font-bold text-[9px] uppercase">
+                                      PENDING APPROVAL
+                                    </Badge>
+                                  </td>
+                                  <td className="px-5 py-3.5 text-right whitespace-nowrap">
+                                    <div className="flex items-center justify-end gap-2">
+                                      <Input
+                                        placeholder="Rejection reason (optional)..."
+                                        value={rejectionReasons[req.id] || ""}
+                                        onChange={(e) =>
+                                          setRejectionReasons((prev) => ({ ...prev, [req.id]: e.target.value }))
+                                        }
+                                        className="text-xs border-neutral-250 h-8 font-semibold max-w-[180px] inline-block mr-2"
+                                      />
+                                      <Button
+                                        onClick={async () => {
+                                          try {
+                                            await approveJoinRequest(selectedClassId!, req.id)
+                                            toast.success("Student access request approved!")
+                                          } catch (err) {
+                                            toast.error("Failed to approve request.")
+                                          }
+                                        }}
+                                        className="bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold h-8 px-3 rounded-lg"
+                                      >
+                                        Accept
+                                      </Button>
+                                      <Button
+                                        onClick={async () => {
+                                          try {
+                                            await rejectJoinRequest(selectedClassId!, req.id, rejectionReasons[req.id])
+                                            toast.success("Student access request rejected.")
+                                          } catch (err) {
+                                            toast.error("Failed to reject request.")
+                                          }
+                                        }}
+                                        variant="outline"
+                                        className="text-[10px] font-bold border-neutral-250 text-rose-600 hover:bg-rose-50 h-8 px-3 rounded-lg"
+                                      >
+                                        Reject
+                                      </Button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </CardContent>
+                      </Card>
                     )
                   })()}
 

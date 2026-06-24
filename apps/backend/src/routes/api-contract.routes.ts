@@ -133,7 +133,8 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
         type: 'object',
         required: ['path'],
         properties: {
-          path: { type: 'string', enum: ['beginner', 'intermediate', 'advanced'] }
+          path: { type: 'string', enum: ['beginner', 'intermediate', 'advanced'] },
+          simulationType: { type: 'string', enum: ['SEO', 'GOOGLE_ADS', 'META_ADS', 'FULL'] }
         }
       },
       response: {
@@ -151,61 +152,90 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
   }, async (request, reply) => {
     const authReq = request as AuthenticatedRequest;
     const userId = authReq.user!.id;
-    const { path } = request.body as { path: 'beginner' | 'intermediate' | 'advanced' };
+    const { path, simulationType = 'FULL' } = request.body as { 
+      path: 'beginner' | 'intermediate' | 'advanced';
+      simulationType?: 'SEO' | 'GOOGLE_ADS' | 'META_ADS' | 'FULL';
+    };
 
     // Define scenario details based on path
-    let scenarioName = 'Global SaaS Marketing Challenge';
+    let baseScenarioName = 'Global SaaS Marketing Challenge';
     let difficulty = 'medium';
     let budgetPerRound = 5000.0;
     let baselineOrganicTraffic = 1500;
     let targetKPI = 'revenue';
     let maxRounds = 10;
+    let description = 'Acquire corporate customers for a collaborative cloud CRM tool in a competitive B2B space.';
+    let industry = 'B2B Software';
 
     if (path === 'beginner') {
-      scenarioName = 'Beginner SaaS Marketing Challenge';
+      baseScenarioName = 'Beginner SaaS Marketing Challenge';
       difficulty = 'easy';
       budgetPerRound = 8000.0;
       baselineOrganicTraffic = 2000;
       targetKPI = 'revenue';
       maxRounds = 10;
+      description = 'A guided, high-budget sandbox track for learning core SEO and search ad campaign bidding strategy basics.';
+      industry = 'B2B Software';
     } else if (path === 'advanced') {
-      scenarioName = 'Advanced Fashion E-Commerce Blitz';
+      baseScenarioName = 'Advanced Fashion E-Commerce Blitz';
       difficulty = 'hard';
       budgetPerRound = 3500.0;
       baselineOrganicTraffic = 1000;
       targetKPI = 'conversions';
       maxRounds = 8;
+      description = 'Scale traffic and conversions for a sustainable apparel brand in a highly volatile consumer fashion environment.';
+      industry = 'Apparel E-Commerce';
     }
 
-    // Find or create the scenario in the database
+    // Determine allowed platforms
+    let allowedPlatforms = '["SEO", "GOOGLE_ADS", "META_ADS"]';
+    if (simulationType === 'SEO') {
+      allowedPlatforms = '["SEO"]';
+    } else if (simulationType === 'GOOGLE_ADS') {
+      allowedPlatforms = '["GOOGLE_ADS"]';
+    } else if (simulationType === 'META_ADS') {
+      allowedPlatforms = '["META_ADS"]';
+    }
+
+    // Find or create the private scenario in the database for this specific user
+    const privateScenarioName = `${path}_${simulationType}_${userId}`;
     let scenario = await prisma.scenario.findFirst({
-      where: { name: scenarioName }
+      where: { name: privateScenarioName }
     });
 
     if (!scenario) {
       scenario = await prisma.scenario.create({
         data: {
-          name: scenarioName,
-          description: path === 'beginner' 
-            ? 'A guided, high-budget sandbox track for learning core SEO and search ad campaign bidding strategy basics.'
-            : 'Scale traffic and conversions for a sustainable apparel brand in a highly volatile consumer fashion environment.',
-          industry: path === 'beginner' ? 'B2B Software' : 'Apparel E-Commerce',
+          name: privateScenarioName,
+          description,
+          industry,
           startRound: 1,
           maxRounds,
           budgetPerRound,
           baselineOrganicTraffic,
           targetKPI,
-          difficulty
+          difficulty,
+          allowedPlatforms
+        }
+      });
+    } else {
+      // Refresh the details to ensure they match current path and simulationType
+      scenario = await prisma.scenario.update({
+        where: { id: scenario.id },
+        data: {
+          description,
+          industry,
+          maxRounds,
+          budgetPerRound,
+          baselineOrganicTraffic,
+          targetKPI,
+          difficulty,
+          allowedPlatforms
         }
       });
     }
 
-    // Find or create sandbox class
-    let sandboxClass = await prisma.class.findFirst({
-      where: { inviteCode: 'SANDBOX' }
-    });
-
-    // Create sandbox instructor if not exists
+    // Create private sandbox instructor if not exists
     let instructor = await prisma.user.findFirst({ where: { role: 'INSTRUCTOR' } });
     if (!instructor) {
       instructor = await prisma.user.create({
@@ -218,24 +248,30 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
       });
     }
 
+    // Find or create private sandbox class cohort unique to this user
+    const privateInviteCode = `SANDBOX-${userId}`;
+    let sandboxClass = await prisma.class.findUnique({
+      where: { inviteCode: privateInviteCode }
+    });
+
     if (!sandboxClass) {
       sandboxClass = await prisma.class.create({
         data: {
-          name: 'Individual Sandbox Cohort',
-          inviteCode: 'SANDBOX',
+          name: `Sandbox Cohort - ${authReq.user!.name}`,
+          inviteCode: privateInviteCode,
           instructorId: instructor.id,
           scenarioId: scenario.id,
         }
       });
     } else {
-      // Update sandbox class to point to selected scenario
+      // Update private class to point to the private scenario
       sandboxClass = await prisma.class.update({
         where: { id: sandboxClass.id },
         data: { scenarioId: scenario.id }
       });
     }
 
-    // Link user to sandbox class
+    // Link user to their private sandbox class
     await prisma.user.update({
       where: { id: userId },
       data: { classId: sandboxClass.id }
@@ -358,7 +394,6 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
       },
       body: {
         type: 'object',
-        required: ['seoTargetKeywords', 'seoContentQuality', 'seoBacklinkBudget'],
         properties: {
           seoTargetKeywords: { type: 'array', items: { type: 'string' } },
           seoContentQuality: { type: 'number', minimum: 1, maximum: 10 },
@@ -422,6 +457,7 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
 
     const sim = await prisma.simulationState.findUnique({
       where: { id: parsedParams.data.id },
+      include: { class: { include: { scenario: true } } }
     });
 
     if (!sim) {
@@ -433,9 +469,9 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
     }
 
     const bodySchema = z.object({
-      seoTargetKeywords: z.array(z.string()).min(1, 'At least one keyword is required'),
-      seoContentQuality: z.number().min(1).max(10),
-      seoBacklinkBudget: z.number().nonnegative(),
+      seoTargetKeywords: z.array(z.string()).optional(),
+      seoContentQuality: z.number().min(1).max(10).optional(),
+      seoBacklinkBudget: z.number().nonnegative().optional(),
       googleCampaigns: z.array(z.any()).default([]),
       metaCampaigns: z.array(z.any()).default([]),
       seoMetaTitle: z.string().optional().nullable(),
@@ -454,6 +490,41 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
       throw new ValidationError(parsedBody.error.errors[0].message);
     }
 
+    const allowed = sim.class?.scenario?.allowedPlatforms
+      ? JSON.parse(sim.class.scenario.allowedPlatforms)
+      : ["SEO", "GOOGLE_ADS", "META_ADS"];
+
+    // Dynamic Platform Validations
+    if (allowed.includes("SEO")) {
+      if (!parsedBody.data.seoTargetKeywords || parsedBody.data.seoTargetKeywords.length === 0) {
+        throw new ValidationError("At least one target keyword is required for SEO.");
+      }
+      if (parsedBody.data.seoContentQuality === undefined || parsedBody.data.seoContentQuality === null) {
+        throw new ValidationError("Content quality is required for SEO.");
+      }
+      if (parsedBody.data.seoBacklinkBudget === undefined || parsedBody.data.seoBacklinkBudget === null) {
+        throw new ValidationError("Backlink budget is required for SEO.");
+      }
+    }
+
+    // Default decisions if platform is disabled
+    const finalSeoTargetKeywords = allowed.includes("SEO") ? parsedBody.data.seoTargetKeywords! : [];
+    const finalSeoContentQuality = allowed.includes("SEO") ? parsedBody.data.seoContentQuality! : 5.0;
+    const finalSeoBacklinkBudget = allowed.includes("SEO") ? parsedBody.data.seoBacklinkBudget! : 0.0;
+    
+    const finalGoogleCampaigns = allowed.includes("GOOGLE_ADS") ? parsedBody.data.googleCampaigns : [];
+    const finalMetaCampaigns = allowed.includes("META_ADS") ? parsedBody.data.metaCampaigns : [];
+
+    const finalSeoMetaTitle = allowed.includes("SEO") ? parsedBody.data.seoMetaTitle : null;
+    const finalSeoMetaDescription = allowed.includes("SEO") ? parsedBody.data.seoMetaDescription : null;
+    const finalSeoBodyContent = allowed.includes("SEO") ? parsedBody.data.seoBodyContent : null;
+    const finalSeoUrlSlug = allowed.includes("SEO") ? parsedBody.data.seoUrlSlug : null;
+    const finalSeoInternalLinks = allowed.includes("SEO") ? parsedBody.data.seoInternalLinks : 0;
+    const finalSeoAnchorText = allowed.includes("SEO") ? parsedBody.data.seoAnchorText : null;
+    const finalSeoBacklinkQuality = allowed.includes("SEO") ? parsedBody.data.seoBacklinkQuality : 1;
+    const finalSeoTechnicalConfig = allowed.includes("SEO") ? parsedBody.data.seoTechnicalConfig : '{}';
+    const finalSeoCoreWebVitals = allowed.includes("SEO") ? parsedBody.data.seoCoreWebVitals : '{}';
+
     const decision = await prisma.decision.upsert({
       where: {
         simulationId_round: {
@@ -462,39 +533,39 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
         }
       },
       update: {
-        seoTargetKeywords: JSON.stringify(parsedBody.data.seoTargetKeywords),
-        seoContentQuality: parsedBody.data.seoContentQuality,
-        seoBacklinkBudget: parsedBody.data.seoBacklinkBudget,
-        googleCampaigns: JSON.stringify(parsedBody.data.googleCampaigns),
-        metaCampaigns: JSON.stringify(parsedBody.data.metaCampaigns),
-        seoMetaTitle: parsedBody.data.seoMetaTitle,
-        seoMetaDescription: parsedBody.data.seoMetaDescription,
-        seoBodyContent: parsedBody.data.seoBodyContent,
-        seoUrlSlug: parsedBody.data.seoUrlSlug,
-        seoInternalLinks: parsedBody.data.seoInternalLinks,
-        seoAnchorText: parsedBody.data.seoAnchorText,
-        seoBacklinkQuality: parsedBody.data.seoBacklinkQuality,
-        seoTechnicalConfig: parsedBody.data.seoTechnicalConfig,
-        seoCoreWebVitals: parsedBody.data.seoCoreWebVitals,
+        seoTargetKeywords: JSON.stringify(finalSeoTargetKeywords),
+        seoContentQuality: finalSeoContentQuality,
+        seoBacklinkBudget: finalSeoBacklinkBudget,
+        googleCampaigns: JSON.stringify(finalGoogleCampaigns),
+        metaCampaigns: JSON.stringify(finalMetaCampaigns),
+        seoMetaTitle: finalSeoMetaTitle,
+        seoMetaDescription: finalSeoMetaDescription,
+        seoBodyContent: finalSeoBodyContent,
+        seoUrlSlug: finalSeoUrlSlug,
+        seoInternalLinks: finalSeoInternalLinks,
+        seoAnchorText: finalSeoAnchorText,
+        seoBacklinkQuality: finalSeoBacklinkQuality,
+        seoTechnicalConfig: finalSeoTechnicalConfig,
+        seoCoreWebVitals: finalSeoCoreWebVitals,
         submitted: true
       },
       create: {
         simulationId: sim.id,
         round: sim.currentRound,
-        seoTargetKeywords: JSON.stringify(parsedBody.data.seoTargetKeywords),
-        seoContentQuality: parsedBody.data.seoContentQuality,
-        seoBacklinkBudget: parsedBody.data.seoBacklinkBudget,
-        googleCampaigns: JSON.stringify(parsedBody.data.googleCampaigns),
-        metaCampaigns: JSON.stringify(parsedBody.data.metaCampaigns),
-        seoMetaTitle: parsedBody.data.seoMetaTitle,
-        seoMetaDescription: parsedBody.data.seoMetaDescription,
-        seoBodyContent: parsedBody.data.seoBodyContent,
-        seoUrlSlug: parsedBody.data.seoUrlSlug,
-        seoInternalLinks: parsedBody.data.seoInternalLinks,
-        seoAnchorText: parsedBody.data.seoAnchorText,
-        seoBacklinkQuality: parsedBody.data.seoBacklinkQuality,
-        seoTechnicalConfig: parsedBody.data.seoTechnicalConfig,
-        seoCoreWebVitals: parsedBody.data.seoCoreWebVitals,
+        seoTargetKeywords: JSON.stringify(finalSeoTargetKeywords),
+        seoContentQuality: finalSeoContentQuality,
+        seoBacklinkBudget: finalSeoBacklinkBudget,
+        googleCampaigns: JSON.stringify(finalGoogleCampaigns),
+        metaCampaigns: JSON.stringify(finalMetaCampaigns),
+        seoMetaTitle: finalSeoMetaTitle,
+        seoMetaDescription: finalSeoMetaDescription,
+        seoBodyContent: finalSeoBodyContent,
+        seoUrlSlug: finalSeoUrlSlug,
+        seoInternalLinks: finalSeoInternalLinks,
+        seoAnchorText: finalSeoAnchorText,
+        seoBacklinkQuality: finalSeoBacklinkQuality,
+        seoTechnicalConfig: finalSeoTechnicalConfig,
+        seoCoreWebVitals: finalSeoCoreWebVitals,
         submitted: true
       }
     });
@@ -1563,7 +1634,8 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
           startRound: { type: 'number' },
           maxRounds: { type: 'number' },
           baselineOrganicTraffic: { type: 'number' },
-          targetKPI: { type: 'string', enum: ['revenue', 'clicks', 'conversions'] }
+          targetKPI: { type: 'string', enum: ['revenue', 'clicks', 'conversions'] },
+          allowedPlatforms: { type: 'string' }
         }
       },
       response: {
@@ -1584,6 +1656,7 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
       maxRounds: z.number().int().positive().default(10),
       baselineOrganicTraffic: z.number().int().positive().default(1000),
       targetKPI: z.enum(['revenue', 'clicks', 'conversions']).default('revenue'),
+      allowedPlatforms: z.string().optional()
     });
 
     const parsed = bodySchema.safeParse(request.body);

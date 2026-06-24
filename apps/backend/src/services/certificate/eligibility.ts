@@ -11,9 +11,17 @@ export interface EligibilityResult {
 /**
  * Calculates strategic consistency (0-100) across all submitted decision rounds.
  */
-export function calculateStrategicConsistency(decisions: any[]): number {
+export function calculateStrategicConsistency(decisions: any[], allowedPlatforms?: string[]): number {
   if (decisions.length === 0) return 0;
   if (decisions.length === 1) return 85.0; // Default high consistency for initial round
+
+  const allowed = allowedPlatforms && allowedPlatforms.length > 0
+    ? allowedPlatforms
+    : ['SEO', 'GOOGLE_ADS', 'META_ADS'];
+
+  const hasSEO = allowed.includes('SEO');
+  const hasGoogle = allowed.includes('GOOGLE_ADS');
+  const hasMeta = allowed.includes('META_ADS');
 
   let totalConsistency = 0;
   const numTransitions = decisions.length - 1;
@@ -22,58 +30,71 @@ export function calculateStrategicConsistency(decisions: any[]): number {
     const prev = decisions[i - 1];
     const curr = decisions[i];
 
+    const activeScores: number[] = [];
+
     // 1. Google Ads Budget similarity
-    let prevG = 0;
-    let currG = 0;
-    try {
-      const prevGCamps = JSON.parse(prev.googleCampaigns || '[]');
-      const currGCamps = JSON.parse(curr.googleCampaigns || '[]');
-      prevG = prevGCamps.reduce((sum: number, c: any) => sum + (c.budget || 0), 0);
-      currG = currGCamps.reduce((sum: number, c: any) => sum + (c.budget || 0), 0);
-    } catch { /* ignore */ }
-    const gVariation = Math.max(prevG, currG) > 0 ? Math.abs(prevG - currG) / Math.max(prevG, currG) : 0;
-    const gScore = 100 * (1 - gVariation);
-
-    // 2. Meta Ads Budget similarity
-    let prevM = 0;
-    let currM = 0;
-    try {
-      const prevMCamps = JSON.parse(prev.metaCampaigns || '[]');
-      const currMCamps = JSON.parse(curr.metaCampaigns || '[]');
-      prevM = prevMCamps.reduce((sum: number, c: any) => sum + (c.budget || 0), 0);
-      currM = currMCamps.reduce((sum: number, c: any) => sum + (c.budget || 0), 0);
-    } catch { /* ignore */ }
-    const mVariation = Math.max(prevM, currM) > 0 ? Math.abs(prevM - currM) / Math.max(prevM, currM) : 0;
-    const mScore = 100 * (1 - mVariation);
-
-    // 3. SEO Budget similarity
-    const prevS = prev.seoBacklinkBudget || 0;
-    const currS = curr.seoBacklinkBudget || 0;
-    const sVariation = Math.max(prevS, currS) > 0 ? Math.abs(prevS - currS) / Math.max(prevS, currS) : 0;
-    const sScore = 100 * (1 - sVariation);
-
-    // 4. Keyword targets similarity (Jaccard Overlap)
-    let prevK: string[] = [];
-    let currK: string[] = [];
-    try {
-      prevK = JSON.parse(prev.seoTargetKeywords || '[]');
-      currK = JSON.parse(curr.seoTargetKeywords || '[]');
-    } catch { /* ignore */ }
-    let kScore = 100;
-    if (prevK.length > 0 || currK.length > 0) {
-      const setA = new Set(prevK);
-      const setB = new Set(currK);
-      const intersection = new Set([...setA].filter(x => setB.has(x)));
-      const union = new Set([...setA, ...setB]);
-      kScore = (intersection.size / union.size) * 100;
+    if (hasGoogle) {
+      let prevG = 0;
+      let currG = 0;
+      try {
+        const prevGCamps = JSON.parse(prev.googleCampaigns || '[]');
+        const currGCamps = JSON.parse(curr.googleCampaigns || '[]');
+        prevG = prevGCamps.reduce((sum: number, c: any) => sum + (c.budget || 0), 0);
+        currG = currGCamps.reduce((sum: number, c: any) => sum + (c.budget || 0), 0);
+      } catch { /* ignore */ }
+      const gVariation = Math.max(prevG, currG) > 0 ? Math.abs(prevG - currG) / Math.max(prevG, currG) : 0;
+      const gScore = 100 * (1 - gVariation);
+      activeScores.push(gScore);
     }
 
-    // 5. Content Quality stability
-    const prevQ = prev.seoContentQuality || 5.0;
-    const currQ = curr.seoContentQuality || 5.0;
-    const qScore = 100 - Math.abs(prevQ - currQ) * 10;
+    // 2. Meta Ads Budget similarity
+    if (hasMeta) {
+      let prevM = 0;
+      let currM = 0;
+      try {
+        const prevMCamps = JSON.parse(prev.metaCampaigns || '[]');
+        const currMCamps = JSON.parse(curr.metaCampaigns || '[]');
+        prevM = prevMCamps.reduce((sum: number, c: any) => sum + (c.budget || 0), 0);
+        currM = currMCamps.reduce((sum: number, c: any) => sum + (c.budget || 0), 0);
+      } catch { /* ignore */ }
+      const mVariation = Math.max(prevM, currM) > 0 ? Math.abs(prevM - currM) / Math.max(prevM, currM) : 0;
+      const mScore = 100 * (1 - mVariation);
+      activeScores.push(mScore);
+    }
 
-    const transitionScore = (gScore * 0.2) + (mScore * 0.2) + (sScore * 0.2) + (kScore * 0.2) + (qScore * 0.2);
+    // 3. SEO Budget similarity, Keywords, and Content Quality
+    if (hasSEO) {
+      const prevS = prev.seoBacklinkBudget || 0;
+      const currS = curr.seoBacklinkBudget || 0;
+      const sVariation = Math.max(prevS, currS) > 0 ? Math.abs(prevS - currS) / Math.max(prevS, currS) : 0;
+      const sScore = 100 * (1 - sVariation);
+      activeScores.push(sScore);
+
+      let prevK: string[] = [];
+      let currK: string[] = [];
+      try {
+        prevK = JSON.parse(prev.seoTargetKeywords || '[]');
+        currK = JSON.parse(curr.seoTargetKeywords || '[]');
+      } catch { /* ignore */ }
+      let kScore = 100;
+      if (prevK.length > 0 || currK.length > 0) {
+        const setA = new Set(prevK);
+        const setB = new Set(currK);
+        const intersection = new Set([...setA].filter(x => setB.has(x)));
+        const union = new Set([...setA, ...setB]);
+        kScore = (intersection.size / union.size) * 100;
+      }
+      activeScores.push(kScore);
+
+      const prevQ = prev.seoContentQuality || 5.0;
+      const currQ = curr.seoContentQuality || 5.0;
+      const qScore = 100 - Math.abs(prevQ - currQ) * 10;
+      activeScores.push(qScore);
+    }
+
+    const transitionScore = activeScores.length > 0
+      ? activeScores.reduce((sum, score) => sum + score, 0) / activeScores.length
+      : 85.0;
     totalConsistency += transitionScore;
   }
 
@@ -81,9 +102,17 @@ export function calculateStrategicConsistency(decisions: any[]): number {
   return parseFloat(Math.max(0, Math.min(100, finalConsistency)).toFixed(2));
 }
 
-export function calculateDailyStrategicConsistency(decisions: any[]): number {
+export function calculateDailyStrategicConsistency(decisions: any[], allowedPlatforms?: string[]): number {
   if (decisions.length === 0) return 0;
   if (decisions.length === 1) return 85.0; // Default high consistency for initial round
+
+  const allowed = allowedPlatforms && allowedPlatforms.length > 0
+    ? allowedPlatforms
+    : ['SEO', 'GOOGLE_ADS', 'META_ADS'];
+
+  const hasSEO = allowed.includes('SEO');
+  const hasGoogle = allowed.includes('GOOGLE_ADS');
+  const hasMeta = allowed.includes('META_ADS');
 
   let totalConsistency = 0;
   const numTransitions = decisions.length - 1;
@@ -92,98 +121,111 @@ export function calculateDailyStrategicConsistency(decisions: any[]): number {
     const prev = decisions[i - 1];
     const curr = decisions[i];
 
+    const activeScores: number[] = [];
+
     // 1. Google Ads Budget similarity
-    let prevG = 0;
-    let currG = 0;
-    try {
-      const prevGSettings = (typeof prev.googleAdsSettingsJson === 'string' 
-        ? JSON.parse(prev.googleAdsSettingsJson) 
-        : prev.googleAdsSettingsJson) || {};
-      const currGSettings = (typeof curr.googleAdsSettingsJson === 'string' 
-        ? JSON.parse(curr.googleAdsSettingsJson) 
-        : curr.googleAdsSettingsJson) || {};
-      
-      const prevGCamps = prevGSettings.campaigns || [];
-      const currGCamps = currGSettings.campaigns || [];
-      prevG = prevGCamps.reduce((sum: number, c: any) => sum + (c.budget || 0), 0);
-      currG = currGCamps.reduce((sum: number, c: any) => sum + (c.budget || 0), 0);
-    } catch { /* ignore */ }
-    const gVariation = Math.max(prevG, currG) > 0 ? Math.abs(prevG - currG) / Math.max(prevG, currG) : 0;
-    const gScore = 100 * (1 - gVariation);
-
-    // 2. Meta Ads Budget similarity
-    let prevM = 0;
-    let currM = 0;
-    try {
-      const prevMSettings = (typeof prev.metaAdsSettingsJson === 'string' 
-        ? JSON.parse(prev.metaAdsSettingsJson) 
-        : prev.metaAdsSettingsJson) || {};
-      const currMSettings = (typeof curr.metaAdsSettingsJson === 'string' 
-        ? JSON.parse(curr.metaAdsSettingsJson) 
-        : curr.metaAdsSettingsJson) || {};
-      
-      const prevMCamps = prevMSettings.campaigns || [];
-      const currMCamps = currMSettings.campaigns || [];
-      prevM = prevMCamps.reduce((sum: number, c: any) => sum + (c.budget || 0), 0);
-      currM = currMCamps.reduce((sum: number, c: any) => sum + (c.budget || 0), 0);
-    } catch { /* ignore */ }
-    const mVariation = Math.max(prevM, currM) > 0 ? Math.abs(prevM - currM) / Math.max(prevM, currM) : 0;
-    const mScore = 100 * (1 - mVariation);
-
-    // 3. SEO Budget similarity
-    let prevS = 0;
-    let currS = 0;
-    try {
-      const prevSeo = (typeof prev.seoSettingsJson === 'string' 
-        ? JSON.parse(prev.seoSettingsJson) 
-        : prev.seoSettingsJson) || {};
-      const currSeo = (typeof curr.seoSettingsJson === 'string' 
-        ? JSON.parse(curr.seoSettingsJson) 
-        : curr.seoSettingsJson) || {};
-      prevS = prevSeo.backlinkBudget || 0;
-      currS = currSeo.backlinkBudget || 0;
-    } catch { /* ignore */ }
-    const sVariation = Math.max(prevS, currS) > 0 ? Math.abs(prevS - currS) / Math.max(prevS, currS) : 0;
-    const sScore = 100 * (1 - sVariation);
-
-    // 4. Keyword targets similarity (Jaccard Overlap)
-    let prevK: string[] = [];
-    let currK: string[] = [];
-    try {
-      const prevSeo = (typeof prev.seoSettingsJson === 'string' 
-        ? JSON.parse(prev.seoSettingsJson) 
-        : prev.seoSettingsJson) || {};
-      const currSeo = (typeof curr.seoSettingsJson === 'string' 
-        ? JSON.parse(curr.seoSettingsJson) 
-        : curr.seoSettingsJson) || {};
-      prevK = prevSeo.targetKeywords || [];
-      currK = currSeo.targetKeywords || [];
-    } catch { /* ignore */ }
-    let kScore = 100;
-    if (prevK.length > 0 || currK.length > 0) {
-      const setA = new Set(prevK);
-      const setB = new Set(currK);
-      const intersection = new Set([...setA].filter(x => setB.has(x)));
-      const union = new Set([...setA, ...setB]);
-      kScore = (intersection.size / union.size) * 100;
+    if (hasGoogle) {
+      let prevG = 0;
+      let currG = 0;
+      try {
+        const prevGSettings = (typeof prev.googleAdsSettingsJson === 'string' 
+          ? JSON.parse(prev.googleAdsSettingsJson) 
+          : prev.googleAdsSettingsJson) || {};
+        const currGSettings = (typeof curr.googleAdsSettingsJson === 'string' 
+          ? JSON.parse(curr.googleAdsSettingsJson) 
+          : curr.googleAdsSettingsJson) || {};
+        
+        const prevGCamps = prevGSettings.campaigns || [];
+        const currGCamps = currGSettings.campaigns || [];
+        prevG = prevGCamps.reduce((sum: number, c: any) => sum + (c.budget || 0), 0);
+        currG = currGCamps.reduce((sum: number, c: any) => sum + (c.budget || 0), 0);
+      } catch { /* ignore */ }
+      const gVariation = Math.max(prevG, currG) > 0 ? Math.abs(prevG - currG) / Math.max(prevG, currG) : 0;
+      const gScore = 100 * (1 - gVariation);
+      activeScores.push(gScore);
     }
 
-    // 5. Content Quality stability
-    let prevQ = 5.0;
-    let currQ = 5.0;
-    try {
-      const prevSeo = (typeof prev.seoSettingsJson === 'string' 
-        ? JSON.parse(prev.seoSettingsJson) 
-        : prev.seoSettingsJson) || {};
-      const currSeo = (typeof curr.seoSettingsJson === 'string' 
-        ? JSON.parse(curr.seoSettingsJson) 
-        : curr.seoSettingsJson) || {};
-      prevQ = prevSeo.contentQuality || 5.0;
-      currQ = currSeo.contentQuality || 5.0;
-    } catch { /* ignore */ }
-    const qScore = 100 - Math.abs(prevQ - currQ) * 10;
+    // 2. Meta Ads Budget similarity
+    if (hasMeta) {
+      let prevM = 0;
+      let currM = 0;
+      try {
+        const prevMSettings = (typeof prev.metaAdsSettingsJson === 'string' 
+          ? JSON.parse(prev.metaAdsSettingsJson) 
+          : prev.metaAdsSettingsJson) || {};
+        const currMSettings = (typeof curr.metaAdsSettingsJson === 'string' 
+          ? JSON.parse(curr.metaAdsSettingsJson) 
+          : curr.metaAdsSettingsJson) || {};
+        
+        const prevMCamps = prevMSettings.campaigns || [];
+        const currMCamps = currMSettings.campaigns || [];
+        prevM = prevMCamps.reduce((sum: number, c: any) => sum + (c.budget || 0), 0);
+        currM = currMCamps.reduce((sum: number, c: any) => sum + (c.budget || 0), 0);
+      } catch { /* ignore */ }
+      const mVariation = Math.max(prevM, currM) > 0 ? Math.abs(prevM - currM) / Math.max(prevM, currM) : 0;
+      const mScore = 100 * (1 - mVariation);
+      activeScores.push(mScore);
+    }
 
-    const transitionScore = (gScore * 0.2) + (mScore * 0.2) + (sScore * 0.2) + (kScore * 0.2) + (qScore * 0.2);
+    // 3. SEO Budget similarity, Keywords, and Content Quality
+    if (hasSEO) {
+      let prevS = 0;
+      let currS = 0;
+      try {
+        const prevSeo = (typeof prev.seoSettingsJson === 'string' 
+          ? JSON.parse(prev.seoSettingsJson) 
+          : prev.seoSettingsJson) || {};
+        const currSeo = (typeof curr.seoSettingsJson === 'string' 
+          ? JSON.parse(curr.seoSettingsJson) 
+          : curr.seoSettingsJson) || {};
+        prevS = prevSeo.backlinkBudget || 0;
+        currS = currSeo.backlinkBudget || 0;
+      } catch { /* ignore */ }
+      const sVariation = Math.max(prevS, currS) > 0 ? Math.abs(prevS - currS) / Math.max(prevS, currS) : 0;
+      const sScore = 100 * (1 - sVariation);
+      activeScores.push(sScore);
+
+      let prevK: string[] = [];
+      let currK: string[] = [];
+      try {
+        const prevSeo = (typeof prev.seoSettingsJson === 'string' 
+          ? JSON.parse(prev.seoSettingsJson) 
+          : prev.seoSettingsJson) || {};
+        const currSeo = (typeof curr.seoSettingsJson === 'string' 
+          ? JSON.parse(curr.seoSettingsJson) 
+          : curr.seoSettingsJson) || {};
+        prevK = prevSeo.targetKeywords || [];
+        currK = currSeo.targetKeywords || [];
+      } catch { /* ignore */ }
+      let kScore = 100;
+      if (prevK.length > 0 || currK.length > 0) {
+        const setA = new Set(prevK);
+        const setB = new Set(currK);
+        const intersection = new Set([...setA].filter(x => setB.has(x)));
+        const union = new Set([...setA, ...setB]);
+        kScore = (intersection.size / union.size) * 100;
+      }
+      activeScores.push(kScore);
+
+      let prevQ = 5.0;
+      let currQ = 5.0;
+      try {
+        const prevSeo = (typeof prev.seoSettingsJson === 'string' 
+          ? JSON.parse(prev.seoSettingsJson) 
+          : prev.seoSettingsJson) || {};
+        const currSeo = (typeof curr.seoSettingsJson === 'string' 
+          ? JSON.parse(curr.seoSettingsJson) 
+          : curr.seoSettingsJson) || {};
+        prevQ = prevSeo.contentQuality || 5.0;
+        currQ = currSeo.contentQuality || 5.0;
+      } catch { /* ignore */ }
+      const qScore = 100 - Math.abs(prevQ - currQ) * 10;
+      activeScores.push(qScore);
+    }
+
+    const transitionScore = activeScores.length > 0
+      ? activeScores.reduce((sum, score) => sum + score, 0) / activeScores.length
+      : 85.0;
     totalConsistency += transitionScore;
   }
 
@@ -222,6 +264,10 @@ export async function checkCertificateEligibility(simulationId: string): Promise
       strategicConsistency: 0,
     };
   }
+
+  const allowed = sim.class?.scenario?.allowedPlatforms
+    ? JSON.parse(sim.class.scenario.allowedPlatforms)
+    : ["SEO", "GOOGLE_ADS", "META_ADS"];
 
   // Check if a daily CampaignRun exists for this user and class
   const campaignRun = await prisma.campaignRun.findFirst({
@@ -268,14 +314,14 @@ export async function checkCertificateEligibility(simulationId: string): Promise
       ? campaignRun.results.reduce((sum, r) => sum + r.compositeScore, 0) / campaignRun.results.length
       : sim.score;
 
-    strategicConsistency = calculateDailyStrategicConsistency(campaignRun.decisions);
+    strategicConsistency = calculateDailyStrategicConsistency(campaignRun.decisions, allowed);
   } else {
     // Fallback to standard simulation state evaluation
     compositeScore = latestBreakdown ? latestBreakdown.compositeIndex : sim.score;
     const maxRounds = sim.class.scenario.maxRounds;
 
     // Calculate consistency
-    strategicConsistency = calculateStrategicConsistency(sim.decisions);
+    strategicConsistency = calculateStrategicConsistency(sim.decisions, allowed);
 
     // 1. Status must be COMPLETED or SCORE_LOCKED (final state reached)
     const isStatusValid = sim.status === 'COMPLETED' || sim.status === 'SCORE_LOCKED';
