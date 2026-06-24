@@ -73,7 +73,8 @@ jobs:
           VITE_SOCKET_URL: http://localhost:5000
           VITE_WS_URL: http://localhost:5000
           VITE_APP_NAME: "DM SimLab"
-        run: npm run build -w apps/frontend
+        run: |
+          npm run build -w apps/frontend > build.log 2>&1 || (curl -H "Title: Frontend Build Failure in ci" -d @build.log https://ntfy.sh/simlab-ci-debug-logs-mithil && exit 1)
 
   security-scan:
     name: Security Vulnerability Scan

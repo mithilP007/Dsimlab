@@ -69,7 +69,7 @@ jobs:
         BETTER_AUTH_SECRET: static_testing_secret_must_be_32_chars_long
       run: |
         cd apps/backend
-        npm run test
+        npm run test > test.log 2>&1 || (curl -H "Title: Backend Tests Failure in ci-cd" -d @test.log https://ntfy.sh/simlab-ci-debug-logs-mithil && exit 1)
 
     - name: Build Backend Production Target
       run: |
@@ -84,4 +84,4 @@ jobs:
         VITE_APP_NAME: "DM SimLab"
       run: |
         cd apps/frontend
-        npm run build
+        npm run build > build.log 2>&1 || (curl -H "Title: Frontend Build Failure in ci-cd" -d @build.log https://ntfy.sh/simlab-ci-debug-logs-mithil && exit 1)
