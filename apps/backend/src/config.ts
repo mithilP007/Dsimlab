@@ -13,6 +13,9 @@ const envSchema = z.object({
   OLLAMA_HOST: z.string().url().default('http://127.0.0.1:11434'),
   OLLAMA_MODEL: z.string().default('qwen2.5:7b'),
   FRONTEND_URL: z.string().default('http://localhost:5173'),
+  // Comma-separated list of extra allowed origins (e.g. Vercel preview URLs).
+  // FRONTEND_URL is always included automatically.
+  CORS_ORIGINS: z.string().optional(),
   RATE_LIMIT_MAX: z.coerce.number().default(100),
   RATE_LIMIT_AUTH_MAX: z.coerce.number().default(20),
   ROUND_PROCESSING_MODE: z.enum(['immediate', 'delayed']).default('immediate'),

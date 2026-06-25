@@ -50,9 +50,20 @@ export const app = Fastify({
   logger: false, // We use custom Pino logger
 });
 
-// Configure CORS
+// Build allowed origins list: FRONTEND_URL + any extra comma-separated CORS_ORIGINS
+const corsOrigins: string[] = Array.from(new Set([
+  config.FRONTEND_URL,
+  ...(config.CORS_ORIGINS ? config.CORS_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean) : []),
+]));
+
+// Configure CORS — pass array so Fastify echoes the matching origin in each response
 app.register(cors, {
-  origin: config.FRONTEND_URL,
+  origin: (origin, cb) => {
+    // Allow requests with no origin (server-to-server, curl, Swagger UI)
+    if (!origin) return cb(null, true);
+    if (corsOrigins.includes(origin)) return cb(null, true);
+    cb(new Error(`CORS: origin ${origin} not allowed`), false);
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
 });
@@ -109,7 +120,7 @@ app.addHook('preHandler', async (request, reply) => {
     const origin = request.headers.origin;
     const referer = request.headers.referer;
 
-    if (origin && origin !== config.FRONTEND_URL) {
+    if (origin && !corsOrigins.includes(origin)) {
       reply.status(403).send({
         success: false,
         error: 'CSRF Protection: Invalid origin',
@@ -120,7 +131,7 @@ app.addHook('preHandler', async (request, reply) => {
       return;
     }
 
-    if (!origin && referer && !referer.startsWith(config.FRONTEND_URL)) {
+    if (!origin && referer && !corsOrigins.some((o) => referer.startsWith(o))) {
       reply.status(403).send({
         success: false,
         error: 'CSRF Protection: Invalid referer',
