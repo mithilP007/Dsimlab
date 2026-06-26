@@ -81,23 +81,25 @@ export async function classRoutes(fastify: FastifyInstance) {
    */
   fastify.get('/', { preHandler: [requireRole([UserRole.INSTRUCTOR, UserRole.ADMIN])] }, async (request, reply) => {
     const authReq = request as AuthenticatedRequest;
+    const isAdmin = authReq.user!.role === UserRole.ADMIN || authReq.user!.role === 'ADMIN';
 
-    const classes = await prisma.class.findMany({
-      where: {
-        instructorId: authReq.user!.id,
-      },
-      include: {
-        scenario: true,
-        _count: {
-          select: { students: true },
+    try {
+      const classes = await prisma.class.findMany({
+        where: isAdmin ? undefined : { instructorId: authReq.user!.id },
+        include: {
+          scenario: true,
+          instructor: isAdmin ? { select: { id: true, name: true, email: true } } : undefined,
+          _count: {
+            select: { students: true },
+          },
         },
-      },
-    });
+        orderBy: { createdAt: 'desc' },
+      });
 
-    return reply.status(200).send({
-      success: true,
-      classes,
-    });
+      return reply.status(200).send({ success: true, classes });
+    } catch (err) {
+      return reply.status(200).send({ success: true, classes: [] });
+    }
   });
 
   /**

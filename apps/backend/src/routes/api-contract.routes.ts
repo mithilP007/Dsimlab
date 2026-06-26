@@ -1524,14 +1524,36 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
     }
   }, async (request, reply) => {
     const authReq = request as AuthenticatedRequest;
+    const role = authReq.user!.role;
 
-    if (authReq.user!.role === UserRole.INSTRUCTOR || authReq.user!.role === UserRole.ADMIN) {
-      const classes = await prisma.class.findMany({
-        where: { instructorId: authReq.user!.id },
-        include: { scenario: true }
-      });
-      return reply.status(200).send({ success: true, classes });
-    } else {
+    try {
+      if (role === UserRole.ADMIN || role === 'ADMIN') {
+        // Admin sees all classes
+        const classes = await prisma.class.findMany({
+          include: {
+            scenario: true,
+            instructor: {
+              select: { id: true, name: true, email: true }
+            },
+            _count: { select: { students: true } }
+          },
+          orderBy: { createdAt: 'desc' }
+        });
+        return reply.status(200).send({ success: true, classes });
+      }
+
+      if (role === UserRole.INSTRUCTOR || role === 'INSTRUCTOR') {
+        const classes = await prisma.class.findMany({
+          where: { instructorId: authReq.user!.id },
+          include: {
+            scenario: true,
+            _count: { select: { students: true } }
+          },
+          orderBy: { createdAt: 'desc' }
+        });
+        return reply.status(200).send({ success: true, classes });
+      }
+
       // Student gets their enrolled class
       const classId = authReq.user!.classId;
       if (!classId) return reply.status(200).send({ success: true, classes: [] });
@@ -1541,11 +1563,7 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
         include: {
           scenario: true,
           instructor: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-            },
+            select: { id: true, name: true, email: true },
           },
         },
       });
@@ -1554,6 +1572,8 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
         success: true,
         classes: studentClass ? [studentClass] : []
       });
+    } catch (err) {
+      return reply.status(200).send({ success: true, classes: [] });
     }
   });
 
