@@ -1035,7 +1035,7 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
           type: 'object',
           properties: {
             success: { type: 'boolean' },
-            metrics: { type: 'object' }
+            metrics: { type: 'object', additionalProperties: true }
           }
         }
       }
@@ -1102,7 +1102,7 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
           type: 'object',
           properties: {
             success: { type: 'boolean' },
-            benchmarks: { type: 'array', items: { type: 'object' } }
+            benchmarks: { type: 'array', items: { type: 'object', additionalProperties: true } }
           }
         }
       }
@@ -1142,7 +1142,7 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
           type: 'object',
           properties: {
             success: { type: 'boolean' },
-            decision: { type: 'object' }
+            decision: { type: 'object', additionalProperties: true }
           }
         }
       }
@@ -1220,7 +1220,7 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
           type: 'object',
           properties: {
             success: { type: 'boolean' },
-            metrics: { type: 'object' }
+            metrics: { type: 'object', additionalProperties: true }
           }
         }
       }
@@ -1333,7 +1333,7 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
           type: 'object',
           properties: {
             success: { type: 'boolean' },
-            placements: { type: 'array', items: { type: 'object' } }
+            placements: { type: 'array', items: { type: 'object', additionalProperties: true } }
           }
         }
       }
@@ -1372,7 +1372,7 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
           type: 'object',
           properties: {
             success: { type: 'boolean' },
-            metrics: { type: 'object' }
+            metrics: { type: 'object', additionalProperties: true }
           }
         }
       }
@@ -1517,7 +1517,7 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
           type: 'object',
           properties: {
             success: { type: 'boolean' },
-            classes: { type: 'array', items: { type: 'object' } }
+            classes: { type: 'array', items: { type: 'object', additionalProperties: true } }
           }
         }
       }
@@ -1599,7 +1599,7 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
           type: 'object',
           properties: {
             success: { type: 'boolean' },
-            students: { type: 'array', items: { type: 'object' } }
+            students: { type: 'array', items: { type: 'object', additionalProperties: true } }
           }
         }
       }
@@ -1928,7 +1928,7 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
           type: 'object',
           properties: {
             success: { type: 'boolean' },
-            decisions: { type: 'array', items: { type: 'object' } }
+            decisions: { type: 'array', items: { type: 'object', additionalProperties: true } }
           }
         }
       }
@@ -2071,7 +2071,7 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
           type: 'object',
           properties: {
             success: { type: 'boolean' },
-            comparison: { type: 'object' }
+            comparison: { type: 'object', additionalProperties: true }
           }
         }
       }
