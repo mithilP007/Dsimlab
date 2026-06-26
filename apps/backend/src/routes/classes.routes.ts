@@ -118,6 +118,26 @@ export async function classesRoutes(fastify: FastifyInstance) {
       });
     }
 
+    const classExists = await prisma.class.findUnique({
+      where: { id: classId }
+    });
+
+    if (!classExists) {
+      // Clean up stale classId on student's user profile
+      await prisma.user.update({
+        where: { id: authReq.user!.id },
+        data: { classId: null, status: 'active' }
+      });
+      authReq.user!.classId = null;
+      authReq.user!.status = 'active';
+
+      return reply.status(200).send({
+        success: true,
+        status: 'NONE',
+        message: 'Your previous class was deleted or no longer exists.'
+      });
+    }
+
     const enrollment = await prisma.classEnrollment.findFirst({
       where: { studentId: authReq.user!.id, classId },
       orderBy: { requestedAt: 'desc' }
@@ -153,11 +173,22 @@ export async function classesRoutes(fastify: FastifyInstance) {
     const authReq = request as AuthenticatedRequest;
     const { classId } = request.params as { classId: string };
 
-    const targetClass = await prisma.class.findFirst({
-      where: { id: classId, instructorId: authReq.user!.id }
+    const targetClass = await prisma.class.findUnique({
+      where: { id: classId }
     });
 
     if (!targetClass) {
+      throw new NotFoundError('Class cohort not found.');
+    }
+
+    const isInstructor = authReq.user!.role === UserRole.INSTRUCTOR || authReq.user!.role === 'INSTRUCTOR';
+    const isAdmin = authReq.user!.role === UserRole.ADMIN || authReq.user!.role === 'ADMIN';
+
+    if (isInstructor && targetClass.instructorId !== authReq.user!.id) {
+      throw new ForbiddenError('Unauthorized to access this class cohort.');
+    }
+
+    if (!isAdmin && !isInstructor) {
       throw new ForbiddenError('Unauthorized to access this class cohort.');
     }
 
@@ -166,21 +197,35 @@ export async function classesRoutes(fastify: FastifyInstance) {
       orderBy: { requestedAt: 'asc' }
     });
 
-    // Resolve student names from User table
-    const requestsWithNames = await Promise.all(pendingRequests.map(async (req) => {
-      const student = await prisma.user.findUnique({
-        where: { id: req.studentId },
-        select: { name: true }
-      });
-      return {
-        ...req,
-        studentName: student?.name || 'Unknown Student'
-      };
+    // Resolve student names from User table safely
+    const requestsWithNames = await Promise.all((pendingRequests || []).map(async (req) => {
+      if (!req || !req.studentId) {
+        return {
+          ...req,
+          studentName: 'Unknown Student'
+        };
+      }
+      try {
+        const student = await prisma.user.findUnique({
+          where: { id: req.studentId },
+          select: { name: true }
+        });
+        return {
+          ...req,
+          studentName: student?.name || 'Unknown Student'
+        };
+      } catch (err) {
+        return {
+          ...req,
+          studentName: 'Unknown Student'
+        };
+      }
     }));
 
     return reply.status(200).send({
       success: true,
-      requests: requestsWithNames
+      requests: requestsWithNames || [],
+      pendingCount: requestsWithNames ? requestsWithNames.length : 0
     });
   });
 

@@ -855,13 +855,26 @@ app.register(apiContractRoutes);
 
 // Global Error Handler
 app.setErrorHandler((error, request, reply) => {
-  const statusCode = error.validation ? 400 : (error instanceof AppError ? error.statusCode : 500);
-  const code = error.validation ? 'VALIDATION_ERROR' : ((error as any).code || 'INTERNAL_ERROR');
-  const message = error.validation
-    ? error.message
-    : (error instanceof AppError || config.NODE_ENV !== 'production' ? error.message : 'An unexpected error occurred.');
+  const isExpectedError = !!(
+    (error as any).validation ||
+    (error as any).statusCode ||
+    error instanceof AppError ||
+    ['ValidationError', 'NotFoundError', 'ForbiddenError', 'AuthError', 'SimulationError'].includes(error.constructor.name)
+  );
 
-  if (statusCode === 500 && !error.validation && !(error instanceof AppError)) {
+  const statusCode = isExpectedError
+    ? ((error as any).statusCode || ((error as any).validation ? 400 : 500))
+    : 500;
+
+  const code = (error as any).validation
+    ? 'VALIDATION_ERROR'
+    : ((error as any).code || (isExpectedError ? 'EXPECTED_ERROR' : 'INTERNAL_ERROR'));
+
+  const message = (error as any).validation
+    ? error.message
+    : (isExpectedError || config.NODE_ENV !== 'production' ? error.message : 'An unexpected error occurred.');
+
+  if (statusCode === 500) {
     logger.error({ err: error, path: request.url }, 'Unhandled internal server error');
   } else {
     logger.warn({ err: error, path: request.url }, error.message);

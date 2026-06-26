@@ -120,6 +120,82 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
   });
 
   /**
+   * GET /api/simulations
+   * Gets all simulation states based on user role
+   */
+  fastify.get('/api/simulations', {
+    preHandler: [requireAuth],
+    schema: {
+      description: 'Get all simulation states based on user role',
+      tags: ['Simulation'],
+      security: [{ cookieAuth: [] }],
+      response: {
+        200: {
+          description: 'Simulation states list',
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string' },
+              userId: { type: 'string' },
+              classId: { type: 'string' },
+              status: { type: 'string' },
+              currentRound: { type: 'number' },
+              isCompleted: { type: 'boolean' },
+              cumulativeSpend: { type: 'number' },
+              cumulativeRevenue: { type: 'number' },
+              score: { type: 'number' }
+            }
+          }
+        }
+      }
+    }
+  }, async (request, reply) => {
+    const authReq = request as AuthenticatedRequest;
+    const { role, id: userId, classId } = authReq.user!;
+
+    let simulations: any[] = [];
+
+    try {
+      if (role === UserRole.ADMIN || role === 'ADMIN') {
+        simulations = await prisma.simulationState.findMany({
+          orderBy: { createdAt: 'desc' }
+        });
+      } else if (role === UserRole.INSTRUCTOR || role === 'INSTRUCTOR') {
+        simulations = await prisma.simulationState.findMany({
+          where: {
+            class: {
+              instructorId: userId
+            }
+          },
+          orderBy: { createdAt: 'desc' }
+        });
+      } else if (role === 'STUDENT_COLLEGE' || role === 'student-college') {
+        if (classId) {
+          simulations = await prisma.simulationState.findMany({
+            where: {
+              userId,
+              classId
+            },
+            orderBy: { createdAt: 'desc' }
+          });
+        }
+      } else if (role === 'INDIVIDUAL' || role === 'individual') {
+        simulations = await prisma.simulationState.findMany({
+          where: {
+            userId
+          },
+          orderBy: { createdAt: 'desc' }
+        });
+      }
+      
+      return reply.status(200).send(simulations || []);
+    } catch (err) {
+      return reply.status(200).send([]);
+    }
+  });
+
+  /**
    * POST /api/simulations/setup-sandbox
    * Sets up or resets a sandbox simulation with a chosen path (beginner, intermediate, advanced)
    */

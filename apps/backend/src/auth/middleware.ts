@@ -64,16 +64,33 @@ export async function requireAuth(req: FastifyRequest, reply: FastifyReply) {
       }));
       return;
     }
+
+    let verifiedClassId = dbUser.classId || null;
+    let verifiedStatus = dbUser.status || 'active';
+
+    if (verifiedClassId) {
+      const clsExists = await prisma.class.findUnique({
+        where: { id: verifiedClassId }
+      });
+      if (!clsExists) {
+        await prisma.user.update({
+          where: { id: dbUser.id },
+          data: { classId: null, status: 'active' }
+        });
+        verifiedClassId = null;
+        verifiedStatus = 'active';
+      }
+    }
     
     const userPayload = {
       id: dbUser.id,
       email: dbUser.email,
       name: dbUser.name,
       role: dbUser.role || 'STUDENT_COLLEGE',
-      classId: dbUser.classId || null,
+      classId: verifiedClassId,
       institution: dbUser.institution || null,
       planType: dbUser.planType || null,
-      status: dbUser.status || 'active',
+      status: verifiedStatus,
     };
 
     (req as AuthenticatedRequest).user = userPayload;

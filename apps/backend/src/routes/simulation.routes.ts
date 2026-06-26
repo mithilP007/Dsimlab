@@ -3,6 +3,7 @@ import { requireAuth, requireRole, AuthenticatedRequest } from '../auth/middlewa
 import { prisma } from '../db/client';
 import { cacheService } from '../utils/caching';
 import { UserRole } from '../auth/roles';
+import { logger } from '../utils/logger';
 
 import { processSimulationRound } from '../services/simulation/engine';
 import { ValidationError, NotFoundError } from '../utils/errors';
@@ -99,10 +100,9 @@ export async function simulationRoutes(fastify: FastifyInstance) {
    */
   fastify.get('/state', { preHandler: [requireAuth] }, async (request, reply) => {
     const authReq = request as AuthenticatedRequest;
-    const classId = authReq.user!.classId;
+    const { role, id: userId, classId } = authReq.user!;
 
-    // Return safe empty state instead of throwing — dashboard must load even before simulation is started
-    if (!classId) {
+    if (role === UserRole.ADMIN || role === 'ADMIN' || role === UserRole.INSTRUCTOR || role === 'INSTRUCTOR') {
       return reply.status(200).send({
         success: true,
         hasState: false,
@@ -110,29 +110,61 @@ export async function simulationRoutes(fastify: FastifyInstance) {
       });
     }
 
-    const state = await prisma.simulationState.findFirst({
-      where: {
-        userId: authReq.user!.id,
-        classId: classId,
-      },
-      include: {
-        progress: true,
-        class: {
+    let state = null;
+
+    try {
+      if (classId) {
+        state = await prisma.simulationState.findFirst({
+          where: {
+            userId: userId,
+            classId: classId,
+          },
           include: {
-            scenario: true,
-            instructor: {
-              select: {
-                id: true,
-                name: true,
-                email: true,
+            progress: true,
+            class: {
+              include: {
+                scenario: true,
+                instructor: {
+                  select: {
+                    id: true,
+                    name: true,
+                    email: true,
+                  },
+                },
               },
             },
           },
-        },
-      },
-    });
+        });
+      }
 
-    // Return null state gracefully — frontend should prompt user to start simulation
+      if (!state && (role === 'INDIVIDUAL' || role === 'individual')) {
+        // Fallback for individuals: fetch any simulation state they have
+        state = await prisma.simulationState.findFirst({
+          where: {
+            userId: userId,
+          },
+          include: {
+            progress: true,
+            class: {
+              include: {
+                scenario: true,
+                instructor: {
+                  select: {
+                    id: true,
+                    name: true,
+                    email: true,
+                  },
+                },
+              },
+            },
+          },
+          orderBy: { createdAt: 'desc' }
+        });
+      }
+    } catch (err) {
+      logger.error(err, 'Failed to fetch simulation state');
+    }
+
     if (!state) {
       return reply.status(200).send({
         success: true,
