@@ -133,9 +133,39 @@ export async function classRoutes(fastify: FastifyInstance) {
             email: true,
             status: true,
             simulations: {
-              include: {
-                progress: true,
+              select: {
+                id: true,
+                status: true,
+                currentRound: true,
+                isCompleted: true,
+                score: true,
+                cumulativeSpend: true,
+                cumulativeRevenue: true,
+                createdAt: true,
+                progress: {
+                  select: {
+                    id: true,
+                    currentDay: true,
+                    totalDays: true,
+                    status: true,
+                    lastSubmittedAt: true,
+                    nextResultAt: true,
+                    completedAt: true,
+                  }
+                },
                 scoreBreakdowns: {
+                  select: {
+                    id: true,
+                    round: true,
+                    seoScore: true,
+                    googleAdsScore: true,
+                    metaAdsScore: true,
+                    budgetScore: true,
+                    revenueScore: true,
+                    compositeIndex: true,
+                    percentileRank: true,
+                    createdAt: true,
+                  },
                   orderBy: { round: 'desc' },
                   take: 1,
                 }
