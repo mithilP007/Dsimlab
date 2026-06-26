@@ -61,8 +61,8 @@ export async function adminRoutes(fastify: FastifyInstance) {
     const recentActivity = recentLogs.map(log => ({
       id: log.id,
       timestamp: log.createdAt,
-      actorName: log.user.name,
-      actorEmail: log.user.email,
+      actorName: log.user?.name ?? 'Deleted User',
+      actorEmail: log.user?.email ?? 'unknown',
       action: log.action,
       details: log.details
     }));

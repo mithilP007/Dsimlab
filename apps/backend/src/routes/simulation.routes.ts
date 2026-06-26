@@ -101,8 +101,13 @@ export async function simulationRoutes(fastify: FastifyInstance) {
     const authReq = request as AuthenticatedRequest;
     const classId = authReq.user!.classId;
 
+    // Return safe empty state instead of throwing — dashboard must load even before simulation is started
     if (!classId) {
-      throw new ValidationError('Student is not registered to a class room.');
+      return reply.status(200).send({
+        success: true,
+        hasState: false,
+        state: null,
+      });
     }
 
     const state = await prisma.simulationState.findFirst({
@@ -127,12 +132,18 @@ export async function simulationRoutes(fastify: FastifyInstance) {
       },
     });
 
+    // Return null state gracefully — frontend should prompt user to start simulation
     if (!state) {
-      throw new NotFoundError('No active simulation state initialized yet.');
+      return reply.status(200).send({
+        success: true,
+        hasState: false,
+        state: null,
+      });
     }
 
     return reply.status(200).send({
       success: true,
+      hasState: true,
       state,
     });
   });

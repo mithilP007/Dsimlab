@@ -241,12 +241,18 @@ export async function campaignRoutes(fastify: FastifyInstance) {
         include: { scenario: true, assignment: true },
       });
 
+      // Return null gracefully — frontend should prompt user to start a campaign
       if (!latestCompleted) {
-        throw new NotFoundError('No campaign run found. Call /start first.');
+        return reply.status(200).send({
+          success: true,
+          hasRun: false,
+          run: null,
+        });
       }
 
       return reply.status(200).send({
         success: true,
+        hasRun: true,
         run: latestCompleted,
       });
     }
