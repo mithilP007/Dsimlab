@@ -48,6 +48,7 @@ import { assignmentRoutes } from './routes/assignments.routes';
 
 export const app = Fastify({
   logger: false, // We use custom Pino logger
+  trustProxy: true, // Required on Render/Heroku: trusts X-Forwarded-Proto so req.protocol = 'https'
 });
 
 // Build allowed origins list: FRONTEND_URL + any extra comma-separated CORS_ORIGINS
@@ -416,9 +417,8 @@ app.get('/api/auth/me', async (req, reply) => {
 
 app.post('/api/auth/register/individual', async (req, reply) => {
   const method = 'POST';
-  const protocol = req.protocol;
-  const host = req.hostname;
-  const url = `${protocol}://${host}/api/auth/sign-up/email`;
+  // Use BETTER_AUTH_URL (the public HTTPS URL) so better-auth sets Secure+SameSite=None cookies
+  const url = `${config.BETTER_AUTH_URL}/api/auth/sign-up/email`;
 
   const headers = new Headers();
   Object.entries(req.headers).forEach(([key, val]) => {
@@ -541,9 +541,8 @@ app.post('/api/auth/register/individual', async (req, reply) => {
 
 app.post('/api/auth/register/student', async (req, reply) => {
   const method = 'POST';
-  const protocol = req.protocol;
-  const host = req.hostname;
-  const url = `${protocol}://${host}/api/auth/sign-up/email`;
+  // Use BETTER_AUTH_URL (the public HTTPS URL) so better-auth sets Secure+SameSite=None cookies
+  const url = `${config.BETTER_AUTH_URL}/api/auth/sign-up/email`;
 
   const headers = new Headers();
   Object.entries(req.headers).forEach(([key, val]) => {
@@ -643,9 +642,8 @@ app.post('/api/auth/register/student', async (req, reply) => {
 
 app.post('/api/auth/register/instructor', async (req, reply) => {
   const method = 'POST';
-  const protocol = req.protocol;
-  const host = req.hostname;
-  const url = `${protocol}://${host}/api/auth/sign-up/email`;
+  // Use BETTER_AUTH_URL (the public HTTPS URL) so better-auth sets Secure+SameSite=None cookies
+  const url = `${config.BETTER_AUTH_URL}/api/auth/sign-up/email`;
 
   const headers = new Headers();
   Object.entries(req.headers).forEach(([key, val]) => {
@@ -704,10 +702,10 @@ app.all('/api/auth/*', {
   }
 }, async (req, reply) => {
   const method = req.method;
-  const protocol = req.protocol;
-  const host = req.hostname;
   const path = req.raw.url || '';
-  const url = `${protocol}://${host}${path}`;
+  // Use BETTER_AUTH_URL (the public HTTPS URL) so better-auth sets Secure+SameSite=None cookies
+  // On Render, req.protocol is 'http' (internal) which breaks cross-origin cookie security
+  const url = `${config.BETTER_AUTH_URL}${path}`;
 
   const isSignIn = path.includes('sign-in/email');
   let email = '';

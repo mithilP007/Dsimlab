@@ -28,6 +28,19 @@ export const auth = betterAuth({
   advanced: {
     cookiePrefix: 'simlab',
     useSecureCookies: config.NODE_ENV === 'production',
+    // Cross-origin cookies (Vercel → Render) require SameSite=None + Secure.
+    // Without this, browsers silently drop the cookie and every /me call returns 401.
+    crossSubdomainCookies: {
+      enabled: config.NODE_ENV === 'production',
+    },
+    defaultCookieAttributes: config.NODE_ENV === 'production'
+      ? {
+          sameSite: 'none' as const,
+          secure: true,
+          httpOnly: true,
+          path: '/',
+        }
+      : undefined,
   },
   // Map custom fields like role
   user: {
