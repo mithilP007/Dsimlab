@@ -31,6 +31,28 @@ async function registerAndLogin(email, name, role = 'STUDENT_COLLEGE', classId =
     data: { role, status: 'active', emailVerified: true, classId }
   });
 
+  if (classId && role === 'STUDENT_COLLEGE') {
+    const existing = await prisma.classEnrollment.findFirst({
+      where: { studentId: user.id, classId }
+    });
+    if (existing) {
+      await prisma.classEnrollment.update({
+        where: { id: existing.id },
+        data: { status: 'ACTIVE', approvedAt: new Date() }
+      });
+    } else {
+      await prisma.classEnrollment.create({
+        data: {
+          classId,
+          studentId: user.id,
+          studentEmail: user.email,
+          status: 'ACTIVE',
+          approvedAt: new Date()
+        }
+      });
+    }
+  }
+
   // 2. SignIn to get session cookie
   const loginRes = await axios.post(`${BACKEND_URL}/api/auth/sign-in/email`, {
     email,
