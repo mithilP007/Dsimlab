@@ -19,6 +19,7 @@ import { cacheService } from './utils/caching';
 import { bruteForceService } from './auth/brute-force';
 import { errorReportRoutes } from './routes/error-report.routes';
 import { monitoring } from './utils/monitoring';
+import { isAllowedOrigin } from './utils/origin';
 
 // Route Imports
 import { healthRoutes } from './routes/health';
@@ -51,22 +52,12 @@ export const app = Fastify({
   trustProxy: true, // Required on Render/Heroku: trusts X-Forwarded-Proto so req.protocol = 'https'
 });
 
-// // Build allowed origins list: FRONTEND_URL + any extra comma-separated CORS_ORIGINS
-const corsOrigins: string[] = Array.from(new Set([
-  config.FRONTEND_URL,
-  ...(config.CORS_ORIGINS ? config.CORS_ORIGINS.split(',') : []),
-]
-  .map((o) => o.trim().replace(/\/+$/, ''))
-  .filter(Boolean)
-));
-
-// Configure CORS — pass array so Fastify echoes the matching origin in each response
+// Configure CORS — pass callback checking matches and patterns dynamically
 app.register(cors, {
   origin: (origin, cb) => {
     // Allow requests with no origin (server-to-server, curl, Swagger UI)
     if (!origin) return cb(null, true);
-    const normalizedOrigin = origin.trim().replace(/\/+$/, '');
-    if (corsOrigins.includes(normalizedOrigin)) return cb(null, true);
+    if (isAllowedOrigin(origin)) return cb(null, true);
     cb(null, false);
   },
   credentials: true,
@@ -127,8 +118,7 @@ app.addHook('preHandler', async (request, reply) => {
     const referer = request.headers.referer;
 
     if (origin) {
-      const normalizedOrigin = origin.trim().replace(/\/+$/, '');
-      if (!corsOrigins.includes(normalizedOrigin)) {
+      if (!isAllowedOrigin(origin)) {
         reply.status(403).send({
           success: false,
           error: 'CSRF Protection: Invalid origin',
@@ -141,8 +131,13 @@ app.addHook('preHandler', async (request, reply) => {
     }
 
     if (!origin && referer) {
-      const normalizedReferer = referer.trim().replace(/\/+$/, '');
-      if (!corsOrigins.some((o) => normalizedReferer.startsWith(o))) {
+      let refererOrigin = '';
+      try {
+        refererOrigin = new URL(referer).origin;
+      } catch {
+        refererOrigin = referer;
+      }
+      if (!isAllowedOrigin(refererOrigin)) {
         reply.status(403).send({
           success: false,
           error: 'CSRF Protection: Invalid referer',

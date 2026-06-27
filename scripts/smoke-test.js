@@ -73,13 +73,13 @@ async function login(email, password) {
   return { status: res.status, body: res.body, cookie: cookies, cookieExists };
 }
 
-async function testCors(origin) {
+async function testCors(origin, path = '/api/auth/sign-in/email') {
   try {
-    const res = await request('/health', {
+    const res = await request(path, {
       method: 'OPTIONS',
       headers: {
         'Origin': origin,
-        'Access-Control-Request-Method': 'GET',
+        'Access-Control-Request-Method': 'POST',
         'Access-Control-Request-Headers': 'content-type',
       }
     });
@@ -236,6 +236,7 @@ async function main() {
   // CORS Policy Preflight Checks
   const frontendOrigins = [
     'https://dsimlab-frontend.vercel.app',
+    'https://dsimlab-frontend-3daufp2bd-mithilp007s-projects.vercel.app',
     'https://dsimlab-frontend-6o8f6ggd4-mithilp007s-projects.vercel.app'
   ];
 
@@ -247,6 +248,22 @@ async function main() {
     } else {
       console.log(`CORS Preflight [${origin}]: REFUSED (Allow-Origin: ${corsResult.allowOrigin}, Status: ${corsResult.status})`);
       resultsTable.push({ name: `CORS Preflight Origin: ${origin}`, status: 'FAIL', httpCode: corsResult.status || 'ERR', notes: corsResult.error || `Origin ${corsResult.allowOrigin} mismatch` });
+    }
+  }
+
+  const blockedOrigins = [
+    'https://random-app.vercel.app'
+  ];
+
+  for (const origin of blockedOrigins) {
+    const corsResult = await testCors(origin);
+    const pass = !corsResult.ok && corsResult.status !== 500;
+    if (pass) {
+      console.log(`CORS Preflight [${origin}]: BLOCKED CLEANLY (Status: ${corsResult.status})`);
+      resultsTable.push({ name: `CORS Preflight Origin: ${origin} (Blocked)`, status: 'PASS', httpCode: corsResult.status, notes: 'Correctly blocked without server error' });
+    } else {
+      console.log(`CORS Preflight [${origin}]: FAILURE (Allow-Origin: ${corsResult.allowOrigin}, Status: ${corsResult.status})`);
+      resultsTable.push({ name: `CORS Preflight Origin: ${origin} (Blocked)`, status: 'FAIL', httpCode: corsResult.status || 'ERR', notes: corsResult.error || `Allowed unexpectedly or returned 500` });
     }
   }
 

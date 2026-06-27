@@ -2,12 +2,13 @@ import { betterAuth } from 'better-auth';
 import { prismaAdapter } from '@better-auth/prisma-adapter';
 import { prisma } from '../db/client';
 import { config } from '../config';
+import { getAllowedOrigins } from '../utils/origin';
 
-// Build the full list of trusted origins from FRONTEND_URL + optional CORS_ORIGINS list
-const extraOrigins = config.CORS_ORIGINS
-  ? config.CORS_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean)
-  : [];
-const allTrustedOrigins = Array.from(new Set([config.FRONTEND_URL, ...extraOrigins]));
+// Build the full list of trusted origins from static allowed list + Vercel preview wildcard pattern
+const allTrustedOrigins = [
+  ...getAllowedOrigins(),
+  'https://dsimlab-frontend-*-mithilp007s-projects.vercel.app',
+];
 
 export const auth = betterAuth({
   database: prismaAdapter(prisma, {
