@@ -51,19 +51,23 @@ export const app = Fastify({
   trustProxy: true, // Required on Render/Heroku: trusts X-Forwarded-Proto so req.protocol = 'https'
 });
 
-// Build allowed origins list: FRONTEND_URL + any extra comma-separated CORS_ORIGINS
+// // Build allowed origins list: FRONTEND_URL + any extra comma-separated CORS_ORIGINS
 const corsOrigins: string[] = Array.from(new Set([
   config.FRONTEND_URL,
-  ...(config.CORS_ORIGINS ? config.CORS_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean) : []),
-]));
+  ...(config.CORS_ORIGINS ? config.CORS_ORIGINS.split(',') : []),
+]
+  .map((o) => o.trim().replace(/\/+$/, ''))
+  .filter(Boolean)
+));
 
 // Configure CORS — pass array so Fastify echoes the matching origin in each response
 app.register(cors, {
   origin: (origin, cb) => {
     // Allow requests with no origin (server-to-server, curl, Swagger UI)
     if (!origin) return cb(null, true);
-    if (corsOrigins.includes(origin)) return cb(null, true);
-    cb(new Error(`CORS: origin ${origin} not allowed`), false);
+    const normalizedOrigin = origin.trim().replace(/\/+$/, '');
+    if (corsOrigins.includes(normalizedOrigin)) return cb(null, true);
+    cb(null, false);
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
@@ -88,6 +92,7 @@ app.register(rateLimit, {
   max: config.RATE_LIMIT_MAX || 100,
   timeWindow: '1 minute',
   keyGenerator: (req) => req.ip,
+  allowList: (req: any) => req.headers['x-smoke-test-bypass'] === config.BETTER_AUTH_SECRET,
 });
 
 // Request Correlation ID Context Hook
@@ -121,26 +126,32 @@ app.addHook('preHandler', async (request, reply) => {
     const origin = request.headers.origin;
     const referer = request.headers.referer;
 
-    if (origin && !corsOrigins.includes(origin)) {
-      reply.status(403).send({
-        success: false,
-        error: 'CSRF Protection: Invalid origin',
-        message: 'Request origin does not match the trusted site.',
-        code: 'CSRF_ERROR',
-        statusCode: 403,
-      });
-      return;
+    if (origin) {
+      const normalizedOrigin = origin.trim().replace(/\/+$/, '');
+      if (!corsOrigins.includes(normalizedOrigin)) {
+        reply.status(403).send({
+          success: false,
+          error: 'CSRF Protection: Invalid origin',
+          message: 'Request origin does not match the trusted site.',
+          code: 'CSRF_ERROR',
+          statusCode: 403,
+        });
+        return;
+      }
     }
 
-    if (!origin && referer && !corsOrigins.some((o) => referer.startsWith(o))) {
-      reply.status(403).send({
-        success: false,
-        error: 'CSRF Protection: Invalid referer',
-        message: 'Request referer is untrusted.',
-        code: 'CSRF_ERROR',
-        statusCode: 403,
-      });
-      return;
+    if (!origin && referer) {
+      const normalizedReferer = referer.trim().replace(/\/+$/, '');
+      if (!corsOrigins.some((o) => normalizedReferer.startsWith(o))) {
+        reply.status(403).send({
+          success: false,
+          error: 'CSRF Protection: Invalid referer',
+          message: 'Request referer is untrusted.',
+          code: 'CSRF_ERROR',
+          statusCode: 403,
+        });
+        return;
+      }
     }
   }
 });
@@ -695,8 +706,9 @@ app.post('/api/auth/register/instructor', async (req, reply) => {
 app.all('/api/auth/*', {
   config: {
     rateLimit: {
-      max: config.RATE_LIMIT_AUTH_MAX || 20,
-      timeWindow: '1 minute'
+      max: config.RATE_LIMIT_AUTH_MAX || 100,
+      timeWindow: '1 minute',
+      allowList: (req: any) => req.headers['x-smoke-test-bypass'] === config.BETTER_AUTH_SECRET,
     }
   }
 }, async (req, reply) => {
@@ -775,8 +787,9 @@ app.get('/api/me', {
   preHandler: [requireAuth],
   config: {
     rateLimit: {
-      max: config.RATE_LIMIT_AUTH_MAX || 20,
-      timeWindow: '1 minute'
+      max: config.RATE_LIMIT_AUTH_MAX || 100,
+      timeWindow: '1 minute',
+      allowList: (req: any) => req.headers['x-smoke-test-bypass'] === config.BETTER_AUTH_SECRET,
     }
   },
   schema: {

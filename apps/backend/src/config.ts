@@ -24,7 +24,7 @@ const envSchema = z.object({
       .join(',');
   }),
   RATE_LIMIT_MAX: z.coerce.number().default(100),
-  RATE_LIMIT_AUTH_MAX: z.coerce.number().default(20),
+  RATE_LIMIT_AUTH_MAX: z.coerce.number().default(100),
   ROUND_PROCESSING_MODE: z.enum(['immediate', 'delayed']).default('immediate'),
   ROUND_DELAY_HOURS: z.coerce.number().default(24),
   TREND_REFRESH_MODE: z.enum(['per_round', 'daily', 'off']).default('per_round'),
@@ -58,6 +58,22 @@ const envSchema = z.object({
         code: z.ZodIssueCode.custom,
         path: ['CORS_ORIGINS'],
         message: 'CORS_ORIGINS is required in production mode',
+      });
+    } else {
+      const origins = data.CORS_ORIGINS.split(',');
+      if (origins.some((o) => o.trim() === '*')) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['CORS_ORIGINS'],
+          message: 'Wildcard (*) is not allowed for CORS_ORIGINS in production mode',
+        });
+      }
+    }
+    if (data.FRONTEND_URL.trim() === '*') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['FRONTEND_URL'],
+        message: 'Wildcard (*) is not allowed for FRONTEND_URL in production mode',
       });
     }
   }

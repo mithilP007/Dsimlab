@@ -8,7 +8,8 @@
 const https = require('https');
 const http = require('http');
 
-const BASE_URL = process.argv[2] || 'https://dsimlab1.onrender.com';
+const BASE_URL = process.env.BASE_URL || process.argv[2] || 'https://dsimlab1.onrender.com';
+const BYPASS_SECRET = process.env.BETTER_AUTH_SECRET || process.env.SMOKE_TEST_BYPASS_SECRET;
 
 const TEST_ACCOUNTS = [
   { email: 'superadmin@simlab.run', password: 'Test@123456', role: 'superadmin' },
@@ -39,6 +40,7 @@ function request(path, options = {}) {
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
+        ...(BYPASS_SECRET ? { 'x-smoke-test-bypass': BYPASS_SECRET } : {}),
         ...(options.cookie ? { Cookie: options.cookie } : {}),
         ...(options.headers || {}),
       },

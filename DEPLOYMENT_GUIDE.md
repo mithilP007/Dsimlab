@@ -38,6 +38,8 @@ BETTER_AUTH_URL="https://api.yourdomain.com"
 
 # CORS Allowed Origins
 FRONTEND_URL="https://simlab.yourdomain.com"
+# Comma-separated list of extra trusted origins (required in production; no wildcards)
+CORS_ORIGINS="https://simlab.yourdomain.com,https://preview-origin.vercel.app"
 
 # Optional AI Configuration
 OLLAMA_HOST="http://ollama-host:11434"
@@ -46,11 +48,21 @@ OLLAMA_MODEL="qwen2.5:7b"
 
 ### Frontend Environment Variables (`apps/frontend/.env`)
 
-Configure the API endpoint root pointing to the backend domain:
+Configure the API and WebSocket endpoints pointing to the backend domain. The frontend supports fallback variables to integrate seamlessly with standard configurations on Vercel:
 
 ```env
-# API URL Base Endpoint
+# Backend API base URL
+VITE_API_BASE_URL="https://api.yourdomain.com"
+# Socket connection URL (HTTP/S protocol)
+VITE_SOCKET_URL="https://api.yourdomain.com"
+
+# Alternate API base URL fallback
 VITE_API_URL="https://api.yourdomain.com"
+# Alternate WebSocket connection URL fallback (WS/S protocol)
+VITE_WS_URL="wss://api.yourdomain.com"
+
+# Application display name
+VITE_APP_NAME="DM SimLab"
 ```
 
 ---

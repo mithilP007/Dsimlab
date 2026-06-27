@@ -12,7 +12,8 @@
     "verify-campaign-integrity": "node scripts/verify-campaign-integrity.js",
     "seed-pilot": "node scripts/seed-pilot-data.js",
     "generate-pilot-sheets": "node scripts/generate-pilot-sheets.js",
-    "test:e2e": "node scripts/e2e-qa.js"
+    "test:e2e": "node scripts/e2e-qa.js",
+    "test": "npm test -w apps/backend"
   },
   "dependencies": {
     "playwright": "^1.61.0",
