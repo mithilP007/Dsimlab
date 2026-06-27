@@ -109,83 +109,92 @@ export async function classRoutes(fastify: FastifyInstance) {
   fastify.get('/:id', { preHandler: [requireRole([UserRole.INSTRUCTOR, UserRole.ADMIN])] }, async (request, reply) => {
     const authReq = request as AuthenticatedRequest;
     
-    const paramsSchema = z.object({
-      id: z.string().uuid('Invalid Class UUID format'),
-    });
+    try {
+      const paramsSchema = z.object({
+        id: z.string().uuid('Invalid Class UUID format'),
+      });
 
-    const parsedParams = paramsSchema.safeParse(request.params);
-    if (!parsedParams.success) {
-      throw new ValidationError(parsedParams.error.errors[0].message);
-    }
+      const parsedParams = paramsSchema.safeParse(request.params);
+      if (!parsedParams.success) {
+        throw new ValidationError(parsedParams.error.errors[0].message);
+      }
 
-    await getClassAndCheckPermission(parsedParams.data.id, authReq.user);
+      await getClassAndCheckPermission(parsedParams.data.id, authReq.user);
 
-    const targetClass = await prisma.class.findUnique({
-      where: {
-        id: parsedParams.data.id,
-      },
-      include: {
-        scenario: true,
-        students: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            status: true,
-            simulations: {
-              select: {
-                id: true,
-                status: true,
-                currentRound: true,
-                isCompleted: true,
-                score: true,
-                cumulativeSpend: true,
-                cumulativeRevenue: true,
-                createdAt: true,
-                progress: {
-                  select: {
-                    id: true,
-                    currentDay: true,
-                    totalDays: true,
-                    status: true,
-                    lastSubmittedAt: true,
-                    nextResultAt: true,
-                    completedAt: true,
+      const targetClass = await prisma.class.findUnique({
+        where: {
+          id: parsedParams.data.id,
+        },
+        include: {
+          scenario: true,
+          students: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              status: true,
+              simulations: {
+                select: {
+                  id: true,
+                  status: true,
+                  currentRound: true,
+                  isCompleted: true,
+                  score: true,
+                  cumulativeSpend: true,
+                  cumulativeRevenue: true,
+                  createdAt: true,
+                  progress: {
+                    select: {
+                      id: true,
+                      currentDay: true,
+                      totalDays: true,
+                      status: true,
+                      lastSubmittedAt: true,
+                      nextResultAt: true,
+                      completedAt: true,
+                    }
+                  },
+                  scoreBreakdowns: {
+                    select: {
+                      id: true,
+                      round: true,
+                      seoScore: true,
+                      googleAdsScore: true,
+                      metaAdsScore: true,
+                      budgetScore: true,
+                      revenueScore: true,
+                      compositeIndex: true,
+                      percentileRank: true,
+                      createdAt: true,
+                    },
+                    orderBy: { round: 'desc' },
+                    take: 1,
                   }
                 },
-                scoreBreakdowns: {
-                  select: {
-                    id: true,
-                    round: true,
-                    seoScore: true,
-                    googleAdsScore: true,
-                    metaAdsScore: true,
-                    budgetScore: true,
-                    revenueScore: true,
-                    compositeIndex: true,
-                    percentileRank: true,
-                    createdAt: true,
-                  },
-                  orderBy: { round: 'desc' },
-                  take: 1,
-                }
+                orderBy: { createdAt: 'desc' },
+                take: 1,
               },
-              orderBy: { createdAt: 'desc' },
-              take: 1,
             },
           },
         },
-      },
-    });
+      });
 
-    if (!targetClass) {
-      throw new NotFoundError('Class cohort not found.');
+      if (!targetClass) {
+        throw new NotFoundError('Class cohort not found.');
+      }
+
+      return reply.status(200).send({
+        success: true,
+        class: targetClass,
+      });
+    } catch (e: any) {
+      const statusCode = e.statusCode || 500;
+      return reply.status(statusCode).send({
+        success: false,
+        error: e.message,
+        message: e.message
+      });
     }
-
-    return reply.status(200).send({
-      success: true,
-      class: targetClass,
-    });
   });
 
   /**

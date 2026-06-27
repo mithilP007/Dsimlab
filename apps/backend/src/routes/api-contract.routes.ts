@@ -138,7 +138,7 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
             properties: {
               id: { type: 'string' },
               userId: { type: 'string' },
-              classId: { type: 'string' },
+              classId: { type: 'string', nullable: true },
               status: { type: 'string' },
               currentRound: { type: 'number' },
               isCompleted: { type: 'boolean' },
@@ -416,7 +416,7 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
           properties: {
             id: { type: 'string' },
             userId: { type: 'string' },
-            classId: { type: 'string' },
+            classId: { type: 'string', nullable: true },
             status: { type: 'string' },
             currentRound: { type: 'number' },
             isCompleted: { type: 'boolean' }
@@ -2127,6 +2127,66 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
   // 8. Certification Routes
   // ==========================================
 
+  fastify.get('/api/certificates/check-eligibility', {
+    preHandler: [requireAuth],
+    schema: {
+      description: 'Checks certificate eligibility for the current simulation state (GET)',
+      tags: ['Certificate'],
+      security: [{ cookieAuth: [] }],
+      querystring: {
+        type: 'object',
+        properties: {
+          simulationId: { type: 'string', format: 'uuid' }
+        }
+      },
+      response: {
+        200: {
+          description: 'Certificate eligibility status',
+          type: 'object',
+          properties: {
+            success: { type: 'boolean' },
+            eligible: { type: 'boolean' },
+            reasons: { type: 'array', items: { type: 'string' } },
+            band: { type: 'string' },
+            compositeScore: { type: 'number' },
+            strategicConsistency: { type: 'number' }
+          }
+        }
+      }
+    }
+  }, async (request, reply) => {
+    const authReq = request as AuthenticatedRequest;
+    
+    let simulationId: string | undefined;
+    if (request.query && typeof request.query === 'object') {
+      const query = request.query as any;
+      simulationId = query.simulationId;
+    }
+
+    if (!simulationId) {
+      const sim = await prisma.simulationState.findFirst({
+        where: { userId: authReq.user!.id, classId: authReq.user!.classId || undefined }
+      });
+      if (!sim) {
+        return reply.status(200).send({
+          success: true,
+          eligible: false,
+          reasons: ['No active simulation state initialized yet.'],
+          band: 'None',
+          compositeScore: 0,
+          strategicConsistency: 0
+        });
+      }
+      simulationId = sim.id;
+    }
+
+    const check = await checkCertificateEligibility(simulationId);
+    return reply.status(200).send({
+      success: true,
+      ...check
+    });
+  });
+
   fastify.post('/api/certificates/check-eligibility', {
     preHandler: [requireAuth],
     schema: {
@@ -2168,7 +2228,14 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
         where: { userId: authReq.user!.id, classId: authReq.user!.classId || undefined }
       });
       if (!sim) {
-        throw new NotFoundError('No active simulation state initialized.');
+        return reply.status(200).send({
+          success: true,
+          eligible: false,
+          reasons: ['No active simulation state initialized yet.'],
+          band: 'None',
+          compositeScore: 0,
+          strategicConsistency: 0
+        });
       }
       simulationId = sim.id;
     }

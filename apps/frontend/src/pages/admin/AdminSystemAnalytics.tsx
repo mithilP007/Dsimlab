@@ -63,7 +63,7 @@ export function AdminSystemAnalytics() {
               </CardHeader>
               <CardContent>
                 <div className="h-72 w-full">
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer width="100%" height="100%" minHeight={300}>
                     <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                       <defs>
                         <linearGradient id="userColor" x1="0" y1="0" x2="0" y2="1">
@@ -101,7 +101,7 @@ export function AdminSystemAnalytics() {
               </CardHeader>
               <CardContent>
                 <div className="h-72 w-full">
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer width="100%" height="100%" minHeight={300}>
                     <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E5E5" />
                       <XAxis dataKey="month" tickLine={false} tick={{ fontSize: 10, fill: '#888' }} />
@@ -134,7 +134,7 @@ export function AdminSystemAnalytics() {
             </CardHeader>
             <CardContent>
               <div className="h-72 w-full">
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" minHeight={300}>
                   <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                     <defs>
                       <linearGradient id="certColor" x1="0" y1="0" x2="0" y2="1">

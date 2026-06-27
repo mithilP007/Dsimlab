@@ -216,7 +216,7 @@ export function MarketAnalysisPage() {
             </p>
 
             <div className="h-56 w-full">
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minHeight={220}>
                 <BarChart data={marketShareData} layout="vertical">
                   <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
                   <XAxis type="number" fontSize={9} fontWeight="bold" stroke="#94a3b8" />

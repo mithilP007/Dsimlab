@@ -218,7 +218,11 @@ export async function campaignRoutes(fastify: FastifyInstance) {
     const role = authReq.user!.role;
 
     if (!classId && role !== 'INDIVIDUAL') {
-      throw new ValidationError('Student is not registered in a class.');
+      return reply.status(200).send({
+        success: true,
+        hasRun: false,
+        run: null,
+      });
     }
 
     try {

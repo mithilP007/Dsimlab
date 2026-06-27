@@ -801,7 +801,7 @@ export function InstructorPortal() {
                             Cohort Score Distribution
                           </h3>
                           <div className="h-48 w-full mt-4">
-                            <ResponsiveContainer width="100%" height="100%">
+                            <ResponsiveContainer width="100%" height="100%" minHeight={180}>
                               <BarChart data={distributionBands} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                                 <XAxis dataKey="range" stroke="#888888" fontSize={10} fontWeight={700} />
@@ -1093,7 +1093,7 @@ export function InstructorPortal() {
                                 No certificates issued yet.
                               </div>
                             ) : (
-                              <ResponsiveContainer width="100%" height="100%">
+                              <ResponsiveContainer width="100%" height="100%" minHeight={180}>
                                 <BarChart
                                   data={[
                                     { name: "Bronze", count: classCertifications.distribution?.BRONZE || 0 },

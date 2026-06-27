@@ -861,6 +861,69 @@ app.register(notificationRoutes, { prefix: '/api/v1/notifications' });
 app.register(errorReportRoutes, { prefix: '/api/v1/error-reports' });
 app.register(apiContractRoutes);
 
+// Alias route /v1/campaign/state
+app.get('/v1/campaign/state', { preHandler: [requireAuth] }, async (request, reply) => {
+  const authReq = request as AuthenticatedRequest;
+  const userId = authReq.user!.id;
+  const classId = authReq.user!.classId;
+  const role = authReq.user!.role;
+
+  if (!classId && role !== 'INDIVIDUAL') {
+    return reply.status(200).send({
+      success: true,
+      hasRun: false,
+      run: null
+    });
+  }
+
+  try {
+    const run = await prisma.campaignRun.findFirst({
+      where: {
+        userId,
+        classId: classId || null,
+        status: 'ACTIVE',
+      },
+      include: {
+        scenario: true,
+        assignment: true,
+      },
+    });
+
+    if (!run) {
+      const latestCompleted = await prisma.campaignRun.findFirst({
+        where: { userId, classId: classId || null, status: 'COMPLETED' },
+        orderBy: { updatedAt: 'desc' },
+        include: { scenario: true, assignment: true },
+      });
+
+      if (!latestCompleted) {
+        return reply.status(200).send({
+          success: true,
+          hasRun: false,
+          run: null,
+        });
+      }
+
+      return reply.status(200).send({
+        success: true,
+        hasRun: true,
+        run: latestCompleted,
+      });
+    }
+
+    return reply.status(200).send({
+      success: true,
+      run,
+    });
+  } catch (err) {
+    return reply.status(200).send({
+      success: true,
+      hasRun: false,
+      run: null,
+    });
+  }
+});
+
 // Global Error Handler
 app.setErrorHandler((error, request, reply) => {
   const isExpectedError = !!(

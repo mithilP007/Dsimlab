@@ -7,6 +7,7 @@ import { ValidationError, NotFoundError } from '../utils/errors';
 import { hashPassword } from 'better-auth/crypto';
 import { monitoring } from '../utils/monitoring';
 import { cacheService } from '../utils/caching';
+import { logger } from '../utils/logger';
 
 export async function adminRoutes(fastify: FastifyInstance) {
   // Enforce ADMIN role on all endpoints under this router
@@ -112,81 +113,89 @@ export async function adminRoutes(fastify: FastifyInstance) {
    * Retrieves computed institution profiles.
    */
   fastify.get('/institutions', async (request, reply) => {
-    const allUsers = await prisma.user.findMany({
-      include: {
-        simulations: { select: { isCompleted: true } },
-        _count: { select: { simulations: true } }
-      }
-    });
-
-    const dbInstitutions = await prisma.institution.findMany();
-
-    // Group users by institution
-    const institutionGroups: Record<string, typeof allUsers> = {};
-    allUsers.forEach(u => {
-      if (u.institution) {
-        const name = u.institution.trim();
-        if (name) {
-          institutionGroups[name] = institutionGroups[name] || [];
-          institutionGroups[name].push(u);
+    try {
+      const allUsers = await prisma.user.findMany({
+        include: {
+          simulations: { select: { isCompleted: true } },
+          _count: { select: { simulations: true } }
         }
-      }
-    });
+      });
 
-    // Ensure all DB institutions exist in the groups
-    dbInstitutions.forEach(di => {
-      if (!institutionGroups[di.name]) {
-        institutionGroups[di.name] = [];
-      }
-    });
+      const dbInstitutions = await prisma.institution.findMany();
 
-    const institutions = await Promise.all(
-      Object.entries(institutionGroups).map(async ([name, users]) => {
-        const studentsInInst = users.filter(u => u.role === UserRole.STUDENT_COLLEGE);
-        const instructorsInInst = users.filter(u => u.role === UserRole.INSTRUCTOR);
-
-        const studentsCount = studentsInInst.length;
-        const instructorCount = instructorsInInst.length;
-
-        // Calculate active simulation completion rate
-        const totalSims = studentsInInst.reduce((sum, u) => sum + u._count.simulations, 0);
-        let completionRate = 0;
-        if (totalSims > 0) {
-          const completedSimsCount = studentsInInst.reduce(
-            (sum, u) => sum + u.simulations.filter(s => s.isCompleted).length,
-            0
-          );
-          completionRate = parseFloat(((completedSimsCount / totalSims) * 100).toFixed(1));
+      // Group users by institution
+      const institutionGroups: Record<string, typeof allUsers> = {};
+      allUsers.forEach(u => {
+        if (u.institution) {
+          const name = u.institution.trim();
+          if (name) {
+            institutionGroups[name] = institutionGroups[name] || [];
+            institutionGroups[name].push(u);
+          }
         }
+      });
 
-        // Calculate certification rate (% of students who have certificates)
-        const certsCount = await prisma.certificate.count({
-          where: { userId: { in: studentsInInst.map(s => s.id) } }
-        });
-        const certificationRate = studentsCount > 0
-          ? parseFloat(((certsCount / studentsCount) * 100).toFixed(1))
-          : 0;
+      // Ensure all DB institutions exist in the groups
+      dbInstitutions.forEach(di => {
+        if (!institutionGroups[di.name]) {
+          institutionGroups[di.name] = [];
+        }
+      });
 
-        const dbInst = dbInstitutions.find(di => di.name.toLowerCase() === name.toLowerCase());
-        const code = dbInst ? dbInst.code : "N/A";
-        const status = dbInst ? dbInst.status : (users.some(u => u.status === 'active') ? 'active' : 'suspended');
+      const institutions = await Promise.all(
+        Object.entries(institutionGroups).map(async ([name, users]) => {
+          const studentsInInst = users.filter(u => u.role === UserRole.STUDENT_COLLEGE);
+          const instructorsInInst = users.filter(u => u.role === UserRole.INSTRUCTOR);
 
-        return {
-          name,
-          studentsCount,
-          instructorCount,
-          completionRate,
-          certificationRate,
-          status,
-          code
-        };
-      })
-    );
+          const studentsCount = studentsInInst.length;
+          const instructorCount = instructorsInInst.length;
 
-    return reply.status(200).send({
-      success: true,
-      institutions
-    });
+          // Calculate active simulation completion rate
+          const totalSims = studentsInInst.reduce((sum, u) => sum + u._count.simulations, 0);
+          let completionRate = 0;
+          if (totalSims > 0) {
+            const completedSimsCount = studentsInInst.reduce(
+              (sum, u) => sum + u.simulations.filter(s => s.isCompleted).length,
+              0
+            );
+            completionRate = parseFloat(((completedSimsCount / totalSims) * 100).toFixed(1));
+          }
+
+          // Calculate certification rate (% of students who have certificates)
+          const certsCount = await prisma.certificate.count({
+            where: { userId: { in: studentsInInst.map(s => s.id) } }
+          });
+          const certificationRate = studentsCount > 0
+            ? parseFloat(((certsCount / studentsCount) * 100).toFixed(1))
+            : 0;
+
+          const dbInst = dbInstitutions.find(di => di.name.toLowerCase() === name.toLowerCase());
+          const code = dbInst ? dbInst.code : "N/A";
+          const status = dbInst ? dbInst.status : (users.some(u => u.status === 'active') ? 'active' : 'suspended');
+
+          return {
+            name,
+            studentsCount,
+            instructorCount,
+            completionRate,
+            certificationRate,
+            status,
+            code
+          };
+        })
+      );
+
+      return reply.status(200).send({
+        success: true,
+        institutions
+      });
+    } catch (err: any) {
+      logger.error(err, 'Failed to fetch institutions list, returning fallback empty list');
+      return reply.status(200).send({
+        success: true,
+        institutions: []
+      });
+    }
   });
 
   /**

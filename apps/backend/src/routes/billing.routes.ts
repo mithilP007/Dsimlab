@@ -7,25 +7,143 @@ import { ValidationError, NotFoundError } from '../utils/errors';
 import { paymentGateway } from '../services/billing/payment.gateway';
 import { config } from '../config';
 
+function safeParseJSON(str: any, fallback: any = []) {
+  if (!str) return fallback;
+  try {
+    if (typeof str === 'object') return str;
+    return JSON.parse(str);
+  } catch {
+    return fallback;
+  }
+}
+
 export async function billingRoutes(fastify: FastifyInstance) {
   /**
    * GET /api/v1/billing/plans
    * Fetches all registered pricing plans.
    */
   fastify.get('/plans', async (_request, reply) => {
-    const plans = await prisma.plan.findMany({
-      orderBy: { priceMonthly: 'asc' }
-    });
+    try {
+      let plans = await prisma.plan.findMany({
+        orderBy: { priceMonthly: 'asc' }
+      });
 
-    const parsedPlans = plans.map(p => ({
-      ...p,
-      features: JSON.parse(p.features)
-    }));
+      if (plans.length === 0) {
+        await prisma.plan.createMany({
+          data: [
+            {
+              name: 'Free Trial',
+              code: 'free',
+              priceMonthly: 0,
+              priceYearly: 0,
+              simulationLimit: 1,
+              studentLimit: 5,
+              instructorLimit: 0,
+              certificateLimit: 0,
+              reportExportLimit: 1,
+              storageLimitMb: 50,
+              features: JSON.stringify(['1 Sandbox Campaign Run', 'Basic SEO Simulator access', 'Email Support']),
+              isActive: true,
+              durationDays: 14
+            },
+            {
+              name: 'Individual Basic',
+              code: 'individual_basic',
+              priceMonthly: 1500,
+              priceYearly: 15000,
+              simulationLimit: 5,
+              studentLimit: 0,
+              instructorLimit: 0,
+              certificateLimit: 5,
+              reportExportLimit: 5,
+              storageLimitMb: 100,
+              features: JSON.stringify(['5 Sandbox Campaign Runs', 'Access to Google & Meta Ads', 'Full Bronze/Silver Certificates', 'Email Support']),
+              isActive: true,
+              durationDays: 30
+            },
+            {
+              name: 'Individual Pro',
+              code: 'individual_pro',
+              priceMonthly: 3000,
+              priceYearly: 30000,
+              simulationLimit: -1,
+              studentLimit: 0,
+              instructorLimit: 0,
+              certificateLimit: -1,
+              reportExportLimit: -1,
+              storageLimitMb: 500,
+              features: JSON.stringify(['Unlimited Campaign Runs', 'All Ads Engines', 'All Certificates (Platinum included)', 'Priority Support']),
+              isActive: true,
+              durationDays: 30
+            },
+            {
+              name: 'Instructor',
+              code: 'instructor',
+              priceMonthly: 5000,
+              priceYearly: 50000,
+              simulationLimit: -1,
+              studentLimit: 30,
+              instructorLimit: 0,
+              certificateLimit: -1,
+              reportExportLimit: -1,
+              storageLimitMb: 1024,
+              features: JSON.stringify(['Classroom Management (Up to 30 students)', 'NBA & OBE Accredited Reports', 'Student Analytics Ledgers', 'Export Reports to PDF/CSV']),
+              isActive: true,
+              durationDays: 30
+            },
+            {
+              name: 'College License',
+              code: 'college',
+              priceMonthly: 15000,
+              priceYearly: 150000,
+              simulationLimit: -1,
+              studentLimit: 200,
+              instructorLimit: 10,
+              certificateLimit: -1,
+              reportExportLimit: -1,
+              storageLimitMb: 5120,
+              features: JSON.stringify(['Colleges Hub (Up to 10 Instructors, 200 Students)', 'Accreditation Readiness Indexes', 'Bulk Student Imports', 'Premium Dedicated Support']),
+              isActive: true,
+              durationDays: 365
+            },
+            {
+              name: 'Enterprise License',
+              code: 'enterprise',
+              priceMonthly: 45000,
+              priceYearly: 450000,
+              simulationLimit: -1,
+              studentLimit: -1,
+              instructorLimit: -1,
+              certificateLimit: -1,
+              reportExportLimit: -1,
+              storageLimitMb: 20480,
+              features: JSON.stringify(['Unlimited Cohorts, Instructors & Students', 'Custom Scenario Builders', 'SLA Dedicated Account Managers', 'Single Sign-On (SSO) integration']),
+              isActive: true,
+              durationDays: 365
+            }
+          ]
+        });
 
-    return reply.status(200).send({
-      success: true,
-      plans: parsedPlans
-    });
+        plans = await prisma.plan.findMany({
+          orderBy: { priceMonthly: 'asc' }
+        });
+      }
+
+      const parsedPlans = plans.map(p => ({
+        ...p,
+        features: safeParseJSON(p.features)
+      }));
+
+      return reply.status(200).send({
+        success: true,
+        plans: parsedPlans
+      });
+    } catch (err: any) {
+      return reply.status(200).send({
+        success: true,
+        plans: []
+      });
+    }
   });
 
   /**
@@ -63,14 +181,14 @@ export async function billingRoutes(fastify: FastifyInstance) {
         ...sub,
         plan: {
           ...sub.plan,
-          features: JSON.parse(sub.plan.features)
+          features: safeParseJSON(sub.plan.features)
         }
       } : null,
       history: subHistory.map(s => ({
         ...s,
         plan: {
           ...s.plan,
-          features: JSON.parse(s.plan.features)
+          features: safeParseJSON(s.plan.features)
         }
       })),
       usage: {

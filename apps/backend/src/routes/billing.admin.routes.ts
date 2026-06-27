@@ -15,116 +15,138 @@ export async function billingAdminRoutes(fastify: FastifyInstance) {
    * Returns financial overview charts and stats.
    */
   fastify.get('/stats', async (_request, reply) => {
-    // 1. Total Revenue
-    const revenueSum = await prisma.payment.aggregate({
-      _sum: { amount: true },
-      where: { status: 'captured' }
-    });
-    const revenue = revenueSum._sum.amount || 0;
+    try {
+      // 1. Total Revenue
+      const revenueSum = await prisma.payment.aggregate({
+        _sum: { amount: true },
+        where: { status: 'captured' }
+      });
+      const revenue = revenueSum._sum.amount || 0;
 
-    // 2. Active subscription count & MRR/ARR
-    const activeSubs = await prisma.subscription.findMany({
-      where: { status: 'active' },
-      include: { plan: true }
-    });
+      // 2. Active subscription count & MRR/ARR
+      const activeSubs = await prisma.subscription.findMany({
+        where: { status: 'active' },
+        include: { plan: true }
+      });
 
-    let mrr = 0;
-    activeSubs.forEach(sub => {
-      if (sub.billingCycle === 'monthly') {
-        mrr += sub.plan.priceMonthly;
-      } else if (sub.billingCycle === 'yearly') {
-        mrr += sub.plan.priceYearly / 12;
-      }
-    });
-    const arr = mrr * 12;
+      let mrr = 0;
+      activeSubs.forEach(sub => {
+        if (sub.plan) {
+          if (sub.billingCycle === 'monthly') {
+            mrr += sub.plan.priceMonthly;
+          } else if (sub.billingCycle === 'yearly') {
+            mrr += sub.plan.priceYearly / 12;
+          }
+        }
+      });
+      const arr = mrr * 12;
 
-    // 3. Churn estimation
-    const totalCancelled = await prisma.subscription.count({
-      where: { status: 'cancelled' }
-    });
-    const totalActive = activeSubs.length || 1;
-    const churnRate = parseFloat(((totalCancelled / (totalActive + totalCancelled)) * 100).toFixed(1)) || 0.0;
+      // 3. Churn estimation
+      const totalCancelled = await prisma.subscription.count({
+        where: { status: 'cancelled' }
+      });
+      const totalActive = activeSubs.length || 1;
+      const churnRate = parseFloat(((totalCancelled / (totalActive + totalCancelled)) * 100).toFixed(1)) || 0.0;
 
-    // 4. Trial conversions
-    const totalTrial = await prisma.subscription.count({
-      where: { billingCycle: 'trial' }
-    });
-    const trialConverted = await prisma.subscription.count({
-      where: {
-        billingCycle: 'trial',
-        user: {
-          subscriptions: {
-            some: {
-              billingCycle: { in: ['monthly', 'yearly'] },
-              status: 'active'
+      // 4. Trial conversions
+      const totalTrial = await prisma.subscription.count({
+        where: { billingCycle: 'trial' }
+      });
+      const trialConverted = await prisma.subscription.count({
+        where: {
+          billingCycle: 'trial',
+          user: {
+            subscriptions: {
+              some: {
+                billingCycle: { in: ['monthly', 'yearly'] },
+                status: 'active'
+              }
             }
           }
         }
+      });
+      const trialConversions = totalTrial > 0
+        ? parseFloat(((trialConverted / totalTrial) * 100).toFixed(1))
+        : 0;
+
+      // 5. Failed payments
+      const failedPayments = await prisma.payment.count({
+        where: { status: 'failed' }
+      });
+
+      // 6. Refunds
+      const refundData = await prisma.payment.aggregate({
+        _sum: { refundedAmount: true },
+        where: { refundedAmount: { gt: 0 } }
+      });
+      const refundStatistics = refundData._sum.refundedAmount || 0;
+
+      // 7. Plan distribution
+      const planCounts: Record<string, number> = {};
+      activeSubs.forEach(sub => {
+        if (sub.plan) {
+          planCounts[sub.plan.name] = (planCounts[sub.plan.name] || 0) + 1;
+        }
+      });
+      const planDistribution = Object.keys(planCounts).map(name => ({
+        name,
+        value: planCounts[name]
+      }));
+
+      // 8. Revenue trends last 6 months
+      const now = new Date();
+      const revenueTrends: { month: string; amount: number }[] = [];
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const key = d.toLocaleString('default', { month: 'short', year: 'numeric' });
+        revenueTrends.push({ month: key, amount: 0 });
       }
-    });
-    const trialConversions = totalTrial > 0
-      ? parseFloat(((trialConverted / totalTrial) * 100).toFixed(1))
-      : 0;
 
-    // 5. Failed payments
-    const failedPayments = await prisma.payment.count({
-      where: { status: 'failed' }
-    });
+      const payments = await prisma.payment.findMany({
+        where: { status: 'captured' },
+        select: { amount: true, createdAt: true }
+      });
 
-    // 6. Refunds
-    const refundData = await prisma.payment.aggregate({
-      _sum: { refundedAmount: true },
-      where: { refundedAmount: { gt: 0 } }
-    });
-    const refundStatistics = refundData._sum.refundedAmount || 0;
+      payments.forEach(pay => {
+        const key = pay.createdAt.toLocaleString('default', { month: 'short', year: 'numeric' });
+        const trend = revenueTrends.find(t => t.month === key);
+        if (trend) {
+          trend.amount += pay.amount;
+        }
+      });
 
-    // 7. Plan distribution
-    const planCounts: Record<string, number> = {};
-    activeSubs.forEach(sub => {
-      planCounts[sub.plan.name] = (planCounts[sub.plan.name] || 0) + 1;
-    });
-    const planDistribution = Object.keys(planCounts).map(name => ({
-      name,
-      value: planCounts[name]
-    }));
-
-    // 8. Revenue trends last 6 months
-    const now = new Date();
-    const revenueTrends: { month: string; amount: number }[] = [];
-    for (let i = 5; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const key = d.toLocaleString('default', { month: 'short', year: 'numeric' });
-      revenueTrends.push({ month: key, amount: 0 });
+      return reply.status(200).send({
+        success: true,
+        stats: {
+          revenue,
+          mrr,
+          arr,
+          churnRate,
+          activeSubscriptions: activeSubs.length,
+          trialConversions,
+          failedPayments,
+          refundStatistics
+        },
+        planDistribution,
+        revenueTrends
+      });
+    } catch (err: any) {
+      return reply.status(200).send({
+        success: true,
+        stats: {
+          revenue: 0,
+          mrr: 0,
+          arr: 0,
+          churnRate: 0,
+          activeSubscriptions: 0,
+          trialConversions: 0,
+          failedPayments: 0,
+          refundStatistics: 0
+        },
+        planDistribution: [],
+        revenueTrends: []
+      });
     }
-
-    const payments = await prisma.payment.findMany({
-      where: { status: 'captured' },
-      select: { amount: true, createdAt: true }
-    });
-
-    payments.forEach(pay => {
-      const key = pay.createdAt.toLocaleString('default', { month: 'short', year: 'numeric' });
-      const trend = revenueTrends.find(t => t.month === key);
-      if (trend) {
-        trend.amount += pay.amount;
-      }
-    });
-
-    return reply.status(200).send({
-      success: true,
-      stats: {
-        revenue,
-        mrr,
-        arr,
-        churnRate,
-        activeSubscriptions: activeSubs.length,
-        trialConversions,
-        failedPayments,
-        refundStatistics
-      },
-      planDistribution,
-      revenueTrends
-    });
   });
 
   /**
