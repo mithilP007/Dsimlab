@@ -12,10 +12,17 @@ const envSchema = z.object({
   REDIS_URL: z.string().optional(),
   OLLAMA_HOST: z.string().url().default('http://127.0.0.1:11434'),
   OLLAMA_MODEL: z.string().default('qwen2.5:7b'),
-  FRONTEND_URL: z.string().default('http://localhost:5173'),
+  FRONTEND_URL: z.string().default('http://localhost:5173').transform((val) => val.trim().replace(/\/+$/, '')),
   // Comma-separated list of extra allowed origins (e.g. Vercel preview URLs).
   // FRONTEND_URL is always included automatically.
-  CORS_ORIGINS: z.string().optional(),
+  CORS_ORIGINS: z.string().optional().transform((val) => {
+    if (!val) return val;
+    return val
+      .split(',')
+      .map((o) => o.trim().replace(/\/+$/, ''))
+      .filter(Boolean)
+      .join(',');
+  }),
   RATE_LIMIT_MAX: z.coerce.number().default(100),
   RATE_LIMIT_AUTH_MAX: z.coerce.number().default(20),
   ROUND_PROCESSING_MODE: z.enum(['immediate', 'delayed']).default('immediate'),
@@ -37,6 +44,23 @@ const envSchema = z.object({
   RAZORPAY_KEY_ID: z.string().optional(),
   RAZORPAY_KEY_SECRET: z.string().optional(),
   RAZORPAY_WEBHOOK_SECRET: z.string().optional(),
+}).superRefine((data, ctx) => {
+  if (data.NODE_ENV === 'production') {
+    if (!data.REDIS_URL || data.REDIS_URL.trim() === '') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['REDIS_URL'],
+        message: 'REDIS_URL is required in production mode',
+      });
+    }
+    if (!data.CORS_ORIGINS || data.CORS_ORIGINS.trim() === '') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['CORS_ORIGINS'],
+        message: 'CORS_ORIGINS is required in production mode',
+      });
+    }
+  }
 });
 
 const parsed = envSchema.safeParse(process.env);

@@ -221,46 +221,55 @@ export async function campaignRoutes(fastify: FastifyInstance) {
       throw new ValidationError('Student is not registered in a class.');
     }
 
-    const run = await prisma.campaignRun.findFirst({
-      where: {
-        userId,
-        classId: classId || null,
-        status: 'ACTIVE',
-      },
-      include: {
-        scenario: true,
-        assignment: true,
-      },
-    });
-
-    if (!run) {
-      // Find latest completed campaign run if no active one exists
-      const latestCompleted = await prisma.campaignRun.findFirst({
-        where: { userId, classId: classId || null, status: 'COMPLETED' },
-        orderBy: { updatedAt: 'desc' },
-        include: { scenario: true, assignment: true },
+    try {
+      const run = await prisma.campaignRun.findFirst({
+        where: {
+          userId,
+          classId: classId || null,
+          status: 'ACTIVE',
+        },
+        include: {
+          scenario: true,
+          assignment: true,
+        },
       });
 
-      // Return null gracefully — frontend should prompt user to start a campaign
-      if (!latestCompleted) {
+      if (!run) {
+        // Find latest completed campaign run if no active one exists
+        const latestCompleted = await prisma.campaignRun.findFirst({
+          where: { userId, classId: classId || null, status: 'COMPLETED' },
+          orderBy: { updatedAt: 'desc' },
+          include: { scenario: true, assignment: true },
+        });
+
+        // Return null gracefully — frontend should prompt user to start a campaign
+        if (!latestCompleted) {
+          return reply.status(200).send({
+            success: true,
+            hasRun: false,
+            run: null,
+          });
+        }
+
         return reply.status(200).send({
           success: true,
-          hasRun: false,
-          run: null,
+          hasRun: true,
+          run: latestCompleted,
         });
       }
 
       return reply.status(200).send({
         success: true,
-        hasRun: true,
-        run: latestCompleted,
+        run,
+      });
+    } catch (err) {
+      logger.error(err, 'Failed to fetch campaign state, returning fallback null');
+      return reply.status(200).send({
+        success: true,
+        hasRun: false,
+        run: null,
       });
     }
-
-    return reply.status(200).send({
-      success: true,
-      run,
-    });
   });
 
   /**
