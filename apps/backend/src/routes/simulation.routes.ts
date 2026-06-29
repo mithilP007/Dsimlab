@@ -101,83 +101,151 @@ export async function simulationRoutes(fastify: FastifyInstance) {
   fastify.get('/state', { preHandler: [requireAuth] }, async (request, reply) => {
     const authReq = request as AuthenticatedRequest;
     const { role, id: userId, classId } = authReq.user!;
+    const userRole = role ? role.toUpperCase().replace('-', '_') : '';
 
-    if (role === UserRole.ADMIN || role === 'ADMIN' || role === UserRole.INSTRUCTOR || role === 'INSTRUCTOR') {
+    if (userRole === UserRole.ADMIN || userRole === 'ADMIN' || userRole === UserRole.INSTRUCTOR || userRole === 'INSTRUCTOR') {
       return reply.status(200).send({
         success: true,
         hasState: false,
         state: null,
       });
     }
-
-    let state = null;
 
     try {
-      if (classId) {
-        state = await prisma.simulationState.findFirst({
-          where: {
-            userId: userId,
-            classId: classId,
-          },
-          include: {
-            progress: true,
-            class: {
-              include: {
-                scenario: true,
-                instructor: {
-                  select: {
-                    id: true,
-                    name: true,
-                    email: true,
+      let activeClassId = classId;
+
+      if (activeClassId) {
+        const classExists = await prisma.class.findUnique({
+          where: { id: activeClassId }
+        });
+        if (!classExists) {
+          // Stale classId, repair safely
+          await prisma.user.update({
+            where: { id: userId },
+            data: { classId: null, status: 'active' }
+          }).catch(() => {});
+          authReq.user!.classId = null;
+          activeClassId = null;
+        }
+      }
+
+      if (!activeClassId) {
+        if (userRole === 'INDIVIDUAL') {
+          // Fallback for individuals: fetch any simulation state they have
+          const state = await prisma.simulationState.findFirst({
+            where: { userId: userId },
+            include: {
+              progress: true,
+              class: {
+                include: {
+                  scenario: true,
+                  instructor: {
+                    select: { id: true, name: true, email: true },
                   },
                 },
               },
             },
-          },
+            orderBy: { createdAt: 'desc' }
+          });
+
+          if (!state) {
+            return reply.status(200).send({
+              success: true,
+              hasState: false,
+              state: null,
+            });
+          }
+
+          return reply.status(200).send({
+            success: true,
+            hasState: true,
+            state,
+          });
+        }
+
+        // Student with no classId
+        return reply.status(200).send({
+          success: true,
+          hasState: false,
+          state: null,
+          message: 'You have not joined any class cohort yet.'
         });
       }
 
-      if (!state && (role === 'INDIVIDUAL' || role === 'individual')) {
-        // Fallback for individuals: fetch any simulation state they have
-        state = await prisma.simulationState.findFirst({
-          where: {
-            userId: userId,
-          },
-          include: {
-            progress: true,
-            class: {
-              include: {
-                scenario: true,
-                instructor: {
-                  select: {
-                    id: true,
-                    name: true,
-                    email: true,
-                  },
+      // Student has classId
+      const enrollment = await prisma.classEnrollment.findFirst({
+        where: { studentId: userId, classId: activeClassId }
+      });
+
+      if (!enrollment || enrollment.status !== 'ACTIVE') {
+        return reply.status(200).send({
+          success: true,
+          hasState: false,
+          state: null,
+          message: 'Your class enrollment is not active.'
+        });
+      }
+
+      const cls = await prisma.class.findUnique({
+        where: { id: activeClassId },
+        include: { scenario: true }
+      });
+
+      if (!cls || !cls.scenario) {
+        return reply.status(200).send({
+          success: true,
+          hasState: false,
+          state: null,
+          message: 'No scenario has been assigned to your class cohort yet. Please check with your instructor.'
+        });
+      }
+
+      const state = await prisma.simulationState.findFirst({
+        where: {
+          userId: userId,
+          classId: activeClassId,
+        },
+        include: {
+          progress: true,
+          class: {
+            include: {
+              scenario: true,
+              instructor: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true,
                 },
               },
             },
           },
-          orderBy: { createdAt: 'desc' }
+        },
+      });
+
+      if (!state) {
+        return reply.status(200).send({
+          success: true,
+          hasState: false,
+          state: null,
+          message: 'No active simulation initialized yet.'
         });
       }
+
+      return reply.status(200).send({
+        success: true,
+        hasState: true,
+        state,
+      });
+
     } catch (err) {
       logger.error(err, 'Failed to fetch simulation state');
-    }
-
-    if (!state) {
       return reply.status(200).send({
         success: true,
         hasState: false,
         state: null,
+        error: err instanceof Error ? err.message : 'Unknown error'
       });
     }
-
-    return reply.status(200).send({
-      success: true,
-      hasState: true,
-      state,
-    });
   });
 
   /**

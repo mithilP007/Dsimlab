@@ -53,72 +53,24 @@ export async function eventsRoutes(fastify: FastifyInstance) {
 
     // Role is STUDENT_COLLEGE or INDIVIDUAL
     const classId = authReq.user!.classId;
-    if (!classId) {
-      if (role === 'STUDENT_COLLEGE') {
-        return reply.status(403).send({
-          success: false,
-          error: 'Your class access request is pending instructor approval.',
-          message: 'Your class access request is pending instructor approval.',
-          code: 'FORBIDDEN',
-          statusCode: 403
-        });
-      }
-      // Individual sandbox mode: find sandbox state
-      const sim = await prisma.simulationState.findFirst({
-        where: {
-          userId: authReq.user!.id
-        }
+    
+    // Verify enrollment if classId is present and role is STUDENT_COLLEGE
+    if (classId && (role === 'STUDENT_COLLEGE' || role === 'STUDENT')) {
+      const enrollment = await prisma.classEnrollment.findFirst({
+        where: { studentId: authReq.user!.id, classId }
       });
-      if (!sim) {
+      if (!enrollment || enrollment.status !== 'ACTIVE') {
         return reply.status(200).send({
           success: true,
           events: [],
-          message: 'No active simulation initialized.'
-        });
-      }
-      const events = await prisma.marketEvent.findMany({
-        where: { simulationId: sim.id },
-        orderBy: { round: 'desc' }
-      });
-      return reply.status(200).send({
-        success: true,
-        events
-      });
-    }
-
-    // Student has a classId: verify enrollment status first
-    const enrollment = await prisma.classEnrollment.findFirst({
-      where: { studentId: authReq.user!.id, classId }
-    });
-
-    if (role === 'STUDENT_COLLEGE') {
-      if (!enrollment || enrollment.status === 'PENDING') {
-        return reply.status(403).send({
-          success: false,
-          error: 'Your class access request is pending instructor approval.',
-          message: 'Your class access request is pending instructor approval.',
-          code: 'FORBIDDEN',
-          statusCode: 403
-        });
-      }
-
-      if (['REJECTED', 'REMOVED', 'TERMINATED'].includes(enrollment.status)) {
-        return reply.status(403).send({
-          success: false,
-          error: 'Your access to this class has been terminated by the instructor.',
-          message: 'Your access to this class has been terminated by the instructor.',
-          code: 'FORBIDDEN',
-          statusCode: 403
+          message: 'Your class enrollment is not active.'
         });
       }
     }
 
-    const sim = await prisma.simulationState.findFirst({
-      where: {
-        userId: authReq.user!.id,
-        classId
-      }
-    });
+    const sim = classId 
+      ? await prisma.simulationState.findFirst({ where: { userId: authReq.user!.id, classId } })
+      : await prisma.simulationState.findFirst({ where: { userId: authReq.user!.id } });
 
     if (!sim) {
       return reply.status(200).send({
@@ -139,7 +91,7 @@ export async function eventsRoutes(fastify: FastifyInstance) {
 
     return reply.status(200).send({
       success: true,
-      events
+      events: events || []
     });
   });
 }

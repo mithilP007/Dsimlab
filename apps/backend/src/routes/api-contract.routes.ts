@@ -44,7 +44,7 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
           properties: {
             id: { type: 'string' },
             userId: { type: 'string' },
-            classId: { type: 'string' },
+            classId: { type: 'string', nullable: true },
             status: { type: 'string' },
             currentRound: { type: 'number' },
             isCompleted: { type: 'boolean' }
@@ -56,7 +56,7 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
           properties: {
             id: { type: 'string' },
             userId: { type: 'string' },
-            classId: { type: 'string' },
+            classId: { type: 'string', nullable: true },
             status: { type: 'string' },
             currentRound: { type: 'number' },
             isCompleted: { type: 'boolean' }
@@ -142,9 +142,9 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
               status: { type: 'string' },
               currentRound: { type: 'number' },
               isCompleted: { type: 'boolean' },
-              cumulativeSpend: { type: 'number' },
-              cumulativeRevenue: { type: 'number' },
-              score: { type: 'number' }
+              cumulativeSpend: { type: 'number', nullable: true },
+              cumulativeRevenue: { type: 'number', nullable: true },
+              score: { type: 'number', nullable: true }
             }
           }
         }
@@ -153,15 +153,16 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
   }, async (request, reply) => {
     const authReq = request as AuthenticatedRequest;
     const { role, id: userId, classId } = authReq.user!;
+    const userRole = role ? role.toUpperCase().replace('-', '_') : '';
 
     let simulations: any[] = [];
 
     try {
-      if (role === UserRole.ADMIN || role === 'ADMIN') {
+      if (userRole === UserRole.ADMIN || userRole === 'ADMIN') {
         simulations = await prisma.simulationState.findMany({
           orderBy: { createdAt: 'desc' }
         });
-      } else if (role === UserRole.INSTRUCTOR || role === 'INSTRUCTOR') {
+      } else if (userRole === UserRole.INSTRUCTOR || userRole === 'INSTRUCTOR') {
         simulations = await prisma.simulationState.findMany({
           where: {
             class: {
@@ -170,17 +171,22 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
           },
           orderBy: { createdAt: 'desc' }
         });
-      } else if (role === 'STUDENT_COLLEGE' || role === 'student-college') {
+      } else if (userRole === 'STUDENT_COLLEGE') {
         if (classId) {
-          simulations = await prisma.simulationState.findMany({
-            where: {
-              userId,
-              classId
-            },
-            orderBy: { createdAt: 'desc' }
+          const enrollment = await prisma.classEnrollment.findFirst({
+            where: { studentId: userId, classId }
           });
+          if (enrollment && enrollment.status === 'ACTIVE') {
+            simulations = await prisma.simulationState.findMany({
+              where: {
+                userId,
+                classId
+              },
+              orderBy: { createdAt: 'desc' }
+            });
+          }
         }
-      } else if (role === 'INDIVIDUAL' || role === 'individual') {
+      } else if (userRole === 'INDIVIDUAL') {
         simulations = await prisma.simulationState.findMany({
           where: {
             userId
@@ -189,7 +195,19 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
         });
       }
       
-      return reply.status(200).send(simulations || []);
+      const mapped = (simulations || []).map(sim => ({
+        id: sim.id,
+        userId: sim.userId,
+        classId: sim.classId || null,
+        status: sim.status || 'INITIALIZED',
+        currentRound: sim.currentRound ?? 1,
+        isCompleted: !!sim.isCompleted,
+        cumulativeSpend: sim.cumulativeSpend ?? 0.0,
+        cumulativeRevenue: sim.cumulativeRevenue ?? 0.0,
+        score: sim.score ?? 0.0
+      }));
+
+      return reply.status(200).send(mapped);
     } catch (err) {
       return reply.status(200).send([]);
     }
@@ -1457,7 +1475,7 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
                 name: { type: 'string' },
                 inviteCode: { type: 'string' },
                 instructorId: { type: 'string' },
-                scenarioId: { type: 'string' }
+                scenarioId: { type: 'string', nullable: true }
               }
             }
           }
@@ -2136,7 +2154,7 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
       querystring: {
         type: 'object',
         properties: {
-          simulationId: { type: 'string', format: 'uuid' }
+          simulationId: { type: 'string', nullable: true }
         }
       },
       response: {
@@ -2147,6 +2165,8 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
             success: { type: 'boolean' },
             eligible: { type: 'boolean' },
             reasons: { type: 'array', items: { type: 'string' } },
+            reason: { type: 'string', nullable: true },
+            requirements: { type: 'array', items: { type: 'string' }, nullable: true },
             band: { type: 'string' },
             compositeScore: { type: 'number' },
             strategicConsistency: { type: 'number' }
@@ -2163,7 +2183,8 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
       simulationId = query.simulationId;
     }
 
-    if (!simulationId) {
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!simulationId || !uuidRegex.test(simulationId)) {
       const sim = await prisma.simulationState.findFirst({
         where: { userId: authReq.user!.id, classId: authReq.user!.classId || undefined }
       });
@@ -2172,6 +2193,8 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
           success: true,
           eligible: false,
           reasons: ['No active simulation state initialized yet.'],
+          reason: 'No active simulation state initialized yet.',
+          requirements: [],
           band: 'None',
           compositeScore: 0,
           strategicConsistency: 0
@@ -2183,7 +2206,13 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
     const check = await checkCertificateEligibility(simulationId);
     return reply.status(200).send({
       success: true,
-      ...check
+      eligible: check.eligible,
+      reasons: check.reasons || [],
+      reason: check.reasons?.join(', ') || 'No completed simulation yet',
+      requirements: check.reasons || [],
+      band: check.band || 'None',
+      compositeScore: check.compositeScore || 0,
+      strategicConsistency: check.strategicConsistency || 0
     });
   });
 
@@ -2196,7 +2225,7 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
       body: {
         type: 'object',
         properties: {
-          simulationId: { type: 'string', format: 'uuid' }
+          simulationId: { type: 'string', nullable: true }
         }
       },
       response: {
@@ -2207,6 +2236,8 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
             success: { type: 'boolean' },
             eligible: { type: 'boolean' },
             reasons: { type: 'array', items: { type: 'string' } },
+            reason: { type: 'string', nullable: true },
+            requirements: { type: 'array', items: { type: 'string' }, nullable: true },
             band: { type: 'string' },
             compositeScore: { type: 'number' },
             strategicConsistency: { type: 'number' }
@@ -2223,7 +2254,8 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
       simulationId = body.simulationId;
     }
 
-    if (!simulationId) {
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!simulationId || !uuidRegex.test(simulationId)) {
       const sim = await prisma.simulationState.findFirst({
         where: { userId: authReq.user!.id, classId: authReq.user!.classId || undefined }
       });
@@ -2232,6 +2264,8 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
           success: true,
           eligible: false,
           reasons: ['No active simulation state initialized yet.'],
+          reason: 'No active simulation state initialized yet.',
+          requirements: [],
           band: 'None',
           compositeScore: 0,
           strategicConsistency: 0
@@ -2243,7 +2277,13 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
     const check = await checkCertificateEligibility(simulationId);
     return reply.status(200).send({
       success: true,
-      ...check
+      eligible: check.eligible,
+      reasons: check.reasons || [],
+      reason: check.reasons?.join(', ') || 'No completed simulation yet',
+      requirements: check.reasons || [],
+      band: check.band || 'None',
+      compositeScore: check.compositeScore || 0,
+      strategicConsistency: check.strategicConsistency || 0
     });
   });
 
@@ -3047,7 +3087,7 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
           type: 'object',
           properties: {
             success: { type: 'boolean' },
-            scenarioId: { type: 'string' },
+            scenarioId: { type: 'string', nullable: true },
             events: {
               type: 'array',
               items: {

@@ -138,10 +138,36 @@ export async function classesRoutes(fastify: FastifyInstance) {
       });
     }
 
-    const enrollment = await prisma.classEnrollment.findFirst({
+    let enrollment = await prisma.classEnrollment.findFirst({
       where: { studentId: authReq.user!.id, classId },
       orderBy: { requestedAt: 'desc' }
     });
+
+    // Inconsistency auto-repair synchronization
+    if (authReq.user!.status === 'active' && (!enrollment || enrollment.status !== 'ACTIVE')) {
+      if (enrollment) {
+        enrollment = await prisma.classEnrollment.update({
+          where: { id: enrollment.id },
+          data: { status: 'ACTIVE', approvedAt: new Date() }
+        });
+      } else {
+        enrollment = await prisma.classEnrollment.create({
+          data: {
+            classId,
+            studentId: authReq.user!.id,
+            studentEmail: authReq.user!.email,
+            status: 'ACTIVE',
+            approvedAt: new Date()
+          }
+        });
+      }
+    } else if (enrollment && enrollment.status === 'ACTIVE' && authReq.user!.status !== 'active') {
+      await prisma.user.update({
+        where: { id: authReq.user!.id },
+        data: { status: 'active' }
+      }).catch(() => {});
+      authReq.user!.status = 'active';
+    }
 
     if (!enrollment) {
       // Fallback if classId is set on user but no enrollment record exists

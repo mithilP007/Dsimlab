@@ -116,7 +116,7 @@ export async function userRoutes(fastify: FastifyInstance) {
           type: 'object',
           properties: {
             success: { type: 'boolean' },
-            classId: { type: 'string' },
+            classId: { type: 'string', nullable: true },
             className: { type: 'string' }
           }
         }

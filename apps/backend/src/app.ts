@@ -183,6 +183,11 @@ app.addHook('preHandler', async (request, reply) => {
 app.addHook('preHandler', async (request, reply) => {
   const path = request.url;
   
+  // Do not block GET requests for simulations, states, or campaigns so they can render safe empty/pending states
+  if (request.method === 'GET') {
+    return;
+  }
+
   // Only apply enrollment guard to student simulation and work routes
   const isStudentWorkRoute = 
     path.startsWith('/api/simulations') || 
@@ -222,9 +227,29 @@ app.addHook('preHandler', async (request, reply) => {
       return;
     }
 
-    const enrollment = await prisma.classEnrollment.findFirst({
+    let enrollment = await prisma.classEnrollment.findFirst({
       where: { studentId: user.id, classId }
     });
+
+    // Auto-repair/sync enrollment if user is active but ClassEnrollment record is pending/missing
+    if (user.status === 'active' && (!enrollment || enrollment.status !== 'ACTIVE')) {
+      if (enrollment) {
+        enrollment = await prisma.classEnrollment.update({
+          where: { id: enrollment.id },
+          data: { status: 'ACTIVE', approvedAt: new Date() }
+        });
+      } else {
+        enrollment = await prisma.classEnrollment.create({
+          data: {
+            classId,
+            studentId: user.id,
+            studentEmail: user.email,
+            status: 'ACTIVE',
+            approvedAt: new Date()
+          }
+        });
+      }
+    }
 
     if (!enrollment || enrollment.status === 'PENDING') {
       await logActivity(
