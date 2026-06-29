@@ -98,6 +98,9 @@ export class LimitsService {
    * Checks if a user is allowed to export NBA/OBE reports.
    */
   async checkExportLimit(userId: string) {
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (user?.role === 'ADMIN') return; // Admin bypass
+
     const limits = await this.resolveUserLimits(userId);
 
     if (limits.reportExportLimit === -1) return; // Unlimited

@@ -88,12 +88,68 @@ export async function executeOvernightBatchSweep(): Promise<void> {
   }
 }
 
+export async function executeSandboxScheduledSweep(): Promise<void> {
+  logger.info('Running scheduled sandbox simulation sweep...');
+  try {
+    const now = new Date();
+    const processingProgress = await prisma.studentSimulationProgress.findMany({
+      where: {
+        status: 'PROCESSING',
+        nextResultAt: { lte: now }
+      },
+      include: {
+        simulation: {
+          include: {
+            class: true
+          }
+        }
+      }
+    });
+
+    if (processingProgress.length === 0) {
+      logger.info('No scheduled sandbox rounds due for processing.');
+      return;
+    }
+
+    logger.info(`Found ${processingProgress.length} sandbox sessions ready to advance.`);
+
+    for (const prog of processingProgress) {
+      const sim = prog.simulation;
+      if (!sim) continue;
+      
+      if (sim.class.inviteCode.startsWith('SANDBOX')) {
+        try {
+          await prisma.simulationState.update({
+            where: { id: sim.id },
+            data: { status: 'LOCKED' }
+          });
+          await processSimulationRound(sim.id);
+          logger.info({ simulationId: sim.id }, 'Successfully advanced scheduled sandbox simulation round.');
+        } catch (err) {
+          logger.error(err, `Failed to process scheduled sandbox simulation round ${sim.id}`);
+          await prisma.simulationState.update({
+            where: { id: sim.id },
+            data: { status: 'DECISION_OPEN' }
+          });
+          await prisma.studentSimulationProgress.update({
+            where: { simulationId: sim.id },
+            data: { status: 'DECISION_OPEN' }
+          });
+        }
+      }
+    }
+  } catch (err) {
+    logger.error(err, 'Failed during sandbox scheduled sweep.');
+  }
+}
+
 /**
  * Executes the daily campaign processing scheduler
  */
 export async function executeHourlyCampaignSweep(): Promise<void> {
   const { executeDailyCampaignScheduler } = await import('./daily-campaign-scheduler');
   await executeDailyCampaignScheduler();
+  await executeSandboxScheduledSweep();
 }
 
 /**
