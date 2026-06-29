@@ -2192,8 +2192,8 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
         return reply.status(200).send({
           success: true,
           eligible: false,
-          reasons: ['No active simulation state initialized yet.'],
-          reason: 'No active simulation state initialized yet.',
+          reasons: ['No completed simulation yet'],
+          reason: 'No completed simulation yet',
           requirements: [],
           band: 'None',
           compositeScore: 0,
@@ -2230,6 +2230,12 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
 
   fastify.post('/api/certificates/check-eligibility', {
     preHandler: [requireAuth],
+    preValidation: (request, reply, done) => {
+      if (!request.body) {
+        request.body = {};
+      }
+      done();
+    },
     schema: {
       description: 'Checks certificate eligibility for the current simulation state',
       tags: ['Certificate'],
@@ -2275,8 +2281,8 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
         return reply.status(200).send({
           success: true,
           eligible: false,
-          reasons: ['No active simulation state initialized yet.'],
-          reason: 'No active simulation state initialized yet.',
+          reasons: ['No completed simulation yet'],
+          reason: 'No completed simulation yet',
           requirements: [],
           band: 'None',
           compositeScore: 0,
