@@ -210,34 +210,43 @@ export async function assignmentRoutes(fastify: FastifyInstance) {
    * Fetch active assignments for the logged-in student (Student only)
    */
   fastify.get('/student/active', { preHandler: [requireAuth] }, async (request, reply) => {
-    const authReq = request as AuthenticatedRequest;
-    const now = new Date();
+    try {
+      const authReq = request as AuthenticatedRequest;
+      const now = new Date();
 
-    const studentAssignment = await prisma.scenarioAssignmentStudent.findFirst({
-      where: {
-        studentId: authReq.user!.id,
-        status: { in: ['ASSIGNED', 'STARTED'] },
-        assignment: {
-          status: 'ACTIVE',
-          startDate: { lte: now },
-          endDate: { gte: now }
-        }
-      },
-      include: {
-        assignment: {
-          include: {
-            scenario: true,
-            class: true
+      const studentAssignment = await prisma.scenarioAssignmentStudent.findFirst({
+        where: {
+          studentId: authReq.user!.id,
+          status: { in: ['ASSIGNED', 'STARTED'] },
+          assignment: {
+            status: 'ACTIVE',
+            startDate: { lte: now },
+            endDate: { gte: now }
           }
         },
-        campaignRun: true
-      }
-    });
+        include: {
+          assignment: {
+            include: {
+              scenario: true,
+              class: true
+            }
+          },
+          campaignRun: true
+        }
+      });
 
-    return reply.status(200).send({
-      success: true,
-      activeAssignment: studentAssignment,
-    });
+      return reply.status(200).send({
+        success: true,
+        assignments: [],
+        activeAssignment: studentAssignment || null,
+      });
+    } catch (err) {
+      return reply.status(200).send({
+        success: true,
+        assignments: [],
+        activeAssignment: null,
+      });
+    }
   });
 
   /**

@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "build": "tsc",
-    "start": "node dist/index.js",
+    "start": "npx prisma migrate deploy && node dist/index.js",
     "test": "vitest run --fileParallelism=false",
     "test:watch": "vitest",
     "prisma:generate": "prisma generate",

@@ -2203,7 +2203,19 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
       simulationId = sim.id;
     }
 
-    const check = await checkCertificateEligibility(simulationId);
+    let check;
+    try {
+      check = await checkCertificateEligibility(simulationId);
+    } catch (err) {
+      check = {
+        eligible: false,
+        reasons: ['No completed simulation yet.'],
+        band: 'None',
+        compositeScore: 0,
+        strategicConsistency: 0
+      };
+    }
+
     return reply.status(200).send({
       success: true,
       eligible: check.eligible,
@@ -2274,7 +2286,19 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
       simulationId = sim.id;
     }
 
-    const check = await checkCertificateEligibility(simulationId);
+    let check;
+    try {
+      check = await checkCertificateEligibility(simulationId);
+    } catch (err) {
+      check = {
+        eligible: false,
+        reasons: ['No completed simulation yet.'],
+        band: 'None',
+        compositeScore: 0,
+        strategicConsistency: 0
+      };
+    }
+
     return reply.status(200).send({
       success: true,
       eligible: check.eligible,
