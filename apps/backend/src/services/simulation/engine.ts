@@ -48,6 +48,8 @@ export async function processSimulationRound(simulationId: string): Promise<any>
     throw new SimulationError('Simulation state not found.');
   }
 
+  const scenarioDiff = sim.class.scenario.difficulty || 'medium';
+
   if (sim.status !== 'LOCKED') {
     throw new SimulationError('Simulation is not locked. Cannot process round.');
   }
@@ -551,11 +553,12 @@ export async function processSimulationRound(simulationId: string): Promise<any>
       }
     }
 
-    // Pre-seed competitors for SEO evaluation
+    // Pre-seed competitors for SEO evaluation scaled by scenario difficulty path
+    const compScale = scenarioDiff === 'easy' ? 0.75 : (scenarioDiff === 'hard' ? 1.25 : 1.0);
     const competitorsSEO = [
-      { name: 'Alpha Agency', pageAuthority: 55, domainAuthority: 60 },
-      { name: 'Direct Market Corp', pageAuthority: 40, domainAuthority: 45 },
-      { name: 'Slick Digital', pageAuthority: 25, domainAuthority: 30 },
+      { name: 'Alpha Agency', pageAuthority: Math.round(55 * compScale), domainAuthority: Math.round(60 * compScale) },
+      { name: 'Direct Market Corp', pageAuthority: Math.round(40 * compScale), domainAuthority: Math.round(45 * compScale) },
+      { name: 'Slick Digital', pageAuthority: Math.round(25 * compScale), domainAuthority: Math.round(30 * compScale) },
     ];
 
     const baseConversionRate = 0.025; // 2.5% benchmark
@@ -567,7 +570,13 @@ export async function processSimulationRound(simulationId: string): Promise<any>
       let searchVolume = (500 + (kw.length * 150)) * mc.demandIndex * mc.seasonalImpact;
       if (searchVolume > 8000) searchVolume = 8000;
 
-      const difficulty = (kw.length * 7) % 80 + 10;
+      let difficulty = (kw.length * 7) % 80 + 10;
+      if (scenarioDiff === 'easy') {
+        difficulty = Math.max(10, difficulty * 0.7);
+      } else if (scenarioDiff === 'hard') {
+        difficulty = Math.min(100, difficulty * 1.3);
+      }
+
 
       const rank = calculateOrganicRank({
         keyword: kw,
@@ -604,7 +613,15 @@ export async function processSimulationRound(simulationId: string): Promise<any>
   // 4. Run Google Ads Engine if enabled
   if (hasGoogle) {
     const baseConversionRate = 0.025;
-    const googleAdvertisers = googleCampaigns.flatMap((campaign: any) => {
+    const rivalBidScale = scenarioDiff === 'easy' ? 0.7 : (scenarioDiff === 'hard' ? 1.3 : 1.0);
+    const rivalQsScale = scenarioDiff === 'easy' ? 0.8 : (scenarioDiff === 'hard' ? 1.2 : 1.0);
+
+    const searchCampaigns = googleCampaigns.filter((c: any) => !c.campaignType || c.campaignType === 'Search');
+    const displayCampaigns = googleCampaigns.filter((c: any) => c.campaignType === 'Display');
+    const videoCampaigns = googleCampaigns.filter((c: any) => c.campaignType === 'Video');
+    const shoppingCampaigns = googleCampaigns.filter((c: any) => c.campaignType === 'Shopping');
+
+    const googleAdvertisers = searchCampaigns.flatMap((campaign: any) => {
       const dailyCampaignBudget = campaign.budget / 30.0;
       const cKeywords = campaign.keywords || [];
       const obj = campaign.objective || 'Sales';
@@ -616,8 +633,8 @@ export async function processSimulationRound(simulationId: string): Promise<any>
 
       return cKeywords.map((kwBid: any) => {
         const mockRivals = [
-          { id: 'rival-1', name: 'Rival A', bid: random.nextFloat(0.5, 2.5), qualityScore: random.nextInt(4, 9), dailyBudget: dailyCampaignBudget * 1.2 },
-          { id: 'rival-2', name: 'Rival B', bid: random.nextFloat(0.8, 3.0), qualityScore: random.nextInt(5, 8), dailyBudget: dailyCampaignBudget * 0.8 },
+          { id: 'rival-1', name: 'Rival A', bid: random.nextFloat(0.5, 2.5) * rivalBidScale, qualityScore: Math.min(10, Math.max(1, Math.round(random.nextInt(4, 9) * rivalQsScale))), dailyBudget: dailyCampaignBudget * 1.2 },
+          { id: 'rival-2', name: 'Rival B', bid: random.nextFloat(0.8, 3.0) * rivalBidScale, qualityScore: Math.min(10, Math.max(1, Math.round(random.nextInt(5, 8) * rivalQsScale))), dailyBudget: dailyCampaignBudget * 0.8 },
         ];
 
         let qs = calculateQualityScore(adCopy, kwBid.word, landingPage);
@@ -699,6 +716,76 @@ export async function processSimulationRound(simulationId: string): Promise<any>
       googleCost += dailyPaced.cost * 30;
       googleConversions += dailyPaced.conversions * 30;
     });
+
+    // --- DISPLAY CAMPAIGNS ---
+    displayCampaigns.forEach((campaign: any) => {
+      const dailyBudget = (campaign.budget || 0) / 30.0;
+      const audiences = campaign.audiences || [];
+      const audienceMatchScore = Math.min(1.0, 0.5 + (audiences.length * 0.1));
+
+      for (let day = 1; day <= 30; day++) {
+        const cpm = random.nextFloat(1.5, 4.5) * (1 - 0.1 * mc.demandIndex);
+        const impressions = Math.floor((dailyBudget / Math.max(cpm, 0.01)) * 1000 * audienceMatchScore);
+        const ctr = random.nextFloat(0.0035, 0.0065) * (mc.demandIndex + 0.5);
+        const clicks = Math.floor(impressions * ctr);
+        const cost = Math.min(dailyBudget, (impressions / 1000) * cpm) * impacts.googleCPC;
+        const cvr = random.nextFloat(0.003, 0.015) * mc.conversionIntent;
+        const conversions = Math.floor(clicks * cvr);
+
+        googleImpressions += impressions;
+        googleClicks += clicks;
+        googleCost += cost;
+        googleConversions += conversions;
+      }
+    });
+
+    // --- VIDEO CAMPAIGNS ---
+    videoCampaigns.forEach((campaign: any) => {
+      const dailyBudget = (campaign.budget || 0) / 30.0;
+      const targetCpv = campaign.targetCpvBid || 0.05;
+
+      for (let day = 1; day <= 30; day++) {
+        const baseImpressions = Math.floor((dailyBudget / Math.max(targetCpv, 0.01)) * 1.4);
+        const viewRate = random.nextFloat(0.60, 0.80);
+        const views = Math.floor(baseImpressions * viewRate);
+        const cost = Math.min(dailyBudget, views * targetCpv) * impacts.googleCPC;
+        const clickRate = random.nextFloat(0.005, 0.02);
+        const clicks = Math.floor(views * clickRate);
+        const cvr = random.nextFloat(0.005, 0.02) * mc.conversionIntent;
+        const conversions = Math.floor(clicks * cvr);
+
+        googleImpressions += baseImpressions;
+        googleClicks += clicks;
+        googleCost += cost;
+        googleConversions += conversions;
+      }
+    });
+
+    // --- SHOPPING CAMPAIGNS ---
+    shoppingCampaigns.forEach((campaign: any) => {
+      const dailyBudget = (campaign.budget || 0) / 30.0;
+      const productFeeds = campaign.productFeeds || [];
+      if (productFeeds.length === 0) return;
+      const perProductDailyBudget = dailyBudget / productFeeds.length;
+
+      for (let day = 1; day <= 30; day++) {
+        productFeeds.forEach((product: any) => {
+          const productBid = product.bid || 0.5;
+          const impressions = Math.floor(random.nextInt(300, 900) * (productBid / 2.0));
+          const ctr = random.nextFloat(0.02, 0.07) * mc.conversionIntent;
+          const clicks = Math.floor(impressions * ctr);
+          const cpc = random.nextFloat(productBid * 0.7, productBid * 1.2);
+          const cost = Math.min(perProductDailyBudget, clicks * cpc) * impacts.googleCPC;
+          const cvr = random.nextFloat(0.01, 0.04) * mc.conversionIntent;
+          const conversions = Math.floor(clicks * cvr);
+
+          googleImpressions += impressions;
+          googleClicks += clicks;
+          googleCost += cost;
+          googleConversions += conversions;
+        });
+      }
+    });
   }
 
   // 5. Run Meta Ads Engine if enabled
@@ -764,7 +851,7 @@ export async function processSimulationRound(simulationId: string): Promise<any>
       if (studentRes) {
         metaImpressions += studentRes.impressions;
         metaClicks += studentRes.clicks;
-        const dailyCostWithImpact = studentRes.cost * impacts.metaCPM;
+        const dailyCostWithImpact = studentRes.cost * impacts.metaCPM * (scenarioDiff === 'easy' ? 0.8 : (scenarioDiff === 'hard' ? 1.2 : 1.0));
         const remainingBudget = totalMetaBudgetCeiling - metaCost;
         metaCost += Math.min(dailyCostWithImpact, Math.max(0, remainingBudget));
         metaConversions += studentRes.conversions;

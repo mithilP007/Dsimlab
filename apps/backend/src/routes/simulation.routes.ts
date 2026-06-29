@@ -271,9 +271,14 @@ export async function simulationRoutes(fastify: FastifyInstance) {
       throw new NotFoundError('No active simulation initialized.');
     }
 
-    // Gating Checkpoint Validation for College Students
-    const isCollegeStudent = authReq.user!.role === 'STUDENT_COLLEGE';
-    if (isCollegeStudent && state.currentRound > 1) {
+    // Gating Checkpoint Validation — controlled by scenario.checkpointRequired
+    const classWithScenario = await prisma.class.findUnique({
+      where: { id: classId },
+      select: { scenario: { select: { checkpointRequired: true } } }
+    });
+    const scenarioRequiresCheckpoint = classWithScenario?.scenario?.checkpointRequired ?? true;
+
+    if (scenarioRequiresCheckpoint && state.currentRound > 1) {
       const prevRound = state.currentRound - 1;
       const checkpoint = await prisma.checkpointValidation.findFirst({
         where: {

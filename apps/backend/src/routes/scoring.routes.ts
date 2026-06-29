@@ -309,4 +309,118 @@ export async function scoringRoutes(fastify: FastifyInstance) {
     }
   });
 
+  /**
+   * GET /api/v1/scoring/scorecard
+   * Aggregates all round score breakdowns into a full scorecard with:
+   * - cumulative averages per dimension
+   * - round-by-round chart data
+   * - performance band classification (Excellent / Good / Needs Improvement)
+   */
+  fastify.get('/scorecard', { preHandler: [requireAuth] }, async (request, reply) => {
+    const authReq = request as AuthenticatedRequest;
+
+    const sim = await prisma.simulationState.findFirst({
+      where: {
+        userId: authReq.user!.id,
+        ...(authReq.user!.classId ? { classId: authReq.user!.classId } : {}),
+      },
+      include: {
+        class: {
+          include: {
+            scenario: { select: { maxRounds: true, name: true, industry: true, targetKPI: true } }
+          }
+        },
+        scoreBreakdowns: {
+          orderBy: { round: 'asc' }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    if (!sim) {
+      return reply.status(200).send({
+        success: true,
+        scorecard: null,
+        message: 'No simulation found.'
+      });
+    }
+
+    const breakdowns = sim.scoreBreakdowns;
+    const roundCount = breakdowns.length;
+
+    const avg = (field: keyof typeof breakdowns[0]) => {
+      if (roundCount === 0) return 0;
+      const sum = breakdowns.reduce((acc: number, b: any) => acc + (b[field] as number || 0), 0);
+      return parseFloat((sum / roundCount).toFixed(2));
+    };
+
+    const getPerformanceBand = (score: number): 'Excellent' | 'Good' | 'Average' | 'Needs Improvement' => {
+      if (score >= 90) return 'Excellent';
+      if (score >= 75) return 'Good';
+      if (score >= 55) return 'Average';
+      return 'Needs Improvement';
+    };
+
+    const dimensions = {
+      seoScore: avg('seoScore'),
+      googleAdsScore: avg('googleAdsScore'),
+      metaAdsScore: avg('metaAdsScore'),
+      budgetScore: avg('budgetScore'),
+      revenueScore: avg('revenueScore'),
+      strategicAlignment: avg('strategicAlignment'),
+      efficiencyRoi: avg('efficiencyRoi'),
+      budgetDiscipline: avg('budgetDiscipline'),
+      riskManagement: avg('riskManagement'),
+      adaptability: avg('adaptability'),
+    };
+
+    const overallAverage = parseFloat(
+      (Object.values(dimensions).reduce((a, b) => a + b, 0) / Object.keys(dimensions).length).toFixed(2)
+    );
+
+    const scorecard = {
+      simulationId: sim.id,
+      studentId: sim.userId,
+      scenarioName: sim.class?.scenario?.name || 'Sandbox',
+      industry: sim.class?.scenario?.industry || 'Digital Marketing',
+      targetKPI: sim.class?.scenario?.targetKPI || 'revenue',
+      totalRounds: sim.class?.scenario?.maxRounds || 10,
+      completedRounds: roundCount,
+      isCompleted: sim.isCompleted,
+      overallScore: sim.score,
+      overallAverage,
+      cumulativeRevenue: sim.cumulativeRevenue,
+      cumulativeSpend: sim.cumulativeSpend,
+      overallROI: sim.cumulativeSpend > 0
+        ? parseFloat(((sim.cumulativeRevenue - sim.cumulativeSpend) / sim.cumulativeSpend * 100).toFixed(2))
+        : 0,
+      dimensions,
+      dimensionBands: Object.fromEntries(
+        Object.entries(dimensions).map(([key, val]) => [key, getPerformanceBand(val)])
+      ),
+      // Round-by-round chart data
+      roundHistory: breakdowns.map((b: any) => ({
+        round: b.round,
+        compositeIndex: b.compositeIndex,
+        seoScore: b.seoScore,
+        googleAdsScore: b.googleAdsScore,
+        metaAdsScore: b.metaAdsScore,
+        budgetScore: b.budgetScore,
+        revenueScore: b.revenueScore,
+        strategicAlignment: b.strategicAlignment,
+        efficiencyRoi: b.efficiencyRoi,
+        budgetDiscipline: b.budgetDiscipline,
+        riskManagement: b.riskManagement,
+        adaptability: b.adaptability,
+      })),
+      // Overall performance band
+      overallBand: getPerformanceBand(overallAverage),
+    };
+
+    return reply.status(200).send({
+      success: true,
+      scorecard
+    });
+  });
+
 }

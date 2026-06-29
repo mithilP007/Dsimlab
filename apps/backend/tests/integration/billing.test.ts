@@ -3,6 +3,8 @@ import { prisma } from '../../src/db/client';
 import { billingService } from '../../src/services/billing/billing.service';
 import { limitsService } from '../../src/services/billing/limits.service';
 import { ValidationError } from '../../src/utils/errors';
+import { checkExpiredSubscriptions } from '../../src/jobs/schedulers/round-scheduler';
+
 
 describe('Billing & Plan Enforcement Integration Tests', () => {
   let studentId: string;
@@ -392,4 +394,48 @@ describe('Billing & Plan Enforcement Integration Tests', () => {
       await expect(limitsService.checkExportLimit(testStudent.id)).rejects.toThrow(ValidationError);
     });
   });
+
+  describe('Subscription Expiry Scheduler Engine', () => {
+    it('should detect expired subscriptions and downgrade user to free plan', async () => {
+      // 1. Create a user with pro plan
+      const testStudent = await prisma.user.create({
+        data: {
+          email: 'expire-check@simplab.com',
+          name: 'Expire Check Student',
+          role: 'INDIVIDUAL',
+          planType: 'individual_basic',
+          emailVerified: true
+        }
+      });
+
+      // 2. Create an expired subscription
+      const sub = await prisma.subscription.create({
+        data: {
+          userId: testStudent.id,
+          planId: basicPlanId,
+          status: 'active',
+          billingCycle: 'monthly',
+          startDate: new Date(Date.now() - 31 * 86400000), // 31 days ago
+          endDate: new Date(Date.now() - 1 * 86400000), // 1 day ago (expired!)
+          gatewaySubscriptionId: 'sub_expired_test_id'
+        }
+      });
+
+      // 3. Run checkExpiredSubscriptions
+      await checkExpiredSubscriptions();
+
+      // 4. Assert subscription status is expired
+      const updatedSub = await prisma.subscription.findUnique({
+        where: { id: sub.id }
+      });
+      expect(updatedSub?.status).toBe('expired');
+
+      // 5. Assert user is downgraded to free
+      const updatedUser = await prisma.user.findUnique({
+        where: { id: testStudent.id }
+      });
+      expect(updatedUser?.planType).toBe('free');
+    });
+  });
 });
+

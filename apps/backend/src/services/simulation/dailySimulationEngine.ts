@@ -263,9 +263,11 @@ export async function processDailySimulationStep(campaignRunId: string): Promise
     }
   }
 
+  const scenarioDiff = run.scenario.difficulty || 'medium';
+  const compScale = scenarioDiff === 'easy' ? 0.75 : (scenarioDiff === 'hard' ? 1.25 : 1.0);
   const competitorsSEO = [
-    { name: 'Direct Competitor X', pageAuthority: 45, domainAuthority: 50 },
-    { name: 'SEO Authority Hub', pageAuthority: 60, domainAuthority: 65 },
+    { name: 'Direct Competitor X', pageAuthority: Math.round(45 * compScale), domainAuthority: Math.round(50 * compScale) },
+    { name: 'SEO Authority Hub', pageAuthority: Math.round(60 * compScale), domainAuthority: Math.round(65 * compScale) },
   ];
 
   let organicImpressions = 0;
@@ -277,7 +279,13 @@ export async function processDailySimulationStep(campaignRunId: string): Promise
     let searchVolume = (400 + (kw.length * 120)) * mc.demandIndex * mc.seasonalImpact;
     if (searchVolume > 5000) searchVolume = 5000;
 
-    const difficulty = (kw.length * 8) % 70 + 20;
+    let difficulty = (kw.length * 8) % 70 + 20;
+    if (scenarioDiff === 'easy') {
+      difficulty = Math.max(10, difficulty * 0.7);
+    } else if (scenarioDiff === 'hard') {
+      difficulty = Math.min(100, difficulty * 1.3);
+    }
+
 
     const rank = calculateOrganicRank({
       keyword: kw,
@@ -309,13 +317,20 @@ export async function processDailySimulationStep(campaignRunId: string): Promise
     organicConversions += traffic.conversions;
   });
 
-  // 5. Run Google Ads daily simulation
+  // 5. Run Google Ads daily simulation (supports Search, Display, Video, Shopping)
   let googleImpressions = 0;
   let googleClicks = 0;
   let googleCost = 0;
   let googleConversions = 0;
 
-  const googleAdvertisers = (googleAdsSettings.campaigns || []).flatMap((campaign: any) => {
+  const allGoogleCampaigns = (googleAdsSettings.campaigns || []);
+  const searchCampaigns = allGoogleCampaigns.filter((c: any) => !c.campaignType || c.campaignType === 'Search');
+  const displayCampaigns = allGoogleCampaigns.filter((c: any) => c.campaignType === 'Display');
+  const videoCampaigns = allGoogleCampaigns.filter((c: any) => c.campaignType === 'Video');
+  const shoppingCampaigns = allGoogleCampaigns.filter((c: any) => c.campaignType === 'Shopping');
+
+  // --- SEARCH CAMPAIGNS (keyword auction) ---
+  const googleAdvertisers = searchCampaigns.flatMap((campaign: any) => {
     const dailyCampaignBudget = campaign.budget || 0;
     const cKeywords = campaign.keywords || [];
     const obj = campaign.objective || 'Sales';
@@ -324,9 +339,12 @@ export async function processDailySimulationStep(campaignRunId: string): Promise
     const landingPage = campaign.landingPage || { pageRelevance: 7, mobileFriendly: 8, pageSpeed: 7, trustSignals: 8, offerClarity: 7, conversionReadiness: 8 };
 
     return cKeywords.map((kwBid: any) => {
+      const rivalBidScale = scenarioDiff === 'easy' ? 0.7 : (scenarioDiff === 'hard' ? 1.3 : 1.0);
+      const rivalQsScale = scenarioDiff === 'easy' ? 0.8 : (scenarioDiff === 'hard' ? 1.2 : 1.0);
+
       const mockRivals = [
-        { id: 'rival-1', name: 'Rival Brand A', bid: random.nextFloat(0.5, 2.5), qualityScore: random.nextInt(4, 9), dailyBudget: dailyCampaignBudget * 1.2 },
-        { id: 'rival-2', name: 'Rival Brand B', bid: random.nextFloat(0.8, 3.0), qualityScore: random.nextInt(5, 8), dailyBudget: dailyCampaignBudget * 0.8 },
+        { id: 'rival-1', name: 'Rival Brand A', bid: random.nextFloat(0.5, 2.5) * rivalBidScale, qualityScore: Math.min(10, Math.max(1, Math.round(random.nextInt(4, 9) * rivalQsScale))), dailyBudget: dailyCampaignBudget * 1.2 },
+        { id: 'rival-2', name: 'Rival Brand B', bid: random.nextFloat(0.8, 3.0) * rivalBidScale, qualityScore: Math.min(10, Math.max(1, Math.round(random.nextInt(5, 8) * rivalQsScale))), dailyBudget: dailyCampaignBudget * 0.8 },
       ];
 
       let qs = calculateQualityScore(adCopy, kwBid.word, landingPage);
@@ -346,12 +364,6 @@ export async function processDailySimulationStep(campaignRunId: string): Promise
       const hasLead = extensions.leadForm && extensions.leadForm.title && extensions.leadForm.title.trim().length > 0;
       const hasCall = extensions.callExtension && extensions.callExtension.trim().length > 0;
 
-      // Sitelinks: up to 4, +0.25 Quality Score each, +2% CTR multiplier each
-      // Callouts: up to 4, +0.125 Quality Score each, +1% CTR multiplier each
-      // Structured snippets: up to 4, +0.125 Quality Score each, +1% CTR multiplier each
-      // Promotion: if present/valid, +0.25 Quality Score, +2% CTR multiplier
-      // Lead form: if present/valid, +0.25 Quality Score, +2% CTR multiplier
-      // Call extension: if present/valid, +0.125 Quality Score, +1% CTR multiplier
       let qsBonus = (validSitelinks.length * 0.25) + (validCallouts.length * 0.125) + (validStructuredSnippets.length * 0.125);
       if (hasPromo) qsBonus += 0.25;
       if (hasLead) qsBonus += 0.25;
@@ -364,7 +376,6 @@ export async function processDailySimulationStep(campaignRunId: string): Promise
       if (hasLead) ctrModifier += 0.02;
       if (hasCall) ctrModifier += 0.01;
 
-      // Penalize CTR slightly for soft violations
       if (campaignSoftCount > 0) {
         ctrModifier = Math.max(0.5, ctrModifier - (0.1 * campaignSoftCount));
       }
@@ -386,7 +397,7 @@ export async function processDailySimulationStep(campaignRunId: string): Promise
 
       const auctionResults = runGoogleAuction(
         kwBid.word,
-        800, // Daily search volume baseline
+        800,
         [studentBidder, ...mockRivals],
         0.025 * mc.conversionIntent,
         random,
@@ -395,28 +406,81 @@ export async function processDailySimulationStep(campaignRunId: string): Promise
 
       const studentRes = auctionResults.find(r => r.id === 'student');
       if (studentRes) {
-        return {
-          ...studentRes,
-          dailyCampaignBudget,
-        };
+        return { ...studentRes, dailyCampaignBudget };
       }
       return null;
     }).filter(Boolean);
   });
 
   googleAdvertisers.forEach((res: any) => {
-    // Daily auction output is already paced per day
     const paced = paceDailyBudget(res.dailyCampaignBudget, {
       impressions: res.impressions,
       clicks: res.clicks,
       cost: res.cost * (res.cpcPressure || 1.0),
       conversions: res.conversions,
     });
-
     googleImpressions += paced.impressions;
     googleClicks += paced.clicks;
     googleCost += paced.cost;
     googleConversions += paced.conversions;
+  });
+
+  // --- DISPLAY CAMPAIGNS (CPM audience targeting) ---
+  displayCampaigns.forEach((campaign: any) => {
+    const dailyBudget = campaign.budget || 0;
+    const audiences = campaign.audiences || [];
+    const audienceMatchScore = Math.min(1.0, 0.5 + (audiences.length * 0.1));
+    const cpm = random.nextFloat(1.5, 4.5) * (1 - 0.1 * mc.demandIndex);
+    const impressions = Math.floor((dailyBudget / Math.max(cpm, 0.01)) * 1000 * audienceMatchScore);
+    const ctr = random.nextFloat(0.0035, 0.0065) * (mc.demandIndex + 0.5);
+    const clicks = Math.floor(impressions * ctr);
+    const cost = Math.min(dailyBudget, (impressions / 1000) * cpm);
+    const cvr = random.nextFloat(0.003, 0.015) * mc.conversionIntent;
+    const conversions = Math.floor(clicks * cvr);
+    googleImpressions += impressions;
+    googleClicks += clicks;
+    googleCost += cost;
+    googleConversions += conversions;
+  });
+
+  // --- VIDEO CAMPAIGNS (CPV YouTube-style) ---
+  videoCampaigns.forEach((campaign: any) => {
+    const dailyBudget = campaign.budget || 0;
+    const targetCpv = campaign.targetCpvBid || 0.05;
+    const baseImpressions = Math.floor((dailyBudget / Math.max(targetCpv, 0.01)) * 1.4);
+    const viewRate = random.nextFloat(0.60, 0.80);
+    const views = Math.floor(baseImpressions * viewRate);
+    const cost = Math.min(dailyBudget, views * targetCpv);
+    const clickRate = random.nextFloat(0.005, 0.02);
+    const clicks = Math.floor(views * clickRate);
+    const cvr = random.nextFloat(0.005, 0.02) * mc.conversionIntent;
+    const conversions = Math.floor(clicks * cvr);
+    googleImpressions += baseImpressions;
+    googleClicks += clicks;
+    googleCost += cost;
+    googleConversions += conversions;
+  });
+
+  // --- SHOPPING CAMPAIGNS (product feed ROAS-based) ---
+  shoppingCampaigns.forEach((campaign: any) => {
+    const dailyBudget = campaign.budget || 0;
+    const productFeeds = campaign.productFeeds || [];
+    if (productFeeds.length === 0) return;
+    const perProductBudget = dailyBudget / productFeeds.length;
+    productFeeds.forEach((product: any) => {
+      const productBid = product.bid || 0.5;
+      const impressions = Math.floor(random.nextInt(300, 900) * (productBid / 2.0));
+      const ctr = random.nextFloat(0.02, 0.07) * mc.conversionIntent;
+      const clicks = Math.floor(impressions * ctr);
+      const cpc = random.nextFloat(productBid * 0.7, productBid * 1.2);
+      const cost = Math.min(perProductBudget, clicks * cpc);
+      const cvr = random.nextFloat(0.01, 0.04) * mc.conversionIntent;
+      const conversions = Math.floor(clicks * cvr);
+      googleImpressions += impressions;
+      googleClicks += clicks;
+      googleCost += cost;
+      googleConversions += conversions;
+    });
   });
 
   // 6. Run Meta Ads daily simulation
@@ -487,7 +551,7 @@ export async function processDailySimulationStep(campaignRunId: string): Promise
     if (studentRes) {
       metaImpressions = studentRes.impressions;
       metaClicks = studentRes.clicks;
-      metaCost = Math.min(studentRes.cost, totalMetaBudget);
+      metaCost = Math.min(studentRes.cost * (scenarioDiff === 'easy' ? 0.8 : (scenarioDiff === 'hard' ? 1.2 : 1.0)), totalMetaBudget);
       metaConversions = studentRes.conversions;
     }
   }

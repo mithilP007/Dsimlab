@@ -38,20 +38,70 @@ export async function googleAdsRoutes(fastify: FastifyInstance) {
 
   /**
    * POST /api/v1/google-ads/decision
-   * Updates/Saves Google Ads campaign configs
+   * Updates/Saves Google Ads campaign configs.
+   * Supports Search, Display, Video, and Shopping campaign types.
    */
   fastify.post('/decision', { preHandler: [requireAuth] }, async (request, reply) => {
     const authReq = request as AuthenticatedRequest;
 
+    const campaignSchema = z.object({
+      name: z.string().min(1, 'Campaign name cannot be empty'),
+      campaignType: z.enum(['Search', 'Display', 'Video', 'Shopping']).default('Search'),
+      objective: z.string().optional(),
+      biddingStrategy: z.string().optional(),
+      budget: z.number().nonnegative('Budget must be positive'),
+      // Search campaigns use keyword-based targeting
+      keywords: z.array(z.object({
+        word: z.string().min(1, 'Keyword word is required'),
+        bid: z.number().positive('Bid must be greater than zero'),
+        matchType: z.enum(['broad', 'phrase', 'exact']).optional()
+      })).optional().default([]),
+      negativeKeywords: z.array(z.string()).optional().default([]),
+      // Display campaigns use audience interest targeting
+      audiences: z.array(z.string()).optional().default([]),
+      // Video campaigns: CPV-based targeting
+      creativeVideoUrl: z.string().optional(),
+      targetCpvBid: z.number().nonnegative().optional(),
+      // Shopping campaigns: product catalog
+      productFeeds: z.array(z.object({
+        productId: z.string(),
+        bid: z.number().positive()
+      })).optional().default([]),
+      // Ad copy shared across campaign types
+      adCopy: z.object({
+        headline1: z.string().optional(),
+        headline2: z.string().optional(),
+        headline3: z.string().optional(),
+        description1: z.string().optional(),
+        description2: z.string().optional(),
+        imageUrl: z.string().optional()
+      }).optional(),
+      landingPage: z.object({
+        pageRelevance: z.number().min(0).max(10).optional(),
+        mobileFriendly: z.number().min(0).max(10).optional(),
+        pageSpeed: z.number().min(0).max(10).optional(),
+        trustSignals: z.number().min(0).max(10).optional(),
+        offerClarity: z.number().min(0).max(10).optional(),
+        conversionReadiness: z.number().min(0).max(10).optional()
+      }).optional(),
+      extensions: z.object({
+        sitelinks: z.array(z.object({ title: z.string(), url: z.string() })).optional(),
+        callouts: z.array(z.string()).optional(),
+        structuredSnippets: z.array(z.string()).optional(),
+        promotion: z.object({ item: z.string() }).optional(),
+        leadForm: z.object({ title: z.string() }).optional(),
+        callExtension: z.string().optional()
+      }).optional()
+    }).refine(data => {
+      // Enforce that Search campaigns must have at least 1 keyword
+      if (data.campaignType === 'Search' && (!data.keywords || data.keywords.length === 0)) {
+        return false;
+      }
+      return true;
+    }, { message: 'Search campaigns must include at least one keyword.' });
+
     const bodySchema = z.object({
-      campaigns: z.array(z.object({
-        name: z.string().min(1, 'Campaign name cannot be empty'),
-        budget: z.number().nonnegative('Budget must be positive'),
-        keywords: z.array(z.object({
-          word: z.string().min(1, 'Keyword word is required'),
-          bid: z.number().positive('Bid must be greater than zero')
-        })).min(1, 'Campaign must target at least one keyword')
-      }))
+      campaigns: z.array(campaignSchema)
     });
 
     const parsed = bodySchema.safeParse(request.body);
@@ -101,12 +151,13 @@ export async function googleAdsRoutes(fastify: FastifyInstance) {
       }
     });
 
-    // Write audit log with "fees of operation" (Google Ads budgets spent)
+    // Write audit log
     const totalGoogleBudget = parsed.data.campaigns.reduce((acc, c) => acc + c.budget, 0);
+    const campaignTypesSummary = [...new Set(parsed.data.campaigns.map(c => c.campaignType))].join(', ');
     await logActivity(
       authReq.user!.id,
       'GOOGLE_ADS_DECISION_SUBMIT',
-      `Submitted Google Ads choices for Round ${sim.currentRound}. Created ${parsed.data.campaigns.length} campaigns. Total Google Ads Budget Spent: $${totalGoogleBudget}.`
+      `Submitted Google Ads choices for Round ${sim.currentRound}. Types: ${campaignTypesSummary}. Total Google Ads Budget: $${totalGoogleBudget}.`
     );
 
     // Notify instructor
@@ -119,7 +170,7 @@ export async function googleAdsRoutes(fastify: FastifyInstance) {
         targetClass.instructorId,
         'info',
         'Google Ads Campaign Updated',
-        `${authReq.user!.name} updated Google Ads campaigns. Total budget spent: $${totalGoogleBudget}.`,
+        `${authReq.user!.name} updated Google Ads campaigns (${campaignTypesSummary}). Total budget: $${totalGoogleBudget}.`,
         authReq.user!.name,
         '/instructor'
       );
@@ -131,4 +182,3 @@ export async function googleAdsRoutes(fastify: FastifyInstance) {
     });
   });
 }
-

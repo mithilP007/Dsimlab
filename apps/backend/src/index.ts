@@ -3,6 +3,7 @@ import { config } from './config';
 import { logger } from './utils/logger';
 import { initSocketServer } from './websocket/server';
 import { startQueueWorker } from './jobs/queue';
+import { checkExpiredSubscriptions } from './jobs/schedulers/round-scheduler';
 
 const start = async () => {
   try {
@@ -20,6 +21,12 @@ const start = async () => {
     // Start background BullMQ queue worker
     startQueueWorker();
     logger.info('Background Queue worker started');
+
+    // Run expired subscription sweep on startup and schedule hourly
+    checkExpiredSubscriptions().catch(err => logger.error(err, 'Startup subscription sweep failed'));
+    setInterval(() => {
+      checkExpiredSubscriptions().catch(err => logger.error(err, 'Hourly subscription sweep failed'));
+    }, 60 * 60 * 1000); // every hour
   } catch (err) {
     logger.error(err, 'Failed to bootstrap server application');
     process.exit(1);

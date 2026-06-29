@@ -3,6 +3,7 @@ import { requireAuth, AuthenticatedRequest } from '../auth/middleware';
 import { prisma } from '../db/client';
 import { billingService } from '../services/billing/billing.service';
 import { z } from 'zod';
+import crypto from 'crypto';
 import { ValidationError, NotFoundError } from '../utils/errors';
 import { paymentGateway } from '../services/billing/payment.gateway';
 import { config } from '../config';
@@ -365,7 +366,93 @@ export async function billingRoutes(fastify: FastifyInstance) {
 
       if (type === 'payment.captured') {
         const paymentData = eventData.payload.payment.entity;
-        // Invoices and subscriptions can be automatically verified/captured
+        const orderId = paymentData.order_id;
+        const paymentId = paymentData.id;
+        const amount = paymentData.amount / 100; // paise to INR
+
+        const sub = await prisma.subscription.findFirst({
+          where: { gatewaySubscriptionId: orderId, status: 'pending' },
+          include: { plan: true }
+        });
+
+        if (sub) {
+          const startDate = new Date();
+          const endDate = new Date();
+          const durationDays = sub.billingCycle === 'yearly' ? 365 : sub.plan.durationDays;
+          endDate.setDate(endDate.getDate() + durationDays);
+
+          await prisma.subscription.update({
+            where: { id: sub.id },
+            data: {
+              status: 'active',
+              startDate,
+              endDate,
+              gatewaySubscriptionId: `sub_active_${crypto.randomBytes(6).toString('hex')}`
+            }
+          });
+
+          await prisma.user.update({
+            where: { id: sub.userId },
+            data: { planType: sub.plan.code }
+          });
+
+          const invoiceNumber = `INV-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+          const invoice = await prisma.invoice.create({
+            data: {
+              userId: sub.userId,
+              subscriptionId: sub.id,
+              invoiceNumber,
+              amount: amount,
+              tax: parseFloat((amount * 0.18).toFixed(2)),
+              status: 'paid',
+              dueDate: new Date(),
+              paidAt: new Date(),
+              billingAddress: 'Razorpay Webhook Fulfill',
+              taxDetails: '18% GST Included'
+            }
+          });
+
+          await prisma.payment.create({
+            data: {
+              subscriptionId: sub.id,
+              invoiceId: invoice.id,
+              amount: amount,
+              status: 'captured',
+              gateway: 'razorpay',
+              gatewayPaymentId: paymentId,
+              gatewayOrderId: orderId
+            }
+          });
+        }
+      } else if (type === 'payment.failed') {
+        const paymentData = eventData.payload.payment.entity;
+        const orderId = paymentData.order_id;
+        const paymentId = paymentData.id;
+        const amount = paymentData.amount / 100;
+        const errorMessage = paymentData.error_description || 'Payment failed';
+
+        const sub = await prisma.subscription.findFirst({
+          where: { gatewaySubscriptionId: orderId, status: 'pending' }
+        });
+
+        if (sub) {
+          await prisma.subscription.update({
+            where: { id: sub.id },
+            data: { status: 'cancelled' }
+          });
+
+          await prisma.payment.create({
+            data: {
+              subscriptionId: sub.id,
+              amount: amount,
+              status: 'failed',
+              gateway: 'razorpay',
+              gatewayPaymentId: paymentId,
+              gatewayOrderId: orderId,
+              errorMessage
+            }
+          });
+        }
       } else if (type === 'subscription.cancelled') {
         const subId = eventData.payload.subscription.entity.id;
         const sub = await prisma.subscription.findFirst({

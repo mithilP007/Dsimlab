@@ -69,6 +69,8 @@ export async function scenarioRoutes(fastify: FastifyInstance) {
       targetKPI: z.enum(['revenue', 'clicks', 'conversions']).default('revenue'),
       difficulty: z.string().default('medium'),
       allowedPlatforms: z.string().optional(),
+      allowedCampaignTypes: z.string().optional(),
+      checkpointRequired: z.boolean().default(true),
     });
 
     const parsed = bodySchema.safeParse(request.body);
@@ -103,6 +105,8 @@ export async function scenarioRoutes(fastify: FastifyInstance) {
       targetKPI: z.enum(['revenue', 'clicks', 'conversions']).optional(),
       difficulty: z.string().optional(),
       allowedPlatforms: z.string().optional(),
+      allowedCampaignTypes: z.string().optional(),
+      checkpointRequired: z.boolean().optional(),
     });
 
     const parsed = bodySchema.safeParse(request.body);

@@ -10,6 +10,19 @@ import { logActivity } from '../utils/audit';
 import { cacheService } from '../utils/caching';
 
 export async function reportRoutes(fastify: FastifyInstance) {
+  async function checkClassAccess(classId: string, user: any) {
+    const targetClass = await prisma.class.findUnique({
+      where: { id: classId }
+    });
+    if (!targetClass) {
+      throw new NotFoundError('Class cohort not found.');
+    }
+    if (user.role !== UserRole.ADMIN && targetClass.instructorId !== user.id) {
+      throw new ForbiddenError('You are not authorized to access this class cohort.');
+    }
+    return targetClass;
+  }
+
   /**
    * GET /api/v1/report/class/:classId
    * Generates a cohort-wide aggregation report for class instructors
@@ -26,17 +39,7 @@ export async function reportRoutes(fastify: FastifyInstance) {
       throw new ValidationError(parsedParams.error.errors[0].message);
     }
 
-    // Verify instructor ownership of classroom
-    const targetClass = await prisma.class.findFirst({
-      where: {
-        id: parsedParams.data.classId,
-        instructorId: authReq.user!.id
-      }
-    });
-
-    if (!targetClass) {
-      throw new NotFoundError('Class cohort not found or unauthorized.');
-    }
+    const targetClass = await checkClassAccess(parsedParams.data.classId, authReq.user);
 
     const studentSimulations = await prisma.simulationState.findMany({
       where: { classId: parsedParams.data.classId },
@@ -200,13 +203,7 @@ export async function reportRoutes(fastify: FastifyInstance) {
     const authReq = request as AuthenticatedRequest;
     const { classId } = request.params as { classId: string };
 
-    const targetClass = await prisma.class.findFirst({
-      where: { id: classId, instructorId: authReq.user!.id }
-    });
-
-    if (!targetClass) {
-      throw new NotFoundError('Class not found or unauthorized.');
-    }
+    const targetClass = await checkClassAccess(classId, authReq.user);
 
     const certs = await prisma.certificate.findMany({
       where: { simulation: { classId } },
@@ -307,10 +304,7 @@ export async function reportRoutes(fastify: FastifyInstance) {
     const authReq = request as AuthenticatedRequest;
     const { classId } = request.params as { classId: string };
 
-    const targetClass = await prisma.class.findFirst({
-      where: { id: classId, instructorId: authReq.user!.id }
-    });
-    if (!targetClass) throw new NotFoundError('Class cohort not found or unauthorized.');
+    const targetClass = await checkClassAccess(classId, authReq.user);
 
     const cacheKey = `cache:report:nba:${classId}`;
     const cached = await cacheService.get<any>(cacheKey);
@@ -415,10 +409,7 @@ export async function reportRoutes(fastify: FastifyInstance) {
     const authReq = request as AuthenticatedRequest;
     const { classId } = request.params as { classId: string };
 
-    const targetClass = await prisma.class.findFirst({
-      where: { id: classId, instructorId: authReq.user!.id }
-    });
-    if (!targetClass) throw new NotFoundError('Class cohort not found or unauthorized.');
+    const targetClass = await checkClassAccess(classId, authReq.user);
 
     const cacheKey = `cache:report:obe:${classId}`;
     const cached = await cacheService.get<any>(cacheKey);
@@ -532,10 +523,7 @@ export async function reportRoutes(fastify: FastifyInstance) {
     const authReq = request as AuthenticatedRequest;
     const { classId } = request.params as { classId: string };
 
-    const targetClass = await prisma.class.findFirst({
-      where: { id: classId, instructorId: authReq.user!.id }
-    });
-    if (!targetClass) throw new NotFoundError('Class cohort not found or unauthorized.');
+    const targetClass = await checkClassAccess(classId, authReq.user);
 
     await limitsService.checkExportLimit(authReq.user!.id);
 
@@ -627,10 +615,7 @@ export async function reportRoutes(fastify: FastifyInstance) {
     const authReq = request as AuthenticatedRequest;
     const { classId } = request.params as { classId: string };
 
-    const targetClass = await prisma.class.findFirst({
-      where: { id: classId, instructorId: authReq.user!.id }
-    });
-    if (!targetClass) throw new NotFoundError('Class cohort not found or unauthorized.');
+    const targetClass = await checkClassAccess(classId, authReq.user);
 
     const students = await prisma.user.findMany({
       where: { classId, role: UserRole.STUDENT_COLLEGE },
@@ -695,8 +680,12 @@ export async function reportRoutes(fastify: FastifyInstance) {
    * GET /api/v1/report/student/:studentId
    * Generates student individual performance outcome report: traffic curves, achievements, recommendations.
    */
-  fastify.get('/student/:studentId', { preHandler: [requireRole([UserRole.INSTRUCTOR, UserRole.ADMIN])] }, async (request, reply) => {
+  fastify.get('/student/:studentId', { preHandler: [requireRole([UserRole.INSTRUCTOR, UserRole.ADMIN, UserRole.STUDENT_COLLEGE, UserRole.INDIVIDUAL])] }, async (request, reply) => {
+    const authReq = request as AuthenticatedRequest;
     const { studentId } = request.params as { studentId: string };
+
+    const isRequesterAdmin = authReq.user!.role === UserRole.ADMIN;
+    const isRequesterSelf = authReq.user!.id === studentId;
 
     const student = await prisma.user.findUnique({
       where: { id: studentId },
@@ -713,6 +702,22 @@ export async function reportRoutes(fastify: FastifyInstance) {
     });
 
     if (!student) throw new NotFoundError('Student not found.');
+
+    if (!isRequesterAdmin && !isRequesterSelf) {
+      if (authReq.user!.role === UserRole.INSTRUCTOR) {
+        if (!student.classId) {
+          throw new ForbiddenError('You are not authorized to view this student\'s report.');
+        }
+        const targetClass = await prisma.class.findUnique({
+          where: { id: student.classId }
+        });
+        if (!targetClass || targetClass.instructorId !== authReq.user!.id) {
+          throw new ForbiddenError('You do not own the class this student is enrolled in.');
+        }
+      } else {
+        throw new ForbiddenError('You are not authorized to view this student\'s report.');
+      }
+    }
 
     const activeSim = student.simulations[0];
     const breakdowns = activeSim?.scoreBreakdowns || [];
@@ -778,7 +783,7 @@ export async function reportRoutes(fastify: FastifyInstance) {
     const authReq = request as AuthenticatedRequest;
 
     const classes = await prisma.class.findMany({
-      where: { instructorId: authReq.user!.id },
+      where: authReq.user!.role === UserRole.ADMIN ? {} : { instructorId: authReq.user!.id },
       include: {
         scenario: true,
         students: {
@@ -827,10 +832,7 @@ export async function reportRoutes(fastify: FastifyInstance) {
     const authReq = request as AuthenticatedRequest;
     const { classId } = request.params as { classId: string };
 
-    const targetClass = await prisma.class.findFirst({
-      where: { id: classId, instructorId: authReq.user!.id }
-    });
-    if (!targetClass) throw new NotFoundError('Class cohort not found or unauthorized.');
+    const targetClass = await checkClassAccess(classId, authReq.user);
 
     const students = await prisma.user.findMany({
       where: { classId, role: UserRole.STUDENT_COLLEGE },
@@ -899,10 +901,7 @@ export async function reportRoutes(fastify: FastifyInstance) {
     const authReq = request as AuthenticatedRequest;
     const { classId } = request.params as { classId: string };
 
-    const targetClass = await prisma.class.findFirst({
-      where: { id: classId, instructorId: authReq.user!.id }
-    });
-    if (!targetClass) throw new NotFoundError('Class cohort not found or unauthorized.');
+    const targetClass = await checkClassAccess(classId, authReq.user);
 
     const students = await prisma.user.findMany({
       where: { classId, role: UserRole.STUDENT_COLLEGE },
@@ -975,10 +974,7 @@ export async function reportRoutes(fastify: FastifyInstance) {
     const authReq = request as AuthenticatedRequest;
     const { classId } = request.params as { classId: string };
 
-    const targetClass = await prisma.class.findFirst({
-      where: { id: classId, instructorId: authReq.user!.id }
-    });
-    if (!targetClass) throw new NotFoundError('Class cohort not found or unauthorized.');
+    const targetClass = await checkClassAccess(classId, authReq.user);
 
     const students = await prisma.user.findMany({
       where: { classId, role: UserRole.STUDENT_COLLEGE },

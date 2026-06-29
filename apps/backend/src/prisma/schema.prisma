@@ -138,6 +138,8 @@ model Scenario {
   allowedMetaObjectives         String   @default("[\"Awareness\", \"Traffic\", \"Engagement\", \"Leads\", \"Sales\"]")
   allowedBiddingStrategies      String   @default("[\"Manual CPC\", \"Maximize Clicks\", \"Maximize Conversions\"]")
   allowedAudienceKeywordOptions String   @default("[]")
+  allowedCampaignTypes          String   @default("[\"Search\", \"Display\", \"Video\", \"Shopping\"]")
+  checkpointRequired            Boolean  @default(true)
   targetLocations               String   @default("[\"Global\"]")
   difficulty                    String   @default("medium")
   marketVolatility              Float    @default(1.0)

@@ -96,3 +96,50 @@ export async function executeHourlyCampaignSweep(): Promise<void> {
   await executeDailyCampaignScheduler();
 }
 
+/**
+ * Sweeps all expired subscriptions and downgrades users back to free tier.
+ * Runs at startup and hourly via cron.
+ */
+export async function checkExpiredSubscriptions(): Promise<void> {
+  logger.info('Running expired subscription sweep...');
+  try {
+    const now = new Date();
+
+    // Find all active/trialing subscriptions whose end date is in the past
+    const expired = await prisma.subscription.findMany({
+      where: {
+        status: { in: ['active', 'trialing', 'past_due'] },
+        endDate: { lt: now }
+      }
+    });
+
+    if (expired.length === 0) {
+      logger.info('No expired subscriptions found.');
+      return;
+    }
+
+    logger.info(`Found ${expired.length} expired subscription(s). Downgrading users...`);
+
+    for (const sub of expired) {
+      try {
+        await prisma.subscription.update({
+          where: { id: sub.id },
+          data: { status: 'expired' }
+        });
+
+        // Downgrade user planType to free
+        await prisma.user.update({
+          where: { id: sub.userId },
+          data: { planType: 'free' }
+        });
+
+        logger.info({ subscriptionId: sub.id, userId: sub.userId }, 'Subscription expired. User downgraded to free.');
+      } catch (err) {
+        logger.error(err, `Failed to expire subscription ${sub.id}`);
+      }
+    }
+  } catch (err) {
+    logger.error(err, 'Failed to sweep expired subscriptions.');
+  }
+}
+
