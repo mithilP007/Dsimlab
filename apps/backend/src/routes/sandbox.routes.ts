@@ -43,6 +43,96 @@ export async function sandboxRoutes(fastify: FastifyInstance) {
     });
   });
 
+  const fallbackScenarios: Record<string, any[]> = {
+    GOOGLE_ADS: [
+      {
+        id: 'fb-google-saas',
+        name: 'SaaS Lead Generation',
+        description: 'Optimize search campaigns to acquire software trial signups with tight target CPA settings.',
+        industry: 'Software',
+        difficulty: 'medium',
+        simulationMode: 'GOOGLE_ADS',
+        allowedPlatforms: '["GOOGLE_ADS"]'
+      },
+      {
+        id: 'fb-google-local',
+        name: 'Local Service Search Campaign',
+        description: 'Run targeted local search ads to drive inbound service phone calls and appointment bookings.',
+        industry: 'Local Services',
+        difficulty: 'easy',
+        simulationMode: 'GOOGLE_ADS',
+        allowedPlatforms: '["GOOGLE_ADS"]'
+      },
+      {
+        id: 'fb-google-ecommerce',
+        name: 'E-commerce Sales Search Campaign',
+        description: 'Scale transactional shopping and search ad copy conversions to achieve maximum ROAS.',
+        industry: 'E-commerce',
+        difficulty: 'hard',
+        simulationMode: 'GOOGLE_ADS',
+        allowedPlatforms: '["GOOGLE_ADS"]'
+      }
+    ],
+    META_ADS: [
+      {
+        id: 'fb-meta-fashion',
+        name: 'Fashion Brand Awareness',
+        description: 'Design interactive carousel creatives to scale engagement and catalog views for a style collection.',
+        industry: 'Fashion',
+        difficulty: 'easy',
+        simulationMode: 'META_ADS',
+        allowedPlatforms: '["META_ADS"]'
+      },
+      {
+        id: 'fb-meta-fitness',
+        name: 'Fitness Lead Campaign',
+        description: 'Run localized lead capture ads with video assets to sign up new gym members and personal trainer clients.',
+        industry: 'Fitness',
+        difficulty: 'medium',
+        simulationMode: 'META_ADS',
+        allowedPlatforms: '["META_ADS"]'
+      },
+      {
+        id: 'fb-meta-d2c',
+        name: 'D2C Product Conversion Campaign',
+        description: 'Optimize high-intent audience targeting to convert shoppers on physical consumer product offers.',
+        industry: 'Consumer Goods',
+        difficulty: 'hard',
+        simulationMode: 'META_ADS',
+        allowedPlatforms: '["META_ADS"]'
+      }
+    ],
+    SEO: [
+      {
+        id: 'fb-seo-local',
+        name: 'Local Business SEO Growth',
+        description: 'Optimize on-page keywords and local citation signals to rank in local map packs.',
+        industry: 'Local Business',
+        difficulty: 'easy',
+        simulationMode: 'SEO',
+        allowedPlatforms: '["SEO"]'
+      },
+      {
+        id: 'fb-seo-blog',
+        name: 'SaaS Blog Ranking Strategy',
+        description: 'Structure high-quality long-form posts matching transactional search queries to scale organic leads.',
+        industry: 'SaaS',
+        difficulty: 'medium',
+        simulationMode: 'SEO',
+        allowedPlatforms: '["SEO"]'
+      },
+      {
+        id: 'fb-seo-ecommerce',
+        name: 'E-commerce Category Page SEO',
+        description: 'Execute technical metadata optimizations and category backlink indexing to outrank catalog competitors.',
+        industry: 'E-commerce',
+        difficulty: 'hard',
+        simulationMode: 'SEO',
+        allowedPlatforms: '["SEO"]'
+      }
+    ]
+  };
+
   /**
    * GET /api/v1/sandbox/sample-scenarios
    */
@@ -52,15 +142,23 @@ export async function sandboxRoutes(fastify: FastifyInstance) {
     const { mode } = request.query as { mode: string };
 
     if (!mode || !['GOOGLE_ADS', 'META_ADS', 'SEO'].includes(mode)) {
-      throw new ValidationError('Valid mode parameter (GOOGLE_ADS, META_ADS, SEO) is required.');
+      return reply.status(400).send({
+        success: false,
+        message: 'Valid mode parameter (GOOGLE_ADS, META_ADS, SEO) is required.'
+      });
     }
 
-    const presetScenarios = await prisma.scenario.findMany({
-      where: { scenarioType: { not: 'custom' } }
-    });
+    let presetScenarios = [];
+    try {
+      presetScenarios = await prisma.scenario.findMany({
+        where: { scenarioType: { not: 'custom' } }
+      });
+    } catch (dbErr) {
+      // fallback cleanly if DB has transient issues
+    }
 
     // Map presets dynamically to the selected single mode
-    const modePresets = presetScenarios.map(s => ({
+    let scenarios = presetScenarios.map(s => ({
       id: s.id,
       name: `${s.name} [${mode.replace('_', ' ')}]`,
       description: s.description,
@@ -70,9 +168,15 @@ export async function sandboxRoutes(fastify: FastifyInstance) {
       allowedPlatforms: JSON.stringify([mode])
     }));
 
+    if (scenarios.length === 0) {
+      scenarios = fallbackScenarios[mode];
+    }
+
     return reply.status(200).send({
       success: true,
-      presetScenarios: modePresets
+      mode,
+      scenarios,
+      presetScenarios: scenarios
     });
   });
 
@@ -308,7 +412,9 @@ export async function sandboxRoutes(fastify: FastifyInstance) {
       return reply.status(200).send({
         success: true,
         hasState: false,
-        state: null
+        hasActiveSimulation: false,
+        state: null,
+        nextAction: 'CHOOSE_SIMULATION_TYPE'
       });
     }
 
@@ -327,7 +433,9 @@ export async function sandboxRoutes(fastify: FastifyInstance) {
       return reply.status(200).send({
         success: true,
         hasState: false,
-        state: null
+        hasActiveSimulation: false,
+        state: null,
+        nextAction: 'CHOOSE_SIMULATION_TYPE'
       });
     }
 
@@ -338,6 +446,7 @@ export async function sandboxRoutes(fastify: FastifyInstance) {
     return reply.status(200).send({
       success: true,
       hasState: true,
+      hasActiveSimulation: true,
       state,
       progress
     });

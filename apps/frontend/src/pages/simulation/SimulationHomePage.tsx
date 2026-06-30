@@ -30,6 +30,7 @@ export function SimulationHomePage() {
   // Preset scenarios list
   const [sampleScenarios, setSampleScenarios] = useState<any[]>([])
   const [selectedScenarioId, setSelectedScenarioId] = useState("")
+  const [sampleScenariosError, setSampleScenariosError] = useState(false)
 
   // Custom Scenario States
   const [scenarioName, setScenarioName] = useState("Custom Campaign Sandbox")
@@ -76,6 +77,7 @@ export function SimulationHomePage() {
 
   const loadSampleScenarios = async (mode: string) => {
     try {
+      setSampleScenariosError(false)
       const res = await api.get<any>(`/api/v1/sandbox/sample-scenarios?mode=${mode}`)
       if (res.data?.success) {
         setSampleScenarios(res.data.presetScenarios || [])
@@ -85,6 +87,7 @@ export function SimulationHomePage() {
       }
     } catch (e) {
       console.error("Failed to load sample scenarios", e)
+      setSampleScenariosError(true)
     }
   }
 
@@ -198,6 +201,28 @@ export function SimulationHomePage() {
 
   const isAdmin = user?.role === "admin";
   const isIndividual = user?.role === "individual" || user?.role === "instructor" || user?.role === "admin";
+
+  if (errorMsg && isIndividual) {
+    return (
+      <div className="max-w-md mx-auto mt-12 p-6 bg-white border border-neutral-200 rounded-2xl shadow-sm text-center space-y-4">
+        <ShieldAlert className="h-12 w-12 text-rose-500 mx-auto animate-pulse" />
+        <h2 className="text-lg font-black text-neutral-900">Sandbox Connection Error</h2>
+        <p className="text-xs text-neutral-500 font-semibold leading-relaxed">
+          {errorMsg}
+        </p>
+        <Button 
+          onClick={() => {
+            setErrorMsg(null);
+            loadData();
+          }}
+          className="bg-indigo-650 hover:bg-indigo-700 text-white text-xs font-bold px-4 h-9 rounded-xl mx-auto flex items-center gap-1.5"
+        >
+          <RefreshCw className="h-4 w-4 animate-spin" style={{ animationDuration: '3s' }} />
+          Retry Connection
+        </Button>
+      </div>
+    )
+  }
 
   // --- ACTIVE WORKSPACE PREVIEW CARD ---
   if (fullState) {
@@ -420,9 +445,24 @@ export function SimulationHomePage() {
 
             {scenarioChoice === "sample" ? (
               <Card className="p-5 border border-neutral-200 bg-white space-y-3">
-                <label className="text-[10px] font-black text-neutral-500 block uppercase">Available Scenario Presets</label>
-                {sampleScenarios.length > 0 ? (
+                <label htmlFor="preset-scenario-select" className="text-[10px] font-black text-neutral-500 block uppercase">Available Scenario Presets</label>
+                {sampleScenariosError ? (
+                  <div className="space-y-2 p-3.5 border border-rose-100 bg-rose-50/20 rounded-xl text-left">
+                    <span className="text-xs text-rose-700 font-bold block">Failed to load preset scenarios.</span>
+                    <Button 
+                      onClick={() => {
+                        setSampleScenariosError(false);
+                        loadSampleScenarios(selectedMode);
+                      }}
+                      className="bg-neutral-900 hover:bg-neutral-950 text-white text-[10px] font-bold h-7 px-3 rounded-lg"
+                    >
+                      Retry Loading
+                    </Button>
+                  </div>
+                ) : sampleScenarios.length > 0 ? (
                   <select 
+                    id="preset-scenario-select"
+                    name="presetScenarioId"
                     value={selectedScenarioId} 
                     onChange={(e) => setSelectedScenarioId(e.target.value)}
                     className="w-full px-3 py-2 text-xs font-bold border border-neutral-200 rounded-xl bg-white focus:outline-none focus:border-indigo-500"
@@ -432,7 +472,7 @@ export function SimulationHomePage() {
                     ))}
                   </select>
                 ) : (
-                  <span className="text-xs text-neutral-450 font-semibold block">Loading scenario list...</span>
+                  <span className="text-xs text-neutral-450 font-semibold block animate-pulse">Loading scenario list...</span>
                 )}
               </Card>
             ) : (
@@ -442,8 +482,10 @@ export function SimulationHomePage() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <div className="space-y-3">
                     <div>
-                      <label className="text-[10px] font-black text-neutral-600 block uppercase mb-1">Scenario Name</label>
+                      <label htmlFor="custom-scenario-name" className="text-[10px] font-black text-neutral-600 block uppercase mb-1">Scenario Name</label>
                       <input 
+                        id="custom-scenario-name"
+                        name="scenarioName"
                         type="text" 
                         value={scenarioName} 
                         onChange={(e) => setScenarioName(e.target.value)}
@@ -451,8 +493,10 @@ export function SimulationHomePage() {
                       />
                     </div>
                     <div>
-                      <label className="text-[10px] font-black text-neutral-600 block uppercase mb-1">Industry Sector</label>
+                      <label htmlFor="custom-industry" className="text-[10px] font-black text-neutral-600 block uppercase mb-1">Industry Sector</label>
                       <input 
+                        id="custom-industry"
+                        name="industry"
                         type="text" 
                         value={industry} 
                         onChange={(e) => setIndustry(e.target.value)}
@@ -460,8 +504,10 @@ export function SimulationHomePage() {
                       />
                     </div>
                     <div>
-                      <label className="text-[10px] font-black text-neutral-600 block uppercase mb-1">Business Type</label>
+                      <label htmlFor="custom-business-type" className="text-[10px] font-black text-neutral-600 block uppercase mb-1">Business Type</label>
                       <input 
+                        id="custom-business-type"
+                        name="businessType"
                         type="text" 
                         value={businessType} 
                         onChange={(e) => setBusinessType(e.target.value)}
@@ -472,8 +518,10 @@ export function SimulationHomePage() {
 
                   <div className="space-y-3">
                     <div>
-                      <label className="text-[10px] font-black text-neutral-600 block uppercase mb-1">Target Audience</label>
+                      <label htmlFor="custom-target-audience" className="text-[10px] font-black text-neutral-600 block uppercase mb-1">Target Audience</label>
                       <input 
+                        id="custom-target-audience"
+                        name="targetAudience"
                         type="text" 
                         value={targetAudience} 
                         onChange={(e) => setTargetAudience(e.target.value)}
@@ -481,8 +529,10 @@ export function SimulationHomePage() {
                       />
                     </div>
                     <div>
-                      <label className="text-[10px] font-black text-neutral-600 block uppercase mb-1">Target Location</label>
+                      <label htmlFor="custom-target-location" className="text-[10px] font-black text-neutral-600 block uppercase mb-1">Target Location</label>
                       <input 
+                        id="custom-target-location"
+                        name="targetLocation"
                         type="text" 
                         value={targetLocation} 
                         onChange={(e) => setTargetLocation(e.target.value)}
@@ -490,8 +540,10 @@ export function SimulationHomePage() {
                       />
                     </div>
                     <div>
-                      <label className="text-[10px] font-black text-neutral-600 block uppercase mb-1">Objective / Target KPI</label>
+                      <label htmlFor="custom-objective-kpi" className="text-[10px] font-black text-neutral-600 block uppercase mb-1">Objective / Target KPI</label>
                       <select 
+                        id="custom-objective-kpi"
+                        name="objectiveKPI"
                         value={objectiveKPI} 
                         onChange={(e) => setObjectiveKPI(e.target.value)}
                         className="w-full px-3 py-1.5 text-xs font-semibold border border-neutral-200 rounded-lg bg-white"
@@ -505,8 +557,10 @@ export function SimulationHomePage() {
 
                   <div className="space-y-3">
                     <div>
-                      <label className="text-[10px] font-black text-neutral-600 block uppercase mb-1">Competition / Difficulty</label>
+                      <label htmlFor="custom-competition-level" className="text-[10px] font-black text-neutral-600 block uppercase mb-1">Competition / Difficulty</label>
                       <select 
+                        id="custom-competition-level"
+                        name="competitionLevel"
                         value={competitionLevel} 
                         onChange={(e) => setCompetitionLevel(e.target.value)}
                         className="w-full px-3 py-1.5 text-xs font-semibold border border-neutral-200 rounded-lg bg-white"
@@ -517,8 +571,10 @@ export function SimulationHomePage() {
                       </select>
                     </div>
                     <div>
-                      <label className="text-[10px] font-black text-neutral-600 block uppercase mb-1">Product/Service Description</label>
+                      <label htmlFor="custom-product-description" className="text-[10px] font-black text-neutral-600 block uppercase mb-1">Product/Service Description</label>
                       <textarea 
+                        id="custom-product-description"
+                        name="productDescription"
                         value={productDescription} 
                         onChange={(e) => setProductDescription(e.target.value)}
                         rows={3}
@@ -539,8 +595,10 @@ export function SimulationHomePage() {
               {isAdmin ? (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <div>
-                    <label className="text-[10px] font-black text-neutral-600 block uppercase mb-1">Bidding Cycle Timing (Admin Control)</label>
+                    <label htmlFor="admin-timing-mode" className="text-[10px] font-black text-neutral-600 block uppercase mb-1">Bidding Cycle Timing (Admin Control)</label>
                     <select 
+                      id="admin-timing-mode"
+                      name="timingMode"
                       value={timingMode} 
                       onChange={(e) => setTimingMode(e.target.value as any)}
                       className="w-full px-3 py-2 text-xs font-bold border border-neutral-200 rounded-xl bg-white"
@@ -553,8 +611,10 @@ export function SimulationHomePage() {
                   
                   {timingMode === "custom" && (
                     <div>
-                      <label className="text-[10px] font-black text-neutral-600 block uppercase mb-1">Cycle Duration (Hours)</label>
+                      <label htmlFor="admin-custom-hours" className="text-[10px] font-black text-neutral-600 block uppercase mb-1">Cycle Duration (Hours)</label>
                       <input 
+                        id="admin-custom-hours"
+                        name="customHours"
                         type="number" 
                         value={customHours} 
                         onChange={(e) => setCustomHours(Number(e.target.value))}
@@ -564,8 +624,10 @@ export function SimulationHomePage() {
                   )}
 
                   <div>
-                    <label className="text-[10px] font-black text-neutral-600 block uppercase mb-1">Campaign Duration (Total Rounds)</label>
+                    <label htmlFor="admin-duration-days" className="text-[10px] font-black text-neutral-600 block uppercase mb-1">Campaign Duration (Total Rounds)</label>
                     <input 
+                      id="admin-duration-days"
+                      name="durationDays"
                       type="number" 
                       value={durationDays} 
                       onChange={(e) => setDurationDays(Number(e.target.value))}
@@ -576,8 +638,10 @@ export function SimulationHomePage() {
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
-                    <label className="text-[10px] font-black text-neutral-600 block uppercase mb-1">Package Subscription Cycle Duration</label>
+                    <label htmlFor="learner-duration-days" className="text-[10px] font-black text-neutral-600 block uppercase mb-1">Package Subscription Cycle Duration</label>
                     <select 
+                      id="learner-duration-days"
+                      name="durationDays"
                       value={durationDays} 
                       onChange={(e) => setDurationDays(Number(e.target.value))}
                       className="w-full px-3 py-2 text-xs font-bold border border-neutral-200 rounded-xl bg-white"

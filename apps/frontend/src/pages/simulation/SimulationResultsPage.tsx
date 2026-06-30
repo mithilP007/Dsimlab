@@ -640,7 +640,7 @@ export function SimulationResultsPage() {
             </div>
 
             {/* Recharts Container */}
-            <div className="h-64 w-full pt-2">
+            <div className="h-[280px] min-h-[250px] min-w-0 w-full pt-2">
               {chartData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%" minHeight={250}>
                   {activeChartTab === "revenue" && (

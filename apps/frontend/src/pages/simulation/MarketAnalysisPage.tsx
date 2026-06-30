@@ -215,7 +215,7 @@ export function MarketAnalysisPage() {
               Leading brands dominate current search visibility. Your campaigns must optimize ad quality scoring and organic relevance offsets to capture share from entrenched competitors.
             </p>
 
-            <div className="h-56 w-full">
+            <div className="h-[260px] min-h-[220px] min-w-0 w-full">
               <ResponsiveContainer width="100%" height="100%" minHeight={220}>
                 <BarChart data={marketShareData} layout="vertical">
                   <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />

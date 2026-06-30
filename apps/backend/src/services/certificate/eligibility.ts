@@ -318,7 +318,7 @@ export async function checkCertificateEligibility(simulationId: string): Promise
   } else {
     // Fallback to standard simulation state evaluation
     compositeScore = latestBreakdown ? latestBreakdown.compositeIndex : sim.score;
-    const maxRounds = sim.class.scenario.maxRounds;
+    const maxRounds = sim.class?.scenario?.maxRounds || 10;
 
     // Calculate consistency
     strategicConsistency = calculateStrategicConsistency(sim.decisions, allowed);
@@ -352,7 +352,7 @@ export async function checkCertificateEligibility(simulationId: string): Promise
   }
 
   // 6. College mode requires instructor approval
-  const isCollegeStudent = sim.user.role === 'STUDENT_COLLEGE';
+  const isCollegeStudent = sim.user?.role === 'STUDENT_COLLEGE';
   if (isCollegeStudent && !sim.instructorApproved) {
     reasons.push('College mode requires instructor approval.');
   }

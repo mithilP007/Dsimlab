@@ -2273,20 +2273,40 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
     }
 
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    
+    if (simulationId && uuidRegex.test(simulationId)) {
+      const simCheck = await prisma.simulationState.findUnique({
+        where: { id: simulationId }
+      });
+      if (!simCheck) {
+        return reply.status(404).send({
+          success: false,
+          message: 'Simulation state not found.'
+        });
+      }
+      if (simCheck.userId !== authReq.user!.id) {
+        return reply.status(403).send({
+          success: false,
+          message: 'You do not own this simulation state.'
+        });
+      }
+    }
+
     if (!simulationId || !uuidRegex.test(simulationId)) {
       const sim = await prisma.simulationState.findFirst({
-        where: { userId: authReq.user!.id, classId: authReq.user!.classId || undefined }
+        where: { userId: authReq.user!.id }
       });
       if (!sim) {
         return reply.status(200).send({
           success: true,
           eligible: false,
-          reasons: ['No completed simulation yet'],
-          reason: 'No completed simulation yet',
-          requirements: [],
-          band: 'None',
+          reasons: ['No completed simulation found'],
+          reason: 'No completed simulation found',
+          requirements: ['No completed simulation found'],
+          band: null,
           compositeScore: 0,
-          strategicConsistency: 0
+          strategicConsistency: 0,
+          certificate: null
         });
       }
       simulationId = sim.id;
@@ -2311,9 +2331,10 @@ export async function apiContractRoutes(fastify: FastifyInstance) {
       reasons: check.reasons || [],
       reason: check.reasons?.join(', ') || 'No completed simulation yet',
       requirements: check.reasons || [],
-      band: check.band || 'None',
+      band: check.eligible ? (check.band || 'BRONZE') : null,
       compositeScore: check.compositeScore || 0,
-      strategicConsistency: check.strategicConsistency || 0
+      strategicConsistency: check.strategicConsistency || 0,
+      certificate: null
     });
   });
 

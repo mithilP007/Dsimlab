@@ -351,8 +351,10 @@ export function SandboxWorkspace() {
                 <div className="space-y-4 animate-in fade-in duration-200">
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="text-[10px] font-black text-neutral-600 uppercase block mb-1">Campaign Objective</label>
+                      <label htmlFor="google-goal" className="text-[10px] font-black text-neutral-600 uppercase block mb-1">Campaign Objective</label>
                       <select 
+                        id="google-goal"
+                        name="googleGoal"
                         value={googleGoal} 
                         onChange={(e) => setGoogleGoal(e.target.value)}
                         className="w-full px-3 py-2 text-xs font-bold border border-neutral-205 rounded-xl focus:outline-none"
@@ -363,10 +365,12 @@ export function SandboxWorkspace() {
                         <option value="Brand Awareness">Brand Awareness</option>
                       </select>
                     </div>
-
+ 
                     <div>
-                      <label className="text-[10px] font-black text-neutral-600 uppercase block mb-1">Bidding Strategy</label>
+                      <label htmlFor="google-bidding" className="text-[10px] font-black text-neutral-600 uppercase block mb-1">Bidding Strategy</label>
                       <select 
+                        id="google-bidding"
+                        name="googleBidding"
                         value={googleBidding} 
                         onChange={(e) => setGoogleBidding(e.target.value)}
                         className="w-full px-3 py-2 text-xs font-bold border border-neutral-205 rounded-xl focus:outline-none"
@@ -378,11 +382,13 @@ export function SandboxWorkspace() {
                       </select>
                     </div>
                   </div>
-
+ 
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="text-[10px] font-black text-neutral-600 uppercase block mb-1">Max CPC Bid ($)</label>
+                      <label htmlFor="google-max-cpc" className="text-[10px] font-black text-neutral-600 uppercase block mb-1">Max CPC Bid ($)</label>
                       <input 
+                        id="google-max-cpc"
+                        name="googleMaxCpc"
                         type="number" 
                         step="0.05"
                         value={googleMaxCpc} 
@@ -391,8 +397,10 @@ export function SandboxWorkspace() {
                       />
                     </div>
                     <div>
-                      <label className="text-[10px] font-black text-neutral-600 uppercase block mb-1">Daily Budget ($)</label>
+                      <label htmlFor="google-daily-budget" className="text-[10px] font-black text-neutral-600 uppercase block mb-1">Daily Budget ($)</label>
                       <input 
+                        id="google-daily-budget"
+                        name="googleDailyBudget"
                         type="number" 
                         value={googleDailyBudget} 
                         onChange={(e) => setGoogleDailyBudget(Number(e.target.value))}
@@ -400,10 +408,12 @@ export function SandboxWorkspace() {
                       />
                     </div>
                   </div>
-
+ 
                   <div>
-                    <label className="text-[10px] font-black text-neutral-600 uppercase block mb-1">Target Keywords (comma-separated)</label>
+                    <label htmlFor="google-keywords" className="text-[10px] font-black text-neutral-600 uppercase block mb-1">Target Keywords (comma-separated)</label>
                     <input 
+                      id="google-keywords"
+                      name="googleKeywords"
                       type="text" 
                       value={googleKeywordsInput} 
                       onChange={(e) => setGoogleKeywordsInput(e.target.value)}
@@ -411,11 +421,13 @@ export function SandboxWorkspace() {
                       className="w-full px-3 py-2 text-xs font-bold border border-neutral-205 rounded-xl focus:outline-none"
                     />
                   </div>
-
+ 
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="text-[10px] font-black text-neutral-600 uppercase block mb-1">Match Type</label>
+                      <label htmlFor="google-match-type" className="text-[10px] font-black text-neutral-600 uppercase block mb-1">Match Type</label>
                       <select 
+                        id="google-match-type"
+                        name="googleMatchType"
                         value={googleMatchType} 
                         onChange={(e) => setGoogleMatchType(e.target.value)}
                         className="w-full px-3 py-2 text-xs font-bold border border-neutral-205 rounded-xl focus:outline-none"
@@ -426,8 +438,10 @@ export function SandboxWorkspace() {
                       </select>
                     </div>
                     <div>
-                      <label className="text-[10px] font-black text-neutral-600 uppercase block mb-1">Negative Keywords (comma-separated)</label>
+                      <label htmlFor="google-negative-keywords" className="text-[10px] font-black text-neutral-600 uppercase block mb-1">Negative Keywords (comma-separated)</label>
                       <input 
+                        id="google-negative-keywords"
+                        name="googleNegativeKeywords"
                         type="text" 
                         value={googleNegativeInput} 
                         onChange={(e) => setGoogleNegativeInput(e.target.value)}
@@ -436,13 +450,15 @@ export function SandboxWorkspace() {
                       />
                     </div>
                   </div>
-
+ 
                   <div className="border-t border-neutral-100 my-4 pt-4 space-y-3">
                     <span className="text-[10px] font-black text-neutral-400 uppercase tracking-wider block">Google Search Ad Headlines & Descriptions</span>
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="text-[10px] font-semibold text-neutral-500 block mb-1">Ad Headline 1</label>
+                        <label htmlFor="google-headline-1" className="text-[10px] font-semibold text-neutral-500 block mb-1">Ad Headline 1</label>
                         <input 
+                          id="google-headline-1"
+                          name="googleHeadline1"
                           type="text" 
                           value={googleHeadline1} 
                           onChange={(e) => setGoogleHeadline1(e.target.value)}
@@ -450,8 +466,10 @@ export function SandboxWorkspace() {
                         />
                       </div>
                       <div>
-                        <label className="text-[10px] font-semibold text-neutral-500 block mb-1">Ad Headline 2</label>
+                        <label htmlFor="google-headline-2" className="text-[10px] font-semibold text-neutral-500 block mb-1">Ad Headline 2</label>
                         <input 
+                          id="google-headline-2"
+                          name="googleHeadline2"
                           type="text" 
                           value={googleHeadline2} 
                           onChange={(e) => setGoogleHeadline2(e.target.value)}
@@ -460,8 +478,10 @@ export function SandboxWorkspace() {
                       </div>
                     </div>
                     <div>
-                      <label className="text-[10px] font-semibold text-neutral-500 block mb-1">Ad Description</label>
+                      <label htmlFor="google-desc-1" className="text-[10px] font-semibold text-neutral-500 block mb-1">Ad Description</label>
                       <input 
+                        id="google-desc-1"
+                        name="googleDesc1"
                         type="text" 
                         value={googleDesc1} 
                         onChange={(e) => setGoogleDesc1(e.target.value)}
@@ -470,8 +490,10 @@ export function SandboxWorkspace() {
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="text-[10px] font-semibold text-neutral-500 block mb-1">Landing Page URL</label>
+                        <label htmlFor="google-landing-page" className="text-[10px] font-semibold text-neutral-500 block mb-1">Landing Page URL</label>
                         <input 
+                          id="google-landing-page"
+                          name="googleLandingPage"
                           type="text" 
                           value={googleLandingPage} 
                           onChange={(e) => setGoogleLandingPage(e.target.value)}
@@ -479,8 +501,10 @@ export function SandboxWorkspace() {
                         />
                       </div>
                       <div>
-                        <label className="text-[10px] font-semibold text-neutral-500 block mb-1">Sitelink Extensions (comma-separated)</label>
+                        <label htmlFor="google-sitelinks" className="text-[10px] font-semibold text-neutral-500 block mb-1">Sitelink Extensions (comma-separated)</label>
                         <input 
+                          id="google-sitelinks"
+                          name="googleSitelinks"
                           type="text" 
                           value={googleSitelinks} 
                           onChange={(e) => setGoogleSitelinks(e.target.value)}
@@ -491,14 +515,16 @@ export function SandboxWorkspace() {
                   </div>
                 </div>
               )}
-
+ 
               {/* META ADS VIEW */}
               {mode === "META_ADS" && (
                 <div className="space-y-4 animate-in fade-in duration-200">
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="text-[10px] font-black text-neutral-600 uppercase block mb-1">Meta Campaign Objective</label>
+                      <label htmlFor="meta-objective" className="text-[10px] font-black text-neutral-600 uppercase block mb-1">Meta Campaign Objective</label>
                       <select 
+                        id="meta-objective"
+                        name="metaObjective"
                         value={metaObjective} 
                         onChange={(e) => setMetaObjective(e.target.value)}
                         className="w-full px-3 py-2 text-xs font-bold border border-neutral-205 rounded-xl focus:outline-none"
@@ -510,8 +536,10 @@ export function SandboxWorkspace() {
                       </select>
                     </div>
                     <div>
-                      <label className="text-[10px] font-black text-neutral-600 uppercase block mb-1">Daily Budget ($)</label>
+                      <label htmlFor="meta-daily-budget" className="text-[10px] font-black text-neutral-600 uppercase block mb-1">Daily Budget ($)</label>
                       <input 
+                        id="meta-daily-budget"
+                        name="metaDailyBudget"
                         type="number" 
                         value={metaDailyBudget} 
                         onChange={(e) => setMetaDailyBudget(Number(e.target.value))}
@@ -519,11 +547,13 @@ export function SandboxWorkspace() {
                       />
                     </div>
                   </div>
-
+ 
                   <div className="grid grid-cols-3 gap-4">
                     <div>
-                      <label className="text-[10px] font-black text-neutral-600 uppercase block mb-1">Min Age</label>
+                      <label htmlFor="meta-age-min" className="text-[10px] font-black text-neutral-600 uppercase block mb-1">Min Age</label>
                       <input 
+                        id="meta-age-min"
+                        name="metaAgeMin"
                         type="number" 
                         value={metaAgeMin} 
                         onChange={(e) => setMetaAgeMin(Number(e.target.value))}
@@ -531,8 +561,10 @@ export function SandboxWorkspace() {
                       />
                     </div>
                     <div>
-                      <label className="text-[10px] font-black text-neutral-600 uppercase block mb-1">Max Age</label>
+                      <label htmlFor="meta-age-max" className="text-[10px] font-black text-neutral-600 uppercase block mb-1">Max Age</label>
                       <input 
+                        id="meta-age-max"
+                        name="metaAgeMax"
                         type="number" 
                         value={metaAgeMax} 
                         onChange={(e) => setMetaAgeMax(Number(e.target.value))}
@@ -540,8 +572,10 @@ export function SandboxWorkspace() {
                       />
                     </div>
                     <div>
-                      <label className="text-[10px] font-black text-neutral-600 uppercase block mb-1">Gender</label>
+                      <label htmlFor="meta-gender" className="text-[10px] font-black text-neutral-600 uppercase block mb-1">Gender</label>
                       <select 
+                        id="meta-gender"
+                        name="metaGender"
                         value={metaGender} 
                         onChange={(e) => setMetaGender(e.target.value)}
                         className="w-full px-3 py-2 text-xs font-bold border border-neutral-205 rounded-xl focus:outline-none animate-none"
@@ -552,11 +586,13 @@ export function SandboxWorkspace() {
                       </select>
                     </div>
                   </div>
-
+ 
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="text-[10px] font-black text-neutral-600 uppercase block mb-1">Audience Interest Targeting</label>
+                      <label htmlFor="meta-interests" className="text-[10px] font-black text-neutral-600 uppercase block mb-1">Audience Interest Targeting</label>
                       <input 
+                        id="meta-interests"
+                        name="metaInterests"
                         type="text" 
                         value={metaInterests} 
                         onChange={(e) => setMetaInterests(e.target.value)}
@@ -564,8 +600,10 @@ export function SandboxWorkspace() {
                       />
                     </div>
                     <div>
-                      <label className="text-[10px] font-black text-neutral-600 uppercase block mb-1">Placement Delivery</label>
+                      <label htmlFor="meta-placement" className="text-[10px] font-black text-neutral-600 uppercase block mb-1">Placement Delivery</label>
                       <select 
+                        id="meta-placement"
+                        name="metaPlacement"
                         value={metaPlacement} 
                         onChange={(e) => setMetaPlacement(e.target.value)}
                         className="w-full px-3 py-2 text-xs font-bold border border-neutral-205 rounded-xl focus:outline-none"
@@ -576,13 +614,15 @@ export function SandboxWorkspace() {
                       </select>
                     </div>
                   </div>
-
+ 
                   <div className="border-t border-neutral-100 my-4 pt-4 space-y-3">
                     <span className="text-[10px] font-black text-neutral-400 uppercase tracking-wider block">Meta Creatives & Text Ad Copy</span>
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="text-[10px] font-semibold text-neutral-500 block mb-1">Format Type</label>
+                        <label htmlFor="meta-creative-format" className="text-[10px] font-semibold text-neutral-500 block mb-1">Format Type</label>
                         <select 
+                          id="meta-creative-format"
+                          name="metaCreativeFormat"
                           value={metaCreativeFormat} 
                           onChange={(e) => setMetaCreativeFormat(e.target.value)}
                           className="w-full px-3 py-2 text-xs font-bold border border-neutral-205 rounded-xl focus:outline-none"
@@ -593,8 +633,10 @@ export function SandboxWorkspace() {
                         </select>
                       </div>
                       <div>
-                        <label className="text-[10px] font-semibold text-neutral-500 block mb-1">Headline Text</label>
+                        <label htmlFor="meta-headline" className="text-[10px] font-semibold text-neutral-500 block mb-1">Headline Text</label>
                         <input 
+                          id="meta-headline"
+                          name="metaHeadline"
                           type="text" 
                           value={metaHeadline} 
                           onChange={(e) => setMetaHeadline(e.target.value)}
@@ -603,8 +645,10 @@ export function SandboxWorkspace() {
                       </div>
                     </div>
                     <div>
-                      <label className="text-[10px] font-semibold text-neutral-500 block mb-1">Primary Description Text</label>
+                      <label htmlFor="meta-primary-text" className="text-[10px] font-semibold text-neutral-500 block mb-1">Primary Description Text</label>
                       <textarea 
+                        id="meta-primary-text"
+                        name="metaPrimaryText"
                         value={metaPrimaryText} 
                         onChange={(e) => setMetaPrimaryText(e.target.value)}
                         rows={2}
@@ -613,8 +657,10 @@ export function SandboxWorkspace() {
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="text-[10px] font-semibold text-neutral-500 block mb-1">Call to Action (CTA)</label>
+                        <label htmlFor="meta-cta" className="text-[10px] font-semibold text-neutral-500 block mb-1">Call to Action (CTA)</label>
                         <select 
+                          id="meta-cta"
+                          name="metaCta"
                           value={metaCta} 
                           onChange={(e) => setMetaCta(e.target.value)}
                           className="w-full px-3 py-2 text-xs font-bold border border-neutral-205 rounded-xl focus:outline-none"
@@ -626,8 +672,10 @@ export function SandboxWorkspace() {
                         </select>
                       </div>
                       <div>
-                        <label className="text-[10px] font-semibold text-neutral-500 block mb-1">Landing Destination URL</label>
+                        <label htmlFor="meta-landing-page" className="text-[10px] font-semibold text-neutral-500 block mb-1">Landing Destination URL</label>
                         <input 
+                          id="meta-landing-page"
+                          name="metaLandingPage"
                           type="text" 
                           value={metaLandingPage} 
                           onChange={(e) => setMetaLandingPage(e.target.value)}
@@ -638,24 +686,28 @@ export function SandboxWorkspace() {
                   </div>
                 </div>
               )}
-
+ 
               {/* SEO VIEW */}
               {mode === "SEO" && (
                 <div className="space-y-4 animate-in fade-in duration-200">
                   <div>
-                    <label className="text-[10px] font-black text-neutral-600 uppercase block mb-1">Target Focus Keywords (comma-separated)</label>
+                    <label htmlFor="seo-keywords" className="text-[10px] font-black text-neutral-600 uppercase block mb-1">Target Focus Keywords (comma-separated)</label>
                     <input 
+                      id="seo-keywords"
+                      name="seoKeywords"
                       type="text" 
                       value={seoTargetKeywordsInput} 
                       onChange={(e) => setSeoTargetKeywordsInput(e.target.value)}
                       className="w-full px-3 py-2 text-xs font-bold border border-neutral-205 rounded-xl focus:outline-none"
                     />
                   </div>
-
+ 
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="text-[10px] font-black text-neutral-600 uppercase block mb-1">Meta Page Title</label>
+                      <label htmlFor="seo-meta-title" className="text-[10px] font-black text-neutral-600 uppercase block mb-1">Meta Page Title</label>
                       <input 
+                        id="seo-meta-title"
+                        name="seoMetaTitle"
                         type="text" 
                         value={seoMetaTitle} 
                         onChange={(e) => setSeoMetaTitle(e.target.value)}
@@ -663,8 +715,10 @@ export function SandboxWorkspace() {
                       />
                     </div>
                     <div>
-                      <label className="text-[10px] font-black text-neutral-600 uppercase block mb-1">URL Slug</label>
+                      <label htmlFor="seo-url-slug" className="text-[10px] font-black text-neutral-600 uppercase block mb-1">URL Slug</label>
                       <input 
+                        id="seo-url-slug"
+                        name="seoUrlSlug"
                         type="text" 
                         value={seoUrlSlug} 
                         onChange={(e) => setSeoUrlSlug(e.target.value)}
@@ -672,31 +726,37 @@ export function SandboxWorkspace() {
                       />
                     </div>
                   </div>
-
+ 
                   <div>
-                    <label className="text-[10px] font-black text-neutral-600 uppercase block mb-1">Meta Description (120-160 characters)</label>
+                    <label htmlFor="seo-meta-description" className="text-[10px] font-black text-neutral-600 uppercase block mb-1">Meta Description (120-160 characters)</label>
                     <input 
+                      id="seo-meta-description"
+                      name="seoMetaDescription"
                       type="text" 
                       value={seoMetaDescription} 
                       onChange={(e) => setSeoMetaDescription(e.target.value)}
                       className="w-full px-3 py-2 text-xs font-bold border border-neutral-205 rounded-xl focus:outline-none"
                     />
                   </div>
-
+ 
                   <div>
-                    <label className="text-[10px] font-black text-neutral-600 uppercase block mb-1">Content Body Content (Optimized Density)</label>
+                    <label htmlFor="seo-body-content" className="text-[10px] font-black text-neutral-600 uppercase block mb-1">Content Body Content (Optimized Density)</label>
                     <textarea 
+                      id="seo-body-content"
+                      name="seoBodyContent"
                       value={seoBodyContent} 
                       onChange={(e) => setSeoBodyContent(e.target.value)}
                       rows={4}
                       className="w-full px-3 py-2 text-xs font-bold border border-neutral-205 rounded-xl focus:outline-none"
                     />
                   </div>
-
+ 
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="text-[10px] font-black text-neutral-600 uppercase block mb-1">Backlink Strategy Budget ($)</label>
+                      <label htmlFor="seo-backlink-budget" className="text-[10px] font-black text-neutral-600 uppercase block mb-1">Backlink Strategy Budget ($)</label>
                       <input 
+                        id="seo-backlink-budget"
+                        name="seoBacklinkBudget"
                         type="number" 
                         value={seoBacklinkBudget} 
                         onChange={(e) => setSeoBacklinkBudget(Number(e.target.value))}
@@ -881,43 +941,58 @@ export function SandboxWorkspace() {
           </Card>
 
           {/* Certificate Band */}
-          {isCompleted && certEligible && (
-            <Card className="p-6 border-violet-200 shadow-md bg-violet-50/20 text-left space-y-4 animate-in fade-in duration-300">
-              <div className="space-y-1">
-                <span className="text-[10px] font-black text-violet-650 uppercase tracking-widest bg-violet-55 px-2.5 py-1 rounded-full flex items-center gap-1.5 w-max">
-                  <Sparkles className="h-3.5 w-3.5 fill-violet-650 animate-pulse" />
-                  Graduation Certificate Status
-                </span>
-                <h2 className="text-sm font-black text-neutral-900 mt-2">
-                  {certEligible.eligible ? `Eligible: ${certEligible.band} Certification` : 'Graduation Check'}
-                </h2>
-                <p className="text-[11px] text-neutral-500 font-medium">
-                  Certificates are awarded based on campaign performance score $\ge 60\%$ and adaptability index $\ge 50\%$.
-                </p>
-              </div>
-
-              {certEligible.eligible ? (
-                <Button onClick={handleGenerateCertificate} className="w-full bg-violet-650 hover:bg-violet-755 text-white font-black text-xs h-9 rounded-xl flex items-center justify-center gap-2">
-                  <Download className="h-4 w-4" />
-                  Download Certificate PDF
-                </Button>
-              ) : (
-                <Badge className="bg-rose-50 text-rose-800 border border-rose-200 font-black text-[10px] w-full justify-center py-1">
-                  Not Eligible
-                </Badge>
-              )}
-
-              {!certEligible.eligible && certEligible.reasons && certEligible.reasons.length > 0 && (
-                <div className="bg-white/80 border border-rose-100 rounded-xl p-3 text-[11px] space-y-1">
-                  <span className="text-[10px] font-black text-rose-500 uppercase tracking-wider block">Failed Criteria:</span>
-                  <ul className="list-disc pl-4 space-y-0.5 text-neutral-600 font-semibold">
-                    {certEligible.reasons.map((r: string, index: number) => (
-                      <li key={index}>{r}</li>
-                    ))}
-                  </ul>
+          {isCompleted && (
+            certEligible ? (
+              <Card className="p-6 border-violet-200 shadow-md bg-violet-50/20 text-left space-y-4 animate-in fade-in duration-300">
+                <div className="space-y-1">
+                  <span className="text-[10px] font-black text-violet-650 uppercase tracking-widest bg-violet-55 px-2.5 py-1 rounded-full flex items-center gap-1.5 w-max">
+                    <Sparkles className="h-3.5 w-3.5 fill-violet-650 animate-pulse" />
+                    Graduation Certificate Status
+                  </span>
+                  <h2 className="text-sm font-black text-neutral-900 mt-2">
+                    {certEligible.eligible ? `Eligible: ${certEligible.band} Certification` : 'Graduation Check'}
+                  </h2>
+                  <p className="text-[11px] text-neutral-500 font-medium">
+                    Certificates are awarded based on campaign performance score &ge; 60% and adaptability index &ge; 50%.
+                  </p>
                 </div>
-              )}
-            </Card>
+
+                {certEligible.eligible ? (
+                  <Button onClick={handleGenerateCertificate} className="w-full bg-violet-650 hover:bg-violet-755 text-white font-black text-xs h-9 rounded-xl flex items-center justify-center gap-2">
+                    <Download className="h-4 w-4" />
+                    Download Certificate PDF
+                  </Button>
+                ) : (
+                  <Badge className="bg-rose-50 text-rose-800 border border-rose-200 font-black text-[10px] w-full justify-center py-1">
+                    Not Eligible
+                  </Badge>
+                )}
+
+                {!certEligible.eligible && certEligible.reasons && certEligible.reasons.length > 0 && (
+                  <div className="bg-white/80 border border-rose-100 rounded-xl p-3 text-[11px] space-y-1">
+                    <span className="text-[10px] font-black text-rose-500 uppercase tracking-wider block">Failed Criteria:</span>
+                    <ul className="list-disc pl-4 space-y-0.5 text-neutral-600 font-semibold">
+                      {certEligible.reasons.map((r: string, index: number) => (
+                        <li key={index}>{r}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </Card>
+            ) : (
+              <Card className="p-6 border-neutral-200 shadow-sm bg-white text-left space-y-3">
+                <span className="text-[10px] font-black text-neutral-400 uppercase tracking-wider block">Graduation Certificate</span>
+                <span className="text-xs text-neutral-500 font-bold block">Certificate eligibility status check is currently unavailable.</span>
+                <Button 
+                  onClick={checkCertificate} 
+                  disabled={checkingCert}
+                  className="w-full text-xs font-bold bg-neutral-900 hover:bg-neutral-950 text-white h-9 rounded-xl flex items-center justify-center gap-1.5 animate-none"
+                >
+                  <RefreshCw className={`h-4 w-4 ${checkingCert ? 'animate-spin' : ''}`} />
+                  Check Eligibility
+                </Button>
+              </Card>
+            )
           )}
 
           {/* Quick Exit */}
