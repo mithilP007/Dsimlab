@@ -1,9 +1,11 @@
 export interface AdCopy {
-  headline1: string;
-  headline2: string;
-  headline3: string;
-  description1: string;
-  description2: string;
+  headline1?: string;
+  headline2?: string;
+  headline3?: string;
+  description1?: string;
+  description2?: string;
+  headlines?: string[];
+  descriptions?: string[];
 }
 
 export interface LandingPageQuality {
@@ -21,23 +23,33 @@ export interface LandingPageQuality {
 export function calculateQualityScore(
   adCopy: AdCopy,
   keyword: string,
-  lp: LandingPageQuality
+  lp: LandingPageQuality,
+  relevanceMultiplier: number = 1.0
 ): number {
   let score = 5; // Start at middle base
 
   const keywordLower = keyword.toLowerCase();
-  const headline1 = (adCopy.headline1 || '').toLowerCase();
-  const headline2 = (adCopy.headline2 || '').toLowerCase();
-  const headline3 = (adCopy.headline3 || '').toLowerCase();
-  const desc1 = (adCopy.description1 || '').toLowerCase();
-  const desc2 = (adCopy.description2 || '').toLowerCase();
-  const combinedCopy = `${headline1} ${headline2} ${headline3} ${desc1} ${desc2}`;
+  
+  // Extract headlines and descriptions from either format
+  const headlines = adCopy.headlines || [adCopy.headline1 || '', adCopy.headline2 || '', adCopy.headline3 || ''];
+  const descriptions = adCopy.descriptions || [adCopy.description1 || '', adCopy.description2 || ''];
+  
+  const combinedCopy = [...headlines, ...descriptions].join(' ').toLowerCase();
 
   // 1. Ad Relevance Evaluation
   let matches = 0;
-  if (headline1.includes(keywordLower)) matches += 2.5;
-  if (headline2.includes(keywordLower) || headline3.includes(keywordLower)) matches += 1.5;
-  if (desc1.includes(keywordLower) || desc2.includes(keywordLower)) matches += 1.0;
+  headlines.forEach((hl, i) => {
+    const hlLower = hl.toLowerCase();
+    if (hlLower.includes(keywordLower)) {
+      matches += i === 0 ? 2.5 : 1.5;
+    }
+  });
+  descriptions.forEach(desc => {
+    const descLower = desc.toLowerCase();
+    if (descLower.includes(keywordLower)) {
+      matches += 1.0;
+    }
+  });
 
   if (matches > 0) {
     score += matches;
@@ -64,11 +76,15 @@ export function calculateQualityScore(
     score -= 2.0;
   }
 
-  // 3. Expected CTR factor (Derived from layout checklist)
-  const isFilled = adCopy.headline1 && adCopy.headline2 && adCopy.headline3 && adCopy.description1 && adCopy.description2;
-  if (isFilled) {
+  // 3. Expected CTR factor
+  const totalHeadlines = headlines.filter(h => h.trim().length > 0).length;
+  const totalDescriptions = descriptions.filter(d => d.trim().length > 0).length;
+  if (totalHeadlines >= 3 && totalDescriptions >= 2) {
     score += 0.5;
   }
+
+  // Apply scenario relevance multiplier
+  score *= relevanceMultiplier;
 
   // Bounded between 1 and 10
   return Math.min(10, Math.max(1, Math.round(score)));

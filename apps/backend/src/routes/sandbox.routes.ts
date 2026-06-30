@@ -6,6 +6,9 @@ import { processSimulationRound } from '../services/simulation/engine';
 import { checkCertificateEligibility } from '../services/certificate/eligibility';
 import { generateCertificatePDF } from '../services/certificate/generator';
 import crypto from 'crypto';
+import { getScenarioDefaults, validateScenarioRelevance } from '../services/simulation/sandbox-scenario.service';
+import { generateSandboxRecommendations } from '../services/report/sandbox-recommendations';
+
 
 async function logAudit(userId: string, action: string, details: string) {
   try {
@@ -366,6 +369,30 @@ export async function sandboxRoutes(fastify: FastifyInstance) {
       }
     });
 
+    // Pre-populate default decision based on scenario
+    const defaults = getScenarioDefaults(simulationMode, scenario);
+
+    await prisma.decision.create({
+      data: {
+        simulationId: state.id,
+        round: 1,
+        googleCampaigns: JSON.stringify(simulationMode === 'GOOGLE_ADS' ? (defaults.campaigns || []) : []),
+        metaCampaigns: JSON.stringify(simulationMode === 'META_ADS' ? (defaults.campaigns || []) : []),
+        seoTargetKeywords: JSON.stringify(simulationMode === 'SEO' ? (defaults.seoTargetKeywords || []) : []),
+        seoMetaTitle: defaults.seoMetaTitle || '',
+        seoMetaDescription: defaults.seoMetaDescription || '',
+        seoBodyContent: defaults.seoBodyContent || '',
+        seoUrlSlug: defaults.seoUrlSlug || '',
+        seoInternalLinks: defaults.seoInternalLinks || 0,
+        seoAnchorText: defaults.seoAnchorText || '',
+        seoBacklinkQuality: defaults.seoBacklinkQuality || 1,
+        seoBacklinkBudget: defaults.seoBacklinkBudget || 0.0,
+        seoTechnicalConfig: JSON.stringify(defaults.seoTechnicalConfig || {}),
+        seoCoreWebVitals: JSON.stringify(defaults.seoCoreWebVitals || {}),
+        submitted: false
+      }
+    });
+
     // Initialize progress record
     await prisma.studentSimulationProgress.upsert({
       where: { simulationId: state.id },
@@ -449,6 +476,43 @@ export async function sandboxRoutes(fastify: FastifyInstance) {
       hasActiveSimulation: true,
       state,
       progress
+    });
+  });
+
+  /**
+   * GET /api/v1/sandbox/decision
+   */
+  fastify.get('/decision', async (request, reply) => {
+    const authReq = request as AuthenticatedRequest;
+    checkRole(authReq);
+    const userId = authReq.user!.id;
+
+    const inviteCode = `SANDBOX-${userId}`;
+    const cls = await prisma.class.findUnique({
+      where: { inviteCode }
+    });
+
+    if (!cls) {
+      throw new NotFoundError('No active sandbox classroom found.');
+    }
+
+    const sim = await prisma.simulationState.findFirst({
+      where: { userId, classId: cls.id }
+    });
+
+    if (!sim) {
+      throw new NotFoundError('No active sandbox simulation found.');
+    }
+
+    const decision = await prisma.decision.findUnique({
+      where: {
+        simulationId_round: { simulationId: sim.id, round: sim.currentRound }
+      }
+    });
+
+    return reply.status(200).send({
+      success: true,
+      decision
     });
   });
 
@@ -932,11 +996,69 @@ export async function sandboxRoutes(fastify: FastifyInstance) {
       adaptability: breakdowns[breakdowns.length - 1]?.adaptability || 50
     };
 
+    const decision = await prisma.decision.findFirst({
+      where: { simulationId: state.id },
+      orderBy: { round: 'desc' }
+    });
+
+    const userTexts: string[] = [];
+    if (decision) {
+      try {
+        const keywords = typeof decision.seoTargetKeywords === 'string' ? JSON.parse(decision.seoTargetKeywords) : (decision.seoTargetKeywords || []);
+        userTexts.push(...keywords);
+      } catch (e) {}
+      if (decision.seoMetaTitle) userTexts.push(decision.seoMetaTitle);
+      if (decision.seoMetaDescription) userTexts.push(decision.seoMetaDescription);
+      if (decision.seoBodyContent) userTexts.push(decision.seoBodyContent);
+      if (decision.seoAnchorText) userTexts.push(decision.seoAnchorText);
+      try {
+        const googleCampaigns = typeof decision.googleCampaigns === 'string' ? JSON.parse(decision.googleCampaigns) : (decision.googleCampaigns || []);
+        googleCampaigns.forEach((c: any) => {
+          userTexts.push(c.name || '');
+          if (c.keywords) c.keywords.forEach((k: any) => userTexts.push(k.word || ''));
+          if (c.adCopy) {
+            userTexts.push(c.adCopy.headline1 || '');
+            userTexts.push(c.adCopy.headline2 || '');
+            userTexts.push(c.adCopy.headline3 || '');
+            userTexts.push(c.adCopy.description1 || '');
+            userTexts.push(c.adCopy.description2 || '');
+          }
+        });
+      } catch (e) {}
+      try {
+        const metaCampaigns = typeof decision.metaCampaigns === 'string' ? JSON.parse(decision.metaCampaigns) : (decision.metaCampaigns || []);
+        metaCampaigns.forEach((c: any) => {
+          userTexts.push(c.name || '');
+          userTexts.push(c.audienceInterest || '');
+          if (c.creative) {
+            userTexts.push(c.creative.headline || '');
+            userTexts.push(c.creative.primaryText || '');
+          }
+        });
+      } catch (e) {}
+    }
+
+    const relevanceResult = validateScenarioRelevance(
+      state.class.scenario.industry,
+      state.class.scenario.name,
+      state.class.scenario.description,
+      userTexts
+    );
+
+    const recommendations = generateSandboxRecommendations(
+      mode,
+      decision || {},
+      metrics,
+      summary,
+      relevanceResult.score
+    );
+
     return reply.status(200).send({
       success: true,
       metrics,
       breakdowns,
-      summary
+      summary,
+      recommendations
     });
   });
 

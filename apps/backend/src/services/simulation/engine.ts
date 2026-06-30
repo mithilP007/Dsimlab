@@ -21,6 +21,8 @@ import { createNotification, logActivity } from '../../utils/audit';
 import { validateAdPolicy } from '../ads/policy-validator';
 import { trendClient } from '../trends/trend-client';
 import { marketSignalBuilder } from '../trends/market-signal-builder';
+import { validateScenarioRelevance } from './sandbox-scenario.service';
+
 
 /**
  * Orchestrates advancing a simulation round for a student
@@ -138,12 +140,76 @@ export async function processSimulationRound(simulationId: string): Promise<any>
   let metaCampaigns: any[] = [];
 
   try {
-    keywords = JSON.parse(decision.seoTargetKeywords);
-    googleCampaigns = JSON.parse(decision.googleCampaigns);
-    metaCampaigns = JSON.parse(decision.metaCampaigns);
+    keywords = typeof decision.seoTargetKeywords === 'string' ? JSON.parse(decision.seoTargetKeywords) : (decision.seoTargetKeywords || []);
+    googleCampaigns = typeof decision.googleCampaigns === 'string' ? JSON.parse(decision.googleCampaigns) : (decision.googleCampaigns || []);
+    metaCampaigns = typeof decision.metaCampaigns === 'string' ? JSON.parse(decision.metaCampaigns) : (decision.metaCampaigns || []);
   } catch (err) {
     logger.error({ err }, 'Error parsing decision inputs');
   }
+
+  // Gather user texts for relevance scanning
+  const userTexts: string[] = [];
+  if (keywords && keywords.length > 0) userTexts.push(...keywords);
+  if (decision.seoMetaTitle) userTexts.push(decision.seoMetaTitle);
+  if (decision.seoMetaDescription) userTexts.push(decision.seoMetaDescription);
+  if (decision.seoBodyContent) userTexts.push(decision.seoBodyContent);
+  if (decision.seoAnchorText) userTexts.push(decision.seoAnchorText);
+
+  googleCampaigns.forEach((c: any) => {
+    userTexts.push(c.name || '');
+    if (c.keywords) c.keywords.forEach((k: any) => userTexts.push(k.word || ''));
+    if (c.negativeKeywords) c.negativeKeywords.forEach((k: any) => userTexts.push(k.word || ''));
+    if (c.adCopy) {
+      userTexts.push(c.adCopy.headline1 || '');
+      userTexts.push(c.adCopy.headline2 || '');
+      userTexts.push(c.adCopy.headline3 || '');
+      userTexts.push(c.adCopy.description1 || '');
+      userTexts.push(c.adCopy.description2 || '');
+      if (c.adCopy.headlines) userTexts.push(...c.adCopy.headlines);
+      if (c.adCopy.descriptions) userTexts.push(...c.adCopy.descriptions);
+    }
+    if (c.adGroups) {
+      c.adGroups.forEach((g: any) => {
+        userTexts.push(g.name || '');
+        if (g.keywords) g.keywords.forEach((k: any) => userTexts.push(k.word || ''));
+        if (g.ads) {
+          g.ads.forEach((ad: any) => {
+            if (ad.headlines) userTexts.push(...ad.headlines);
+            if (ad.descriptions) userTexts.push(...ad.descriptions);
+          });
+        }
+      });
+    }
+  });
+
+  metaCampaigns.forEach((c: any) => {
+    userTexts.push(c.name || '');
+    userTexts.push(c.audienceInterest || '');
+    if (c.creative) {
+      userTexts.push(c.creative.headline || '');
+      userTexts.push(c.creative.primaryText || '');
+      userTexts.push(c.creative.description || '');
+    }
+    if (c.adSets) {
+      c.adSets.forEach((a: any) => {
+        userTexts.push(a.name || '');
+        userTexts.push(a.targeting?.interests || '');
+        if (a.creative) {
+          userTexts.push(a.creative.headline || '');
+          userTexts.push(a.creative.primaryText || '');
+          userTexts.push(a.creative.description || '');
+        }
+      });
+    }
+  });
+
+  const relevanceResult = validateScenarioRelevance(
+    sim.class.scenario.industry,
+    sim.class.scenario.name,
+    sim.class.scenario.description,
+    userTexts
+  );
+
 
   // Policy & Budget Hard Violations Check
   const totalAllocatedBudget = googleCampaigns.reduce((sum: number, c: any) => sum + (c.budget || 0), 0) +
@@ -434,7 +500,8 @@ export async function processSimulationRound(simulationId: string): Promise<any>
         contentQualityScore = Math.min(10, contentQualityScore + 0.5);
       }
 
-      relevanceScore = Math.min(1.0, 0.4 + (keywordHits * 0.2) + (contentQualityScore * 0.04));
+      relevanceScore = Math.min(1.0, 0.4 + (keywordHits * 0.2) + (contentQualityScore * 0.04)) * relevanceResult.score;
+      contentQualityScore = Math.max(1.0, contentQualityScore * relevanceResult.score);
     }
 
     // Technical Health & HTML check
@@ -636,21 +703,47 @@ export async function processSimulationRound(simulationId: string): Promise<any>
 
     const googleAdvertisers = searchCampaigns.flatMap((campaign: any) => {
       const dailyCampaignBudget = campaign.budget / 30.0;
-      const cKeywords = campaign.keywords || [];
       const obj = campaign.objective || 'Sales';
       const type = campaign.campaignType || 'Search';
       const bidStrategy = campaign.biddingStrategy || 'Manual CPC';
       const negKws = campaign.negativeKeywords || [];
-      const adCopy = campaign.adCopy || { headline1: '', headline2: '', headline3: '', description1: '', description2: '' };
       const landingPage = campaign.landingPage || { pageRelevance: 5, mobileFriendly: 5, pageSpeed: 5, trustSignals: 5, offerClarity: 5, conversionReadiness: 5 };
 
-      return cKeywords.map((kwBid: any) => {
+      let keywordList: any[] = [];
+      const adGroups = campaign.adGroups || [];
+      if (adGroups.length > 0) {
+        adGroups.forEach((group: any) => {
+          const groupKeywords = group.keywords || [];
+          groupKeywords.forEach((kw: any) => {
+            keywordList.push({
+              word: kw.word || (typeof kw === 'string' ? kw : ''),
+              bid: kw.bid || group.defaultBid || campaign.defaultBid || 1.5,
+              matchType: kw.matchType || 'broad',
+              adCopy: group.ads?.[0] || campaign.adCopy || { headline1: '', headline2: '', headline3: '', description1: '', description2: '' },
+              adGroupName: group.name
+            });
+          });
+        });
+      } else {
+        const cKeywords = campaign.keywords || [];
+        cKeywords.forEach((kw: any) => {
+          keywordList.push({
+            word: kw.word || (typeof kw === 'string' ? kw : ''),
+            bid: kw.bid || 1.0,
+            matchType: kw.matchType || 'broad',
+            adCopy: campaign.adCopy || { headline1: '', headline2: '', headline3: '', description1: '', description2: '' },
+            adGroupName: 'Default Ad Group'
+          });
+        });
+      }
+
+      return keywordList.map((kwBid: any) => {
         const mockRivals = [
           { id: 'rival-1', name: 'Rival A', bid: random.nextFloat(0.5, 2.5) * rivalBidScale, qualityScore: Math.min(10, Math.max(1, Math.round(random.nextInt(4, 9) * rivalQsScale))), dailyBudget: dailyCampaignBudget * 1.2 },
           { id: 'rival-2', name: 'Rival B', bid: random.nextFloat(0.8, 3.0) * rivalBidScale, qualityScore: Math.min(10, Math.max(1, Math.round(random.nextInt(5, 8) * rivalQsScale))), dailyBudget: dailyCampaignBudget * 0.8 },
         ];
 
-        let qs = calculateQualityScore(adCopy, kwBid.word, landingPage);
+        let qs = calculateQualityScore(kwBid.adCopy, kwBid.word, landingPage, relevanceResult.score);
 
         const campaignSoftCount = googleSoftViolationsCount[campaign.name] || 0;
         if (campaignSoftCount > 0) {
@@ -681,6 +774,27 @@ export async function processSimulationRound(simulationId: string): Promise<any>
           ctrModifier = Math.max(0.5, ctrModifier - (0.1 * campaignSoftCount));
         }
 
+        // Determine keyword search intent
+        let keywordIntent = 'commercial';
+        const wordLower = (kwBid.word || '').toLowerCase();
+        if (wordLower.includes('buy') || wordLower.includes('shop') || wordLower.includes('order') || wordLower.includes('pricing') || wordLower.includes('cost')) {
+          keywordIntent = 'transactional';
+        } else if (wordLower.includes('what') || wordLower.includes('how') || wordLower.includes('guide') || wordLower.includes('free') || wordLower.includes('tips')) {
+          keywordIntent = 'informational';
+        }
+
+        // Determine Responsive Search Ads strength
+        let headlinesList = kwBid.adCopy.headlines || [kwBid.adCopy.headline1 || '', kwBid.adCopy.headline2 || '', kwBid.adCopy.headline3 || ''];
+        headlinesList = headlinesList.filter((h: string) => h.trim().length > 0);
+        let adStrength = 'Average';
+        if (headlinesList.length >= 10) {
+          adStrength = 'Excellent';
+        } else if (headlinesList.length >= 7) {
+          adStrength = 'Good';
+        } else if (headlinesList.length < 4) {
+          adStrength = 'Poor';
+        }
+
         const studentBidder = {
           id: 'student',
           name: 'Student Campaign',
@@ -693,7 +807,9 @@ export async function processSimulationRound(simulationId: string): Promise<any>
           biddingStrategy: bidStrategy,
           negativeKeywordsCount: negKws.length,
           landingPageExperience: (landingPage.pageRelevance + landingPage.mobileFriendly + landingPage.pageSpeed + landingPage.trustSignals + landingPage.offerClarity + landingPage.conversionReadiness) / 6,
-          ctrModifier
+          ctrModifier,
+          keywordIntent,
+          adStrength
         };
 
         const auctionResults = runGoogleAuction(
@@ -826,29 +942,59 @@ export async function processSimulationRound(simulationId: string): Promise<any>
 
     const totalMetaBudgetCeiling = metaCampaigns.reduce((sum: number, c: any) => sum + (c.budget || 0), 0);
 
-    const metaAdvertisers = metaCampaigns.map((camp: any) => {
-      const adCopy = camp.creative || { headline: '', primaryText: '', callToAction: '', mediaQuality: 80 };
-      const avgQuality = adCopy.mediaQuality || 80;
-      let creativeQuality = Math.max(1, Math.min(10, Math.round(avgQuality / 10))) || 8;
+    const metaAdvertisers = metaCampaigns.flatMap((camp: any) => {
+      const adSets = camp.adSets || [];
+      if (adSets.length > 0) {
+        return adSets.map((adSet: any) => {
+          const adCopy = adSet.creative || camp.creative || { headline: '', primaryText: '', callToAction: '', mediaQuality: 80 };
+          const avgQuality = adCopy.mediaQuality || 80;
+          let creativeQuality = Math.max(1, Math.min(10, Math.round(avgQuality / 10))) || 8;
 
-      const campaignSoftCount = metaSoftViolationsCount[camp.name] || 0;
-      if (campaignSoftCount > 0) {
-        creativeQuality = Math.max(1, creativeQuality - (2 * campaignSoftCount));
+          const campaignSoftCount = metaSoftViolationsCount[camp.name] || 0;
+          if (campaignSoftCount > 0) {
+            creativeQuality = Math.max(1, creativeQuality - (2 * campaignSoftCount));
+          }
+
+          return {
+            id: 'student',
+            name: adSet.name || camp.name,
+            budget: adSet.dailyBudget || (camp.budget / 30.0),
+            audienceInterest: adSet.targeting?.interests || camp.audienceInterest || 'general-broad',
+            bidType: adSet.bidStrategy || camp.bidType || 'LOWEST_COST',
+            bidAmount: adSet.bidAmount || camp.bidAmount || 0,
+            placement: adSet.placements?.[0] || camp.placement || 'auto',
+            creativeQuality,
+            objective: camp.objective || 'sales',
+            isSameCreative,
+            roundNumber: currentRound,
+            relevanceMultiplier: relevanceResult.score
+          };
+        });
+      } else {
+        const adCopy = camp.creative || { headline: '', primaryText: '', callToAction: '', mediaQuality: 80 };
+        const avgQuality = adCopy.mediaQuality || 80;
+        let creativeQuality = Math.max(1, Math.min(10, Math.round(avgQuality / 10))) || 8;
+
+        const campaignSoftCount = metaSoftViolationsCount[camp.name] || 0;
+        if (campaignSoftCount > 0) {
+          creativeQuality = Math.max(1, creativeQuality - (2 * campaignSoftCount));
+        }
+
+        return {
+          id: 'student',
+          name: camp.name,
+          budget: camp.budget / 30.0,
+          audienceInterest: camp.audienceInterest || 'general-broad',
+          bidType: camp.bidType || 'LOWEST_COST',
+          bidAmount: camp.bidAmount || 0,
+          placement: camp.placement || 'auto',
+          creativeQuality,
+          objective: camp.objective || 'sales',
+          isSameCreative,
+          roundNumber: currentRound,
+          relevanceMultiplier: relevanceResult.score
+        };
       }
-
-      return {
-        id: 'student',
-        name: camp.name,
-        budget: camp.budget / 30.0,
-        audienceInterest: camp.audienceInterest || 'general-broad',
-        bidType: camp.bidType || 'LOWEST_COST',
-        bidAmount: camp.bidAmount || 0,
-        placement: camp.placement || 'auto',
-        creativeQuality,
-        objective: camp.objective || 'sales',
-        isSameCreative,
-        roundNumber: currentRound
-      };
     });
 
     for (let day = 1; day <= 30; day++) {

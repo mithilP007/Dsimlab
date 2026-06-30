@@ -83,6 +83,79 @@ export function SandboxWorkspace() {
           }
           await checkCertificate()
         }
+
+        // Load current decision if exists
+        const decRes = await api.get<any>("/api/v1/sandbox/decision")
+        if (decRes.data?.success && decRes.data.decision) {
+          const dec = decRes.data.decision;
+          if (mode === "GOOGLE_ADS" && dec.googleCampaigns) {
+            try {
+              const camps = typeof dec.googleCampaigns === 'string' ? JSON.parse(dec.googleCampaigns) : dec.googleCampaigns;
+              const camp = camps[0];
+              if (camp) {
+                setGoogleGoal(camp.objective || "Sales");
+                setGoogleBidding(camp.biddingStrategy || "Maximize Clicks");
+                setGoogleMaxCpc(camp.maxCpcBid || 1.50);
+                setGoogleDailyBudget((camp.budget || 3000) / 30);
+                const kwStrs = (camp.keywords || []).map((k: any) => k.word || k).join(", ");
+                setGoogleKeywordsInput(kwStrs || "");
+                setGoogleMatchType(camp.keywords?.[0]?.matchType || "phrase");
+                const negStrs = (camp.negativeKeywords || []).map((k: any) => k.word || k).join(", ");
+                setGoogleNegativeInput(negStrs || "");
+                const ad = camp.adCopy || camp.adGroups?.[0]?.ads?.[0] || {};
+                setGoogleHeadline1(ad.headline1 || ad.headlines?.[0] || "");
+                setGoogleHeadline2(ad.headline2 || ad.headlines?.[1] || "");
+                setGoogleDesc1(ad.description1 || ad.descriptions?.[0] || "");
+                setGoogleLandingPage(ad.finalUrl || "");
+                if (camp.extensions?.sitelinks) {
+                  setGoogleSitelinks(camp.extensions.sitelinks.join(", "));
+                }
+              }
+            } catch(e){}
+          } else if (mode === "META_ADS" && dec.metaCampaigns) {
+            try {
+              const camps = typeof dec.metaCampaigns === 'string' ? JSON.parse(dec.metaCampaigns) : dec.metaCampaigns;
+              const camp = camps[0];
+              const adSet = camp?.adSets?.[0] || camp || {};
+              if (camp) {
+                setMetaObjective(camp.objective || adSet.objective || "leads");
+                setMetaAgeMin(adSet.targeting?.ageMin || adSet.ageMin || 25);
+                setMetaAgeMax(adSet.targeting?.ageMax || adSet.ageMax || 54);
+                setMetaGender(adSet.targeting?.gender || adSet.gender || "all");
+                setMetaInterests(adSet.targeting?.interests || camp.audienceInterest || "");
+                setMetaPlacement(adSet.placement || camp.placement || "feed-reels");
+                setMetaDailyBudget(adSet.dailyBudget || (camp.budget / 30) || 150);
+                
+                const creative = adSet.creative || camp.creative || {};
+                setMetaCreativeFormat(creative.format || "image");
+                setMetaPrimaryText(creative.primaryText || "");
+                setMetaHeadline(creative.headline || "");
+                setMetaCta(creative.cta || "LEARN_MORE");
+                setMetaLandingPage(creative.destinationUrl || "");
+              }
+            } catch(e){}
+          } else if (mode === "SEO") {
+            try {
+              const kws = typeof dec.seoTargetKeywords === 'string' ? JSON.parse(dec.seoTargetKeywords) : dec.seoTargetKeywords;
+              setSeoTargetKeywordsInput(kws ? kws.join(", ") : "");
+            } catch(e){}
+            setSeoMetaTitle(dec.seoMetaTitle || "");
+            setSeoMetaDescription(dec.seoMetaDescription || "");
+            setSeoBodyContent(dec.seoBodyContent || "");
+            setSeoUrlSlug(dec.seoUrlSlug || "");
+            setSeoBacklinkBudget(dec.seoBacklinkBudget || 250);
+            
+            if (dec.seoTechnicalConfig) {
+              try {
+                const tc = typeof dec.seoTechnicalConfig === 'string' ? JSON.parse(dec.seoTechnicalConfig) : dec.seoTechnicalConfig;
+                setSeoTechnicalSSL(tc.hasSsl ?? tc.hasSssl ?? true);
+                setSeoTechnicalSitemap(tc.hasSitemap ?? true);
+                setSeoTechnicalMobile(tc.isMobileFriendly ?? true);
+                setSeoTechnicalRobots(tc.hasRobots ?? true);
+              } catch(e){}
+            }
+          }
+        }
       } else {
         toast.error("No active sandbox simulation found. Redirecting...")
         navigate("/simulation")
@@ -905,6 +978,22 @@ export function SandboxWorkspace() {
                   <span className="text-xs font-black text-neutral-800 block mt-0.5">{report.summary.roas.toFixed(2)}x</span>
                 </div>
               </div>
+
+              {/* Sandbox Recommendations */}
+              {report.recommendations && report.recommendations.length > 0 && (
+                <div className="bg-amber-50/30 border border-amber-100/60 rounded-2xl p-5 space-y-3 animate-in fade-in duration-300">
+                  <span className="text-[10px] font-black text-amber-600 uppercase tracking-widest bg-amber-50 px-2.5 py-1 rounded-full flex items-center gap-1.5 w-max">
+                    <Sparkles className="h-3.5 w-3.5 fill-amber-600 text-amber-600" />
+                    Recommendations & Coach Advice
+                  </span>
+                  
+                  <ul className="space-y-2 text-[11px] text-neutral-600 font-semibold list-disc pl-4">
+                    {report.recommendations.map((rec: string, index: number) => (
+                      <li key={index} className="leading-relaxed">{rec}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </Card>
           )}
 

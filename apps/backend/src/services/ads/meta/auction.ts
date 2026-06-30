@@ -8,15 +8,15 @@ export interface MetaAdvertiser {
   name: string;
   budget: number; // daily budget
   audienceInterest: string;
-  bidType: string; // LOWEST_COST, BID_CAP
+  bidType: string; // LOWEST_COST, BID_CAP, COST_CAP
   bidAmount: number;
   placement: string;
   creativeQuality: number; // 1-10
-  // Upgraded parameters
   objective?: string;
   budgetType?: string;
-  isSameCreative?: boolean; // to track creative fatigue round-over-round
+  isSameCreative?: boolean;
   roundNumber?: number;
+  relevanceMultiplier?: number;
 }
 
 export interface MetaAuctionResult {
@@ -29,7 +29,6 @@ export interface MetaAuctionResult {
   cost: number;
   conversions: number;
   averageCPC: number;
-  // Advanced metrics
   cpm: number;
   ctr: number;
   cvr: number;
@@ -40,9 +39,6 @@ export interface MetaAuctionResult {
   relevanceRanking: "Below Average" | "Average" | "Above Average";
 }
 
-/**
- * Calculates Meta Ads outcomes (CPM, reach distribution, fatigue CTR, clicks, cost) for a cohort
- */
 export function runMetaAuction(
   advertisers: MetaAdvertiser[],
   audienceSizes: Record<string, number>,
@@ -67,13 +63,20 @@ export function runMetaAuction(
   const results: MetaAuctionResult[] = [];
 
   advertisers.forEach(adv => {
-    // 1. Calculate CPM
+    const relevance = adv.relevanceMultiplier !== undefined ? adv.relevanceMultiplier : 1.0;
+    
+    // 1. Calculate CPM based on placement
     const competitorsCount = advertisers.filter(a => a.id !== adv.id && a.audienceInterest === adv.audienceInterest).length;
-    const baseCpm = calculateMetaCPM(adv.placement, adv.audienceInterest, competitorsCount);
-    // Platform CPM is scaled by cpmPressure, competition, and news volatility
-    let cpm = parseFloat((baseCpm * cpmPressure * competition * (1 + (newsImpact - 1) * 0.2)).toFixed(2));
+    let baseCpm = calculateMetaCPM(adv.placement, adv.audienceInterest, competitorsCount);
+    
+    // Advantage+ placements discount CPM by 15% due to wider optimization
+    if (adv.placement.toLowerCase() === 'advantage+' || adv.placement.toLowerCase() === 'auto') {
+      baseCpm *= 0.85;
+    }
 
-    // Objective modifiers to CPM (Brand Awareness CPM is cheaper, Conversions/Sales CPM is more expensive)
+    let cpm = parseFloat((baseCpm * cpmPressure * competition * (1 + (newsImpact - 1) * 0.15)).toFixed(2));
+
+    // Objective modifiers to CPM
     let cpmMultiplier = 1.0;
     let ctrMultiplier = 1.0;
     let cvrMultiplier = 1.0;
@@ -81,55 +84,62 @@ export function runMetaAuction(
     if (adv.objective) {
       const obj = adv.objective.toLowerCase();
       if (obj === 'awareness') {
-        cpmMultiplier = 0.6; // low cost impressions
-        ctrMultiplier = 0.55; // low CTR
-        cvrMultiplier = 0.25;
+        cpmMultiplier = 0.55; 
+        ctrMultiplier = 0.5; 
+        cvrMultiplier = 0.2;
       } else if (obj === 'traffic') {
-        cpmMultiplier = 0.95;
-        ctrMultiplier = 1.35; // optimized for clicks
-        cvrMultiplier = 0.8;
+        cpmMultiplier = 0.9;
+        ctrMultiplier = 1.4; 
+        cvrMultiplier = 0.75;
       } else if (obj === 'engagement') {
-        cpmMultiplier = 0.8;
-        ctrMultiplier = 1.1;
-        cvrMultiplier = 0.5;
+        cpmMultiplier = 0.75;
+        ctrMultiplier = 1.15;
+        cvrMultiplier = 0.45;
       } else if (obj === 'sales') {
-        cpmMultiplier = 1.5; // highly targeted, expensive CPM
-        ctrMultiplier = 0.85; // lower CTR but higher intent
-        cvrMultiplier = 1.45; // high conversion rate
+        cpmMultiplier = 1.45; 
+        ctrMultiplier = 0.8; 
+        cvrMultiplier = 1.5; 
       } else if (obj === 'leads') {
-        cpmMultiplier = 1.3;
-        ctrMultiplier = 0.95;
-        cvrMultiplier = 1.2;
+        cpmMultiplier = 1.25;
+        ctrMultiplier = 0.9;
+        cvrMultiplier = 1.25;
       }
     }
     cpm = parseFloat((cpm * cpmMultiplier).toFixed(2));
 
-    // 2. Deliver Impressions based on daily budget
+    // Relevance penalty increases CPM
+    if (relevance < 0.6) {
+      cpm *= 1.35; // 35% higher CPM cost
+    }
+
+    // 2. Deliver Impressions based on daily budget and bidding checks
     let impressions = 0;
     if (adv.budget > 0) {
       let deliveryScale = 1.0;
-      // BID_CAP limitations
-      if (adv.bidType === 'BID_CAP' && adv.bidAmount < (cpm / 1000) * 1.4) {
-        deliveryScale = Math.max(0.05, adv.bidAmount / ((cpm / 1000) * 1.4));
+      // BID_CAP and COST_CAP limitations
+      if ((adv.bidType === 'BID_CAP' || adv.bidType === 'COST_CAP') && adv.bidAmount > 0) {
+        const costPerImp = cpm / 1000;
+        if (adv.bidAmount < costPerImp * 1.5) {
+          deliveryScale = Math.max(0.01, adv.bidAmount / (costPerImp * 1.5));
+        }
       }
       impressions = Math.round((adv.budget / cpm) * 1000 * deliveryScale);
     }
 
     // 3. Unique Reach & Frequency calculation
-    const targetAudienceSize = audienceSizes[adv.audienceInterest] || 500000;
+    const targetAudienceSize = audienceSizes[adv.audienceInterest] || 600000;
     const { reach, frequency } = calculateReachAndFrequency(impressions, targetAudienceSize);
 
     // 4. CTR Fatigue and Creative Quality Score
-    // Decaying CTR based on creative quality, frequency, and whether the creative was changed
     let fatigueFactor = calculateCTRDecay(frequency, adv.creativeQuality);
     
     // Round-over-round fatigue penalty if creative hasn't changed
     if (adv.isSameCreative) {
-      fatigueFactor = Math.max(0.15, fatigueFactor * 0.7);
+      fatigueFactor = Math.max(0.1, fatigueFactor * 0.65);
     }
 
-    const baselineCTR = 0.006 + (adv.creativeQuality * 0.0028) + random.nextFloat(-0.0008, 0.0008);
-    const finalCTR = Math.max(0.001, baselineCTR * fatigueFactor * ctrMultiplier);
+    const baselineCTR = 0.007 + (adv.creativeQuality * 0.003) + random.nextFloat(-0.0005, 0.0005);
+    const finalCTR = Math.max(0.0008, baselineCTR * fatigueFactor * ctrMultiplier * relevance);
 
     // 5. Clicks and conversions
     const clicks = Math.round(impressions * finalCTR);
@@ -138,33 +148,31 @@ export function runMetaAuction(
     let cost = adv.budget;
     if (impressions === 0) {
       cost = 0;
-    } else if (adv.bidType === 'BID_CAP') {
+    } else if (adv.bidType === 'BID_CAP' || adv.bidType === 'COST_CAP') {
       const maxPossibleCost = (impressions / 1000) * cpm;
       cost = parseFloat(Math.min(adv.budget, maxPossibleCost).toFixed(2));
     }
 
-    // Learning phase effect (if daily budget is low < $15 or campaign runs for first few days, conversions drop)
-    const isLearning = adv.budget > 0 && adv.budget < 15.0;
-    const learningPenalty = isLearning ? 0.65 : 1.0;
+    // Learning phase effect
+    const isLearning = adv.budget > 0 && adv.budget < 18.0;
+    const learningPenalty = isLearning ? 0.6 : 1.0;
 
-    // Conversions scaled by interest, quality boost, social buzz, and learning phase
-    const qualityCVRBoost = 0.8 + (adv.creativeQuality / 10.0) * 0.45;
-    const cvr = baseConversionRate * qualityCVRBoost * cvrIntent * socialBuzz * cvrMultiplier * learningPenalty;
+    // Conversions
+    const qualityCVRBoost = 0.75 + (adv.creativeQuality / 10.0) * 0.5;
+    const cvr = baseConversionRate * qualityCVRBoost * cvrIntent * socialBuzz * cvrMultiplier * learningPenalty * relevance;
     const conversions = Math.round(clicks * cvr);
 
     const averageCPC = clicks > 0 ? parseFloat((cost / clicks).toFixed(2)) : 0.0;
-
-    // Saturation and relevance metrics
     const audienceSaturation = Math.min(100, Math.round((reach / targetAudienceSize) * 100));
     
     let relevanceRanking: "Below Average" | "Average" | "Above Average" = "Average";
-    if (adv.creativeQuality >= 8 && fatigueFactor > 0.8) {
+    if (adv.creativeQuality >= 8 && fatigueFactor > 0.8 && relevance >= 0.8) {
       relevanceRanking = "Above Average";
-    } else if (adv.creativeQuality <= 4 || fatigueFactor < 0.4) {
+    } else if (adv.creativeQuality <= 4 || fatigueFactor < 0.35 || relevance < 0.6) {
       relevanceRanking = "Below Average";
     }
 
-    const engagementRate = parseFloat((finalCTR * 2.8).toFixed(4));
+    const engagementRate = parseFloat((finalCTR * 2.9).toFixed(4));
 
     results.push({
       id: adv.id,
