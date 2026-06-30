@@ -17,15 +17,13 @@ async function logAudit(userId: string, action: string, details: string) {
       }
     });
   } catch (err) {
-    // silent catch to protect main flows
+    // silent catch
   }
 }
 
 export async function sandboxRoutes(fastify: FastifyInstance) {
-  // Pre-handler auth guard for all sandbox routes
   fastify.addHook('preHandler', requireAuth);
 
-  // Helper validation guard to ensure only ADMIN (Super Admin) or INDIVIDUAL (Individual Learner) users can use sandbox
   const checkRole = (request: AuthenticatedRequest) => {
     const role = request.user!.role;
     if (role !== 'INDIVIDUAL' && role !== 'ADMIN') {
@@ -34,31 +32,47 @@ export async function sandboxRoutes(fastify: FastifyInstance) {
   };
 
   /**
-   * GET /api/v1/sandbox/options
+   * GET /api/v1/sandbox/simulation-types
    */
-  fastify.get('/options', async (request, reply) => {
+  fastify.get('/simulation-types', async (request, reply) => {
     const authReq = request as AuthenticatedRequest;
     checkRole(authReq);
+    return reply.status(200).send({
+      success: true,
+      simulationTypes: ["GOOGLE_ADS", "META_ADS", "SEO"]
+    });
+  });
+
+  /**
+   * GET /api/v1/sandbox/sample-scenarios
+   */
+  fastify.get('/sample-scenarios', async (request, reply) => {
+    const authReq = request as AuthenticatedRequest;
+    checkRole(authReq);
+    const { mode } = request.query as { mode: string };
+
+    if (!mode || !['GOOGLE_ADS', 'META_ADS', 'SEO'].includes(mode)) {
+      throw new ValidationError('Valid mode parameter (GOOGLE_ADS, META_ADS, SEO) is required.');
+    }
 
     const presetScenarios = await prisma.scenario.findMany({
       where: { scenarioType: { not: 'custom' } }
     });
 
+    // Map presets dynamically to the selected single mode
+    const modePresets = presetScenarios.map(s => ({
+      id: s.id,
+      name: `${s.name} [${mode.replace('_', ' ')}]`,
+      description: s.description,
+      industry: s.industry,
+      difficulty: s.difficulty,
+      simulationMode: mode,
+      allowedPlatforms: JSON.stringify([mode])
+    }));
+
     return reply.status(200).send({
       success: true,
-      simulationTypes: ["FULL", "SEO", "GOOGLE_ADS", "META_ADS", "DISPLAY", "VIDEO", "SHOPPING"],
-      learningPaths: ["beginner", "intermediate", "advanced", "custom"],
-      difficulties: ["easy", "medium", "hard"],
-      kpis: ["revenue", "conversions", "clicks", "ctr"],
-      locations: ["Global", "US", "EU", "APAC"],
-      presetScenarios: presetScenarios.map(s => ({
-        id: s.id,
-        name: s.name,
-        description: s.description,
-        industry: s.industry,
-        difficulty: s.difficulty,
-        allowedPlatforms: JSON.parse(s.allowedPlatforms || '[]')
-      }))
+      presetScenarios: modePresets
     });
   });
 
@@ -73,61 +87,51 @@ export async function sandboxRoutes(fastify: FastifyInstance) {
     const {
       scenarioName,
       industry,
+      businessType,
       targetAudience,
       location,
-      totalBudget,
-      dailyBudget,
+      objectiveKPI,
+      competitionLevel,
+      productDescription,
+      simulationMode,
       campaignDuration,
       simulationRounds,
-      seoEnabled,
-      googleAdsEnabled,
-      metaAdsEnabled,
-      displayVideoShoppingEnabled,
-      difficulty,
-      targetKPI,
-      checkpointRequired,
-      certificateEnabled,
       timingRule
     } = request.body as any;
 
-    if (!scenarioName || !industry) {
-      throw new ValidationError('Scenario name and industry are required.');
+    if (!scenarioName || !industry || !simulationMode) {
+      throw new ValidationError('Scenario name, industry, and simulationMode are required.');
     }
 
-    const allowedPlatforms = [];
-    if (seoEnabled) allowedPlatforms.push('SEO');
-    if (googleAdsEnabled) allowedPlatforms.push('GOOGLE_ADS');
-    if (metaAdsEnabled) allowedPlatforms.push('META_ADS');
-
-    const allowedCampaignTypes = ['Search'];
-    if (displayVideoShoppingEnabled) {
-      allowedCampaignTypes.push('Display', 'Video', 'Shopping');
+    if (!['GOOGLE_ADS', 'META_ADS', 'SEO'].includes(simulationMode)) {
+      throw new ValidationError('Invalid simulationMode.');
     }
 
     const customScenario = await prisma.scenario.create({
       data: {
         name: scenarioName,
-        description: `Custom Sandbox Scenario for ${targetAudience || 'General Audiences'} in ${location || 'Global'}.`,
+        description: productDescription || `Custom Sandbox Scenario for ${targetAudience || 'General Audiences'} in ${location || 'Global'}. Business Type: ${businessType || 'N/A'}.`,
         industry,
         startRound: 1,
         maxRounds: parseInt(simulationRounds) || 10,
-        budgetPerRound: parseFloat(totalBudget) || 5000.0,
+        budgetPerRound: 5000.0, // Default round budget limit (budget is managed inside workspace)
         baselineOrganicTraffic: 1000,
-        targetKPI: targetKPI || 'revenue',
+        targetKPI: objectiveKPI || 'revenue',
         location: location || 'Global',
         durationDays: parseInt(campaignDuration) || 30,
-        dailyBudgetCap: parseFloat(dailyBudget) || 150.0,
-        allowedPlatforms: JSON.stringify(allowedPlatforms),
-        allowedCampaignTypes: JSON.stringify(allowedCampaignTypes),
-        checkpointRequired: checkpointRequired ?? true,
-        difficulty: difficulty || 'medium',
-        certificateEnabled: certificateEnabled ?? true,
-        trendRefreshFrequency: timingRule || 'instant', // We store timingRule (instant, 24h, custom_X) here
-        scenarioType: 'custom'
+        dailyBudgetCap: 500.0,
+        allowedPlatforms: JSON.stringify([simulationMode]),
+        allowedCampaignTypes: JSON.stringify(['Search', 'Display', 'Video', 'Shopping']),
+        checkpointRequired: false,
+        difficulty: competitionLevel || 'medium',
+        certificateEnabled: true,
+        trendRefreshFrequency: timingRule || 'instant',
+        scenarioType: 'custom',
+        simulationMode
       }
     });
 
-    await logAudit(userId, 'scenario created', `Created custom scenario: ${scenarioName}`);
+    await logAudit(userId, 'scenario created', `Created custom sandbox scenario: ${scenarioName} [${simulationMode}]`);
 
     return reply.status(201).send({
       success: true,
@@ -142,21 +146,62 @@ export async function sandboxRoutes(fastify: FastifyInstance) {
     const authReq = request as AuthenticatedRequest;
     checkRole(authReq);
     const userId = authReq.user!.id;
-    const { scenarioId } = request.body as any;
+    const { 
+      simulationMode, 
+      scenarioId, 
+      customScenario, 
+      scenarioType, 
+      durationDays, 
+      resultCycleHours, 
+      timingMode 
+    } = request.body as any;
 
-    if (!scenarioId) {
-      throw new ValidationError('Scenario ID is required to start simulation.');
+    if (!simulationMode || !['GOOGLE_ADS', 'META_ADS', 'SEO'].includes(simulationMode)) {
+      throw new ValidationError('Valid simulationMode is required.');
+    }
+
+    let finalScenarioId = scenarioId;
+
+    if (scenarioType === 'CUSTOM' || customScenario) {
+      const timingVal = timingMode === 'instant' ? 'instant' : (resultCycleHours ? `custom_${resultCycleHours}` : '24h');
+      const customRes = await prisma.scenario.create({
+        data: {
+          name: customScenario?.scenarioName || 'Custom Scenario',
+          description: customScenario?.productDescription || 'Custom description',
+          industry: customScenario?.industry || 'B2B Software',
+          startRound: 1,
+          maxRounds: durationDays || 15,
+          budgetPerRound: 5000.0,
+          baselineOrganicTraffic: 1000,
+          targetKPI: customScenario?.objectiveKPI || 'revenue',
+          location: customScenario?.location || 'Global',
+          durationDays: durationDays || 15,
+          allowedPlatforms: JSON.stringify([simulationMode]),
+          allowedCampaignTypes: JSON.stringify(['Search']),
+          checkpointRequired: false,
+          difficulty: customScenario?.competitionLevel || 'medium',
+          certificateEnabled: true,
+          trendRefreshFrequency: timingVal,
+          scenarioType: 'custom',
+          simulationMode
+        }
+      });
+      finalScenarioId = customRes.id;
+    }
+
+    if (!finalScenarioId) {
+      throw new ValidationError('Scenario identification is required to start simulation.');
     }
 
     const scenario = await prisma.scenario.findUnique({
-      where: { id: scenarioId }
+      where: { id: finalScenarioId }
     });
 
     if (!scenario) {
       throw new NotFoundError('Scenario not found.');
     }
 
-    // 1. Resolve private Sandbox Instructor account
+    // Resolve private Sandbox Instructor account
     let inst = await prisma.user.findFirst({
       where: { email: 'sandbox-instructor@simulation.com' }
     });
@@ -172,7 +217,7 @@ export async function sandboxRoutes(fastify: FastifyInstance) {
       });
     }
 
-    // 2. Resolve private Sandbox Class unique to this user
+    // Resolve private Sandbox Class unique to this user
     const inviteCode = `SANDBOX-${userId}`;
     let cls = await prisma.class.findUnique({
       where: { inviteCode }
@@ -181,7 +226,7 @@ export async function sandboxRoutes(fastify: FastifyInstance) {
     if (cls) {
       cls = await prisma.class.update({
         where: { id: cls.id },
-        data: { scenarioId }
+        data: { scenarioId: finalScenarioId }
       });
     } else {
       cls = await prisma.class.create({
@@ -189,34 +234,35 @@ export async function sandboxRoutes(fastify: FastifyInstance) {
           name: `Sandbox - ${authReq.user!.name}`,
           inviteCode,
           instructorId: inst.id,
-          scenarioId
+          scenarioId: finalScenarioId
         }
       });
     }
 
-    // 3. Link user to sandbox class
+    // Link user to sandbox class
     await prisma.user.update({
       where: { id: userId },
       data: { classId: cls.id }
     });
 
-    // 4. Delete existing SimulationState & dependencies
+    // Delete existing SimulationState & dependencies
     await prisma.simulationState.deleteMany({
       where: { userId, classId: cls.id }
     });
 
-    // 5. Create fresh SimulationState
+    // Create fresh SimulationState with simulationMode
     const state = await prisma.simulationState.create({
       data: {
         userId,
         classId: cls.id,
         currentRound: 1,
         status: 'DECISION_OPEN',
-        isCompleted: false
+        isCompleted: false,
+        simulationMode
       }
     });
 
-    // 6. Initialize progress record
+    // Initialize progress record
     await prisma.studentSimulationProgress.upsert({
       where: { simulationId: state.id },
       update: {
@@ -234,13 +280,14 @@ export async function sandboxRoutes(fastify: FastifyInstance) {
       }
     });
 
-    await logAudit(userId, 'simulation started', `Started sandbox simulation. Scenario: ${scenario.name}`);
+    await logAudit(userId, 'simulation started', `Started sandbox simulation mode ${simulationMode} on scenario ${scenario.name}`);
 
     return reply.status(201).send({
       success: true,
       simulationId: state.id,
       status: state.status,
-      currentRound: state.currentRound
+      currentRound: state.currentRound,
+      simulationMode
     });
   });
 
@@ -284,7 +331,6 @@ export async function sandboxRoutes(fastify: FastifyInstance) {
       });
     }
 
-    // Get the progress record
     const progress = await prisma.studentSimulationProgress.findUnique({
       where: { simulationId: state.id }
     });
@@ -305,21 +351,13 @@ export async function sandboxRoutes(fastify: FastifyInstance) {
     checkRole(authReq);
     const userId = authReq.user!.id;
 
-    const {
-      seoTargetKeywords,
-      seoContentQuality,
-      seoBacklinkBudget,
-      googleCampaigns,
-      metaCampaigns
-    } = request.body as any;
-
     const inviteCode = `SANDBOX-${userId}`;
     const cls = await prisma.class.findUnique({
       where: { inviteCode }
     });
 
     if (!cls) {
-      throw new NotFoundError('No active sandbox classroom found. Please start a sandbox simulation first.');
+      throw new NotFoundError('No active sandbox classroom found.');
     }
 
     const sim = await prisma.simulationState.findFirst({
@@ -334,39 +372,156 @@ export async function sandboxRoutes(fastify: FastifyInstance) {
       throw new ValidationError('Simulation is not open for decisions.');
     }
 
-    const decision = await prisma.decision.upsert({
-      where: {
-        simulationId_round: {
-          simulationId: sim.id,
-          round: sim.currentRound
-        }
-      },
-      update: {
-        seoTargetKeywords: JSON.stringify(seoTargetKeywords || []),
-        seoContentQuality: parseFloat(seoContentQuality) || 5.0,
-        seoBacklinkBudget: parseFloat(seoBacklinkBudget) || 0.0,
-        googleCampaigns: JSON.stringify(googleCampaigns || []),
-        metaCampaigns: JSON.stringify(metaCampaigns || []),
-        submitted: true
-      },
-      create: {
-        simulationId: sim.id,
-        round: sim.currentRound,
-        seoTargetKeywords: JSON.stringify(seoTargetKeywords || []),
-        seoContentQuality: parseFloat(seoContentQuality) || 5.0,
-        seoBacklinkBudget: parseFloat(seoBacklinkBudget) || 0.0,
-        googleCampaigns: JSON.stringify(googleCampaigns || []),
-        metaCampaigns: JSON.stringify(metaCampaigns || []),
-        submitted: true
+    const mode = sim.simulationMode || 'GOOGLE_ADS';
+
+    // Strict Mode-Specific Validation
+    if (mode === 'GOOGLE_ADS') {
+      const { seoTargetKeywords, seoBacklinkBudget, metaCampaigns } = request.body as any;
+      if (
+        (seoTargetKeywords && seoTargetKeywords.length > 0) ||
+        (seoBacklinkBudget && seoBacklinkBudget > 0) ||
+        (metaCampaigns && metaCampaigns.length > 0)
+      ) {
+        throw new ValidationError('Google Ads Simulation rejects SEO and Meta Ads settings.');
       }
-    });
+      
+      const { googleCampaigns } = request.body as any;
+      const decision = await prisma.decision.upsert({
+        where: {
+          simulationId_round: { simulationId: sim.id, round: sim.currentRound }
+        },
+        update: {
+          googleCampaigns: JSON.stringify(googleCampaigns || []),
+          seoTargetKeywords: '[]',
+          seoContentQuality: 0,
+          seoBacklinkBudget: 0,
+          metaCampaigns: '[]',
+          submitted: true
+        },
+        create: {
+          simulationId: sim.id,
+          round: sim.currentRound,
+          googleCampaigns: JSON.stringify(googleCampaigns || []),
+          seoTargetKeywords: '[]',
+          seoContentQuality: 0,
+          seoBacklinkBudget: 0,
+          metaCampaigns: '[]',
+          submitted: true
+        }
+      });
 
-    await logAudit(userId, 'decision submitted', `Submitted decisions for Round ${sim.currentRound}`);
+      await logAudit(userId, 'decision submitted', `Submitted decisions for Google Ads Round ${sim.currentRound}`);
+      return reply.status(200).send({ success: true, decision });
 
-    return reply.status(200).send({
-      success: true,
-      decision
-    });
+    } else if (mode === 'META_ADS') {
+      const { seoTargetKeywords, seoBacklinkBudget, googleCampaigns } = request.body as any;
+      if (
+        (seoTargetKeywords && seoTargetKeywords.length > 0) ||
+        (seoBacklinkBudget && seoBacklinkBudget > 0) ||
+        (googleCampaigns && googleCampaigns.length > 0)
+      ) {
+        throw new ValidationError('Meta Ads Simulation rejects SEO and Google Ads settings.');
+      }
+
+      const { metaCampaigns } = request.body as any;
+      const decision = await prisma.decision.upsert({
+        where: {
+          simulationId_round: { simulationId: sim.id, round: sim.currentRound }
+        },
+        update: {
+          metaCampaigns: JSON.stringify(metaCampaigns || []),
+          seoTargetKeywords: '[]',
+          seoContentQuality: 0,
+          seoBacklinkBudget: 0,
+          googleCampaigns: '[]',
+          submitted: true
+        },
+        create: {
+          simulationId: sim.id,
+          round: sim.currentRound,
+          metaCampaigns: JSON.stringify(metaCampaigns || []),
+          seoTargetKeywords: '[]',
+          seoContentQuality: 0,
+          seoBacklinkBudget: 0,
+          googleCampaigns: '[]',
+          submitted: true
+        }
+      });
+
+      await logAudit(userId, 'decision submitted', `Submitted decisions for Meta Ads Round ${sim.currentRound}`);
+      return reply.status(200).send({ success: true, decision });
+
+    } else if (mode === 'SEO') {
+      const { googleCampaigns, metaCampaigns } = request.body as any;
+      if (
+        (googleCampaigns && googleCampaigns.length > 0) ||
+        (metaCampaigns && metaCampaigns.length > 0)
+      ) {
+        throw new ValidationError('SEO Simulation rejects Google Ads and Meta Ads settings.');
+      }
+
+      const {
+        seoTargetKeywords,
+        seoContentQuality,
+        seoBacklinkBudget,
+        seoMetaTitle,
+        seoMetaDescription,
+        seoBodyContent,
+        seoUrlSlug,
+        seoInternalLinks,
+        seoAnchorText,
+        seoBacklinkQuality,
+        seoTechnicalConfig,
+        seoCoreWebVitals
+      } = request.body as any;
+
+      const decision = await prisma.decision.upsert({
+        where: {
+          simulationId_round: { simulationId: sim.id, round: sim.currentRound }
+        },
+        update: {
+          seoTargetKeywords: JSON.stringify(seoTargetKeywords || []),
+          seoContentQuality: parseFloat(seoContentQuality) || 5.0,
+          seoBacklinkBudget: parseFloat(seoBacklinkBudget) || 0.0,
+          seoMetaTitle: seoMetaTitle || '',
+          seoMetaDescription: seoMetaDescription || '',
+          seoBodyContent: seoBodyContent || '',
+          seoUrlSlug: seoUrlSlug || '',
+          seoInternalLinks: parseInt(seoInternalLinks) || 0,
+          seoAnchorText: seoAnchorText || '',
+          seoBacklinkQuality: parseInt(seoBacklinkQuality) || 1,
+          seoTechnicalConfig: JSON.stringify(seoTechnicalConfig || {}),
+          seoCoreWebVitals: JSON.stringify(seoCoreWebVitals || {}),
+          googleCampaigns: '[]',
+          metaCampaigns: '[]',
+          submitted: true
+        },
+        create: {
+          simulationId: sim.id,
+          round: sim.currentRound,
+          seoTargetKeywords: JSON.stringify(seoTargetKeywords || []),
+          seoContentQuality: parseFloat(seoContentQuality) || 5.0,
+          seoBacklinkBudget: parseFloat(seoBacklinkBudget) || 0.0,
+          seoMetaTitle: seoMetaTitle || '',
+          seoMetaDescription: seoMetaDescription || '',
+          seoBodyContent: seoBodyContent || '',
+          seoUrlSlug: seoUrlSlug || '',
+          seoInternalLinks: parseInt(seoInternalLinks) || 0,
+          seoAnchorText: seoAnchorText || '',
+          seoBacklinkQuality: parseInt(seoBacklinkQuality) || 1,
+          seoTechnicalConfig: JSON.stringify(seoTechnicalConfig || {}),
+          seoCoreWebVitals: JSON.stringify(seoCoreWebVitals || {}),
+          googleCampaigns: '[]',
+          metaCampaigns: '[]',
+          submitted: true
+        }
+      });
+
+      await logAudit(userId, 'decision submitted', `Submitted decisions for SEO Round ${sim.currentRound}`);
+      return reply.status(200).send({ success: true, decision });
+    }
+
+    throw new ValidationError('Invalid simulation mode context.');
   });
 
   /**
@@ -399,7 +554,6 @@ export async function sandboxRoutes(fastify: FastifyInstance) {
       throw new ValidationError('Simulation is not in DECISION_OPEN status.');
     }
 
-    // Verify decision exists
     const decision = await prisma.decision.findUnique({
       where: {
         simulationId_round: {
@@ -413,18 +567,16 @@ export async function sandboxRoutes(fastify: FastifyInstance) {
       throw new ValidationError('Decisions must be submitted before running simulation.');
     }
 
-    // Calculate waitHours
     let waitHours = 0;
     if (authReq.user!.role === 'INDIVIDUAL') {
+      // Individual Learner uses 24-hour cycle or packages
       const activeSub = await prisma.subscription.findFirst({
         where: { userId, status: 'active' },
         include: { plan: true }
       });
       const duration = activeSub?.plan?.durationDays || 30;
-      // 15 days plan -> 12 hours wait per round, 30 days -> 24 hours wait
       waitHours = duration === 15 ? 12 : 24;
     } else if (authReq.user!.role === 'ADMIN') {
-      // Check custom scenario timing rule
       const timingRule = cls.scenario.trendRefreshFrequency || 'instant';
       if (timingRule === '24h') {
         waitHours = 24;
@@ -435,8 +587,6 @@ export async function sandboxRoutes(fastify: FastifyInstance) {
 
     if (waitHours > 0) {
       const nextResultAt = new Date(Date.now() + waitHours * 3600 * 1000);
-
-      // Lock state to PROCESSING
       await prisma.simulationState.update({
         where: { id: sim.id },
         data: { status: 'PROCESSING' }
@@ -460,10 +610,9 @@ export async function sandboxRoutes(fastify: FastifyInstance) {
         progress
       });
     } else {
-      // Instant run
       await prisma.simulationState.update({
         where: { id: sim.id },
-        data: { status: 'LOCKED' } // engine expects LOCKED
+        data: { status: 'LOCKED' }
       });
 
       const result = await processSimulationRound(sim.id);
@@ -507,7 +656,6 @@ export async function sandboxRoutes(fastify: FastifyInstance) {
       throw new NotFoundError('No active sandbox simulation found.');
     }
 
-    // Advance instantly by forcing status to LOCKED
     await prisma.simulationState.update({
       where: { id: sim.id },
       data: { status: 'LOCKED' }
@@ -520,6 +668,73 @@ export async function sandboxRoutes(fastify: FastifyInstance) {
     return reply.status(200).send({
       success: true,
       result
+    });
+  });
+
+  /**
+   * POST /api/v1/sandbox/next-cycle
+   */
+  fastify.post('/next-cycle', async (request, reply) => {
+    const authReq = request as AuthenticatedRequest;
+    checkRole(authReq);
+    const userId = authReq.user!.id;
+
+    const inviteCode = `SANDBOX-${userId}`;
+    const cls = await prisma.class.findUnique({
+      where: { inviteCode }
+    });
+
+    if (!cls) {
+      throw new NotFoundError('No sandbox classroom found.');
+    }
+
+    const sim = await prisma.simulationState.findFirst({
+      where: { userId, classId: cls.id }
+    });
+
+    if (!sim) {
+      throw new NotFoundError('No active sandbox simulation state found.');
+    }
+
+    if (sim.status !== 'RESULTS_READY') {
+      throw new ValidationError('Simulation is not in RESULTS_READY status.');
+    }
+
+    await prisma.simulationState.update({
+      where: { id: sim.id },
+      data: { status: 'DECISION_OPEN' }
+    });
+
+    await prisma.studentSimulationProgress.update({
+      where: { simulationId: sim.id },
+      data: { status: 'DECISION_OPEN', nextResultAt: null }
+    });
+
+    const decision = await prisma.decision.upsert({
+      where: {
+        simulationId_round: {
+          simulationId: sim.id,
+          round: sim.currentRound
+        }
+      },
+      update: { submitted: false },
+      create: {
+        simulationId: sim.id,
+        round: sim.currentRound,
+        seoTargetKeywords: '[]',
+        googleCampaigns: '[]',
+        metaCampaigns: '[]',
+        submitted: false
+      }
+    });
+
+    await logAudit(userId, 'next cycle started', `Opened round ${sim.currentRound} for decision submissions.`);
+
+    return reply.status(200).send({
+      success: true,
+      status: 'DECISION_OPEN',
+      currentRound: sim.currentRound,
+      decision
     });
   });
 
@@ -537,7 +752,7 @@ export async function sandboxRoutes(fastify: FastifyInstance) {
     });
 
     if (!cls) {
-      throw new NotFoundError('No sandbox simulation classroom found.');
+      throw new NotFoundError('No sandbox classroom found.');
     }
 
     const state = await prisma.simulationState.findFirst({
@@ -565,7 +780,8 @@ export async function sandboxRoutes(fastify: FastifyInstance) {
       orderBy: { round: 'asc' }
     });
 
-    // Compute totals
+    const mode = state.simulationMode || 'GOOGLE_ADS';
+
     let totalImpressions = 0;
     let totalClicks = 0;
     let totalCost = 0;
@@ -573,10 +789,22 @@ export async function sandboxRoutes(fastify: FastifyInstance) {
     let totalRevenue = 0;
 
     for (const m of metrics) {
-      totalImpressions += m.googleImpressions + m.metaImpressions;
-      totalClicks += m.googleClicks + m.metaClicks;
-      totalCost += m.googleCost + m.metaCost;
-      totalConversions += m.googleConversions + m.metaConversions;
+      if (mode === 'GOOGLE_ADS') {
+        totalImpressions += m.googleImpressions;
+        totalClicks += m.googleClicks;
+        totalCost += m.googleCost;
+        totalConversions += m.googleConversions;
+      } else if (mode === 'META_ADS') {
+        totalImpressions += m.metaImpressions;
+        totalClicks += m.metaClicks;
+        totalCost += m.metaCost;
+        totalConversions += m.metaConversions;
+      } else if (mode === 'SEO') {
+        totalImpressions += m.organicImpressions;
+        totalClicks += m.organicClicks;
+        totalCost += m.organicConversions * 5.0; // Simulated organic cost overhead
+        totalConversions += m.organicConversions;
+      }
       totalRevenue += m.revenue;
     }
 
@@ -675,12 +903,15 @@ export async function sandboxRoutes(fastify: FastifyInstance) {
       throw new ValidationError(`User is not eligible for a certificate. Reasons: ${eligibility.reasons.join(', ')}`);
     }
 
-    // Check if certificate already exists
     let cert = await prisma.certificate.findFirst({
       where: { simulationId: sim.id }
     });
 
-    const skills = ["SEO Optimization", "PPC Bidding Strategy", "Meta Ads Audiences", "ROAS Scaling", "Budget Pacing"];
+    const skills = [
+      sim.simulationMode === 'SEO' ? "Technical SEO & Rankings" : (sim.simulationMode === 'META_ADS' ? "Meta Social CPM Audiences" : "Google Search CPC Campaigns"),
+      "Budget Allocation",
+      "Conversion Optimization"
+    ];
 
     if (cert) {
       return reply.status(200).send({
@@ -698,7 +929,6 @@ export async function sandboxRoutes(fastify: FastifyInstance) {
     const verificationHash = crypto.createHash('sha256').update(verificationId).digest('hex');
     const downloadUrl = `/api/certificates/${sim.id}/download`;
 
-    // Generate the PDF
     await generateCertificatePDF(
       sim.user.name,
       sim.class.scenario.industry,

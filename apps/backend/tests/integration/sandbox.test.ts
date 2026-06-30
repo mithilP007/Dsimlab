@@ -2,17 +2,19 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { app } from '../../src/app';
 import { prisma } from '../../src/db/client';
 
-describe('Sandbox Simulation Flow Integration Tests', () => {
-  const adminEmail = 'sandbox-admin@simlab.test';
-  const individualEmail = 'sandbox-learner@simlab.test';
-  const studentEmail = 'sandbox-student@simlab.test';
+describe('Sandbox Single-Mode Simulation Flow Integration Tests', () => {
+  const adminEmail = 'sandbox-admin-new@simlab.test';
+  const individualEmail = 'sandbox-learner-new@simlab.test';
+  const studentEmail = 'sandbox-student-new@simlab.test';
   const password = 'SecretPassword123!';
 
   let adminCookies: string[] = [];
   let learnerCookies: string[] = [];
   let studentCookies: string[] = [];
-  let presetScenarioId = '';
-  let customScenarioId = '';
+  let sampleScenarioId = '';
+  let googleScenarioId = '';
+  let seoScenarioId = '';
+  let metaScenarioId = '';
 
   beforeAll(async () => {
     await prisma.$connect();
@@ -22,17 +24,17 @@ describe('Sandbox Simulation Flow Integration Tests', () => {
       where: {
         userId: {
           in: await prisma.user.findMany({
-            where: { email: { in: [adminEmail, individualEmail, studentEmail, 'sandbox-inst@simlab.test'] } },
+            where: { email: { in: [adminEmail, individualEmail, studentEmail, 'sandbox-inst-new@simlab.test'] } },
             select: { id: true }
           }).then(users => users.map(u => u.id))
         }
       }
     });
     await prisma.user.deleteMany({
-      where: { email: { in: [adminEmail, individualEmail, studentEmail, 'sandbox-inst@simlab.test'] } }
+      where: { email: { in: [adminEmail, individualEmail, studentEmail, 'sandbox-inst-new@simlab.test'] } }
     });
 
-    // 1. Sign up admin (role will be updated in db)
+    // 1. Sign up admin
     const adminReg = await app.inject({
       method: 'POST',
       url: '/api/auth/sign-up/email',
@@ -66,7 +68,6 @@ describe('Sandbox Simulation Flow Integration Tests', () => {
     learnerCookies = learnerLogin.headers['set-cookie']!;
 
     // 3. Sign up standard student
-    // Create class cohort to allow student sign up
     let firstScenario = await prisma.scenario.findFirst();
     if (!firstScenario) {
       firstScenario = await prisma.scenario.create({
@@ -79,16 +80,16 @@ describe('Sandbox Simulation Flow Integration Tests', () => {
       });
     }
     const instructor = await prisma.user.create({
-      data: { email: 'sandbox-inst@simlab.test', name: 'Instructor Jenkins', role: 'INSTRUCTOR', emailVerified: true }
+      data: { email: 'sandbox-inst-new@simlab.test', name: 'Instructor Jenkins', role: 'INSTRUCTOR', emailVerified: true }
     });
     const cls = await prisma.class.create({
-      data: { name: 'Main Class', inviteCode: 'SANDBOXCLS123', instructorId: instructor.id, scenarioId: firstScenario.id }
+      data: { name: 'Main Class', inviteCode: 'SANDBOXCLS456', instructorId: instructor.id, scenarioId: firstScenario.id }
     });
 
     const studentReg = await app.inject({
       method: 'POST',
       url: '/api/auth/register/student',
-      payload: { email: studentEmail, password, name: 'Student Tester', classJoinCode: 'SANDBOXCLS123' }
+      payload: { email: studentEmail, password, name: 'Student Tester', classJoinCode: 'SANDBOXCLS456' }
     });
     expect(studentReg.statusCode).toBe(200);
     const studentLogin = await app.inject({
@@ -104,178 +105,304 @@ describe('Sandbox Simulation Flow Integration Tests', () => {
     await prisma.$disconnect();
   });
 
-  it('GET /api/v1/sandbox/options returns options and requires ADMIN or INDIVIDUAL role', async () => {
-    // Student should be forbidden
-    const resStud = await app.inject({
+  it('GET /api/v1/sandbox/simulation-types returns exact modes', async () => {
+    const res = await app.inject({
       method: 'GET',
-      url: '/api/v1/sandbox/options',
-      headers: { cookie: studentCookies.join('; ') }
-    });
-    expect(resStud.statusCode).toBe(403);
-
-    // Learner should succeed
-    const resLearner = await app.inject({
-      method: 'GET',
-      url: '/api/v1/sandbox/options',
+      url: '/api/v1/sandbox/simulation-types',
       headers: { cookie: learnerCookies.join('; ') }
     });
-    expect(resLearner.statusCode).toBe(200);
-    const body = JSON.parse(resLearner.body);
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
     expect(body.success).toBe(true);
-    expect(body.simulationTypes).toContain('FULL');
-    expect(body.presetScenarios).toBeDefined();
+    expect(body.simulationTypes).toContain('GOOGLE_ADS');
+    expect(body.simulationTypes).toContain('META_ADS');
+    expect(body.simulationTypes).toContain('SEO');
+    expect(body.simulationTypes.length).toBe(3);
+  });
 
+  it('GET /api/v1/sandbox/sample-scenarios returns list for selected mode', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/v1/sandbox/sample-scenarios?mode=GOOGLE_ADS',
+      headers: { cookie: learnerCookies.join('; ') }
+    });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.success).toBe(true);
+    expect(body.presetScenarios).toBeDefined();
     if (body.presetScenarios.length > 0) {
-      presetScenarioId = body.presetScenarios[0].id;
+      sampleScenarioId = body.presetScenarios[0].id;
     }
   });
 
-  it('POST /api/v1/sandbox/scenario/custom creates a scenario successfully', async () => {
-    const res = await app.inject({
+  it('POST /api/v1/sandbox/scenario/custom creates custom scenarios for each mode', async () => {
+    // Google Ads Custom scenario
+    const resGoogle = await app.inject({
       method: 'POST',
       url: '/api/v1/sandbox/scenario/custom',
       headers: { cookie: adminCookies.join('; ') },
       payload: {
-        scenarioName: 'My Awesome Custom Challenge',
-        industry: 'Fashion',
-        targetAudience: 'Teens',
+        scenarioName: 'Google Ads Challenge',
+        industry: 'B2B Software',
+        businessType: 'SaaS',
+        targetAudience: 'Sales managers',
         location: 'US',
-        totalBudget: 4000,
-        dailyBudget: 120,
-        campaignDuration: 15,
+        objectiveKPI: 'revenue',
+        competitionLevel: 'medium',
+        productDescription: 'Sales team CRM software',
+        simulationMode: 'GOOGLE_ADS',
+        campaignDuration: 10,
         simulationRounds: 5,
-        seoEnabled: true,
-        googleAdsEnabled: true,
-        metaAdsEnabled: false,
-        displayVideoShoppingEnabled: true,
-        difficulty: 'easy',
-        targetKPI: 'conversions',
-        checkpointRequired: false,
-        certificateEnabled: true,
         timingRule: 'instant'
       }
     });
+    expect(resGoogle.statusCode).toBe(201);
+    googleScenarioId = JSON.parse(resGoogle.body).scenarioId;
 
-    expect(res.statusCode).toBe(201);
-    const body = JSON.parse(res.body);
-    expect(body.success).toBe(true);
-    expect(body.scenarioId).toBeDefined();
-    customScenarioId = body.scenarioId;
+    // SEO Custom scenario
+    const resSEO = await app.inject({
+      method: 'POST',
+      url: '/api/v1/sandbox/scenario/custom',
+      headers: { cookie: adminCookies.join('; ') },
+      payload: {
+        scenarioName: 'SEO growth organic',
+        industry: 'Fashion',
+        businessType: 'E-Commerce',
+        targetAudience: 'Teens',
+        location: 'Global',
+        objectiveKPI: 'clicks',
+        competitionLevel: 'easy',
+        productDescription: 'Trendy apparel online catalog',
+        simulationMode: 'SEO',
+        campaignDuration: 15,
+        simulationRounds: 10,
+        timingRule: 'instant'
+      }
+    });
+    expect(resSEO.statusCode).toBe(201);
+    seoScenarioId = JSON.parse(resSEO.body).scenarioId;
+
+    // Meta Ads Custom scenario
+    const resMeta = await app.inject({
+      method: 'POST',
+      url: '/api/v1/sandbox/scenario/custom',
+      headers: { cookie: adminCookies.join('; ') },
+      payload: {
+        scenarioName: 'Meta Ads brand push',
+        industry: 'Hospitality',
+        businessType: 'B2C',
+        targetAudience: 'Travelers',
+        location: 'EU',
+        objectiveKPI: 'conversions',
+        competitionLevel: 'hard',
+        productDescription: 'Boutique hotel bookings',
+        simulationMode: 'META_ADS',
+        campaignDuration: 12,
+        simulationRounds: 8,
+        timingRule: 'instant'
+      }
+    });
+    expect(resMeta.statusCode).toBe(201);
+    metaScenarioId = JSON.parse(resMeta.body).scenarioId;
   });
 
-  it('POST /api/v1/sandbox/start initializes simulation state', async () => {
-    const res = await app.inject({
+  it('GOOGLE_ADS simulation flow and decision validations', async () => {
+    // 1. Start Google Ads Simulation
+    const startRes = await app.inject({
       method: 'POST',
       url: '/api/v1/sandbox/start',
       headers: { cookie: learnerCookies.join('; ') },
-      payload: { scenarioId: customScenarioId }
+      payload: {
+        simulationMode: 'GOOGLE_ADS',
+        scenarioId: googleScenarioId,
+        scenarioType: 'SAMPLE',
+        durationDays: 10
+      }
     });
+    expect(startRes.statusCode).toBe(201);
+    const startBody = JSON.parse(startRes.body);
+    expect(startBody.simulationMode).toBe('GOOGLE_ADS');
 
-    expect(res.statusCode).toBe(201);
-    const body = JSON.parse(res.body);
-    expect(body.success).toBe(true);
-    expect(body.simulationId).toBeDefined();
-    expect(body.status).toBe('DECISION_OPEN');
-    expect(body.currentRound).toBe(1);
+    // 2. Reject Meta Ads campaigns in GOOGLE_ADS mode
+    const rejectRes1 = await app.inject({
+      method: 'POST',
+      url: '/api/v1/sandbox/decision',
+      headers: { cookie: learnerCookies.join('; ') },
+      payload: {
+        googleCampaigns: [],
+        metaCampaigns: [{ name: 'Meta Ad', budget: 100 }]
+      }
+    });
+    expect(rejectRes1.statusCode).toBe(400);
+    expect(JSON.parse(rejectRes1.body).message).toContain('Google Ads Simulation rejects SEO and Meta Ads settings.');
+
+    // 3. Reject SEO keywords in GOOGLE_ADS mode
+    const rejectRes2 = await app.inject({
+      method: 'POST',
+      url: '/api/v1/sandbox/decision',
+      headers: { cookie: learnerCookies.join('; ') },
+      payload: {
+        googleCampaigns: [],
+        seoTargetKeywords: ['keyword']
+      }
+    });
+    expect(rejectRes2.statusCode).toBe(400);
+
+    // 4. Accept correct Google Ads settings
+    const acceptRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/sandbox/decision',
+      headers: { cookie: learnerCookies.join('; ') },
+      payload: {
+        googleCampaigns: [
+          {
+            name: 'Search CRM Campaign',
+            budget: 1500,
+            keywords: [{ word: 'best crm software', bid: 2.50 }]
+          }
+        ]
+      }
+    });
+    expect(acceptRes.statusCode).toBe(200);
+    expect(JSON.parse(acceptRes.body).success).toBe(true);
   });
 
-  it('GET /api/v1/sandbox/state retrieves active state', async () => {
-    const res = await app.inject({
-      method: 'GET',
-      url: '/api/v1/sandbox/state',
-      headers: { cookie: learnerCookies.join('; ') }
+  it('SEO simulation flow and decision validations', async () => {
+    // 1. Start SEO Simulation
+    const startRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/sandbox/start',
+      headers: { cookie: learnerCookies.join('; ') },
+      payload: {
+        simulationMode: 'SEO',
+        scenarioId: seoScenarioId,
+        scenarioType: 'SAMPLE',
+        durationDays: 15
+      }
     });
+    expect(startRes.statusCode).toBe(201);
 
-    expect(res.statusCode).toBe(200);
-    const body = JSON.parse(res.body);
-    expect(body.success).toBe(true);
-    expect(body.hasState).toBe(true);
-    expect(body.state.currentRound).toBe(1);
-    expect(body.state.class.scenario.name).toBe('My Awesome Custom Challenge');
-  });
+    // 2. Reject Google Ads settings in SEO mode
+    const rejectRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/sandbox/decision',
+      headers: { cookie: learnerCookies.join('; ') },
+      payload: {
+        seoTargetKeywords: ['fashion app'],
+        googleCampaigns: [{ name: 'Google Search', budget: 1000 }]
+      }
+    });
+    expect(rejectRes.statusCode).toBe(400);
+    expect(JSON.parse(rejectRes.body).message).toContain('SEO Simulation rejects Google Ads and Meta Ads settings.');
 
-  it('POST /api/v1/sandbox/decision saves user decisions', async () => {
-    const res = await app.inject({
+    // 3. Accept correct SEO settings
+    const acceptRes = await app.inject({
       method: 'POST',
       url: '/api/v1/sandbox/decision',
       headers: { cookie: learnerCookies.join('; ') },
       payload: {
         seoTargetKeywords: ['fashion app'],
         seoContentQuality: 7.0,
-        seoBacklinkBudget: 100,
-        googleCampaigns: [
-          {
-            name: 'Google display campaign',
-            budget: 1000,
-            campaignType: 'Display'
-          }
-        ],
-        metaCampaigns: []
+        seoBacklinkBudget: 150
       }
     });
-
-    expect(res.statusCode).toBe(200);
-    const body = JSON.parse(res.body);
-    expect(body.success).toBe(true);
-    expect(body.decision.submitted).toBe(true);
+    expect(acceptRes.statusCode).toBe(200);
   });
 
-  it('POST /api/v1/sandbox/run processes round instantly when instant timing is selected', async () => {
-    const res = await app.inject({
+  it('META_ADS simulation flow, run timing, next-cycle, and report endpoints', async () => {
+    // 1. Start Meta Ads Simulation
+    const startRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/sandbox/start',
+      headers: { cookie: learnerCookies.join('; ') },
+      payload: {
+        simulationMode: 'META_ADS',
+        scenarioId: metaScenarioId,
+        scenarioType: 'SAMPLE',
+        durationDays: 12
+      }
+    });
+    expect(startRes.statusCode).toBe(201);
+
+    // 2. Reject Google Ads settings in META_ADS mode
+    const rejectRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/sandbox/decision',
+      headers: { cookie: learnerCookies.join('; ') },
+      payload: {
+        metaCampaigns: [],
+        googleCampaigns: [{ name: 'Google Campaign', budget: 200 }]
+      }
+    });
+    expect(rejectRes.statusCode).toBe(400);
+    expect(JSON.parse(rejectRes.body).message).toContain('Meta Ads Simulation rejects SEO and Google Ads settings.');
+
+    // 3. Accept Meta Ads settings
+    const acceptRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/sandbox/decision',
+      headers: { cookie: learnerCookies.join('; ') },
+      payload: {
+        metaCampaigns: [
+          {
+            name: 'Social Founders Target',
+            budget: 1000,
+            audienceInterest: 'business-owners',
+            placement: 'feed-reels'
+          }
+        ]
+      }
+    });
+    expect(acceptRes.statusCode).toBe(200);
+
+    // 4. Run cycle (timing delay is set since user is individual learner)
+    const runRes = await app.inject({
       method: 'POST',
       url: '/api/v1/sandbox/run',
       headers: { cookie: learnerCookies.join('; ') }
     });
+    expect(runRes.statusCode).toBe(200);
+    const runBody = JSON.parse(runRes.body);
+    expect(runBody.instant).toBe(false);
+    expect(runBody.progress.status).toBe('PROCESSING');
 
-    // Individual learner planType duration is 30 days -> 24 hours delay, so should return delayed info!
-    expect(res.statusCode).toBe(200);
-    const body = JSON.parse(res.body);
-    expect(body.success).toBe(true);
-    expect(body.instant).toBe(false);
-    expect(body.nextResultAt).toBeDefined();
-    expect(body.progress.status).toBe('PROCESSING');
-  });
-
-  it('POST /api/v1/sandbox/fast-forward bypasses delays', async () => {
-    const res = await app.inject({
+    // 5. Fast forward bypasses delays
+    const ffRes = await app.inject({
       method: 'POST',
       url: '/api/v1/sandbox/fast-forward',
       headers: { cookie: learnerCookies.join('; ') }
     });
+    expect(ffRes.statusCode).toBe(200);
+    const ffBody = JSON.parse(ffRes.body);
+    expect(ffBody.success).toBe(true);
 
-    expect(res.statusCode).toBe(200);
-    const body = JSON.parse(res.body);
-    expect(body.success).toBe(true);
-    expect(body.result.nextRound).toBe(2);
-  });
+    // After processing, simulation pauses at RESULTS_READY
+    const stateRes = await app.inject({
+      method: 'GET',
+      url: '/api/v1/sandbox/state',
+      headers: { cookie: learnerCookies.join('; ') }
+    });
+    expect(stateRes.statusCode).toBe(200);
+    expect(JSON.parse(stateRes.body).state.status).toBe('RESULTS_READY');
 
-  it('GET /api/v1/sandbox/report returns aggregated metrics and scores', async () => {
-    const res = await app.inject({
+    // 6. Next cycle opens the decision loop for the next day
+    const ncRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/sandbox/next-cycle',
+      headers: { cookie: learnerCookies.join('; ') }
+    });
+    expect(ncRes.statusCode).toBe(200);
+    expect(JSON.parse(ncRes.body).status).toBe('DECISION_OPEN');
+
+    // 7. GET /report returns mode-specific metrics
+    const repRes = await app.inject({
       method: 'GET',
       url: '/api/v1/sandbox/report',
       headers: { cookie: learnerCookies.join('; ') }
     });
-
-    expect(res.statusCode).toBe(200);
-    const body = JSON.parse(res.body);
-    expect(body.success).toBe(true);
-    expect(body.metrics).toBeDefined();
-    expect(body.summary.score).toBeDefined();
-    expect(body.summary.roas).toBeDefined();
-  });
-
-  it('GET /api/v1/sandbox/certificate/check returns eligibility details', async () => {
-    const res = await app.inject({
-      method: 'GET',
-      url: '/api/v1/sandbox/certificate/check',
-      headers: { cookie: learnerCookies.join('; ') }
-    });
-
-    expect(res.statusCode).toBe(200);
-    const body = JSON.parse(res.body);
-    expect(body.success).toBe(true);
-    // Since simulation is not completed, eligible must be false
-    expect(body.eligible).toBe(false);
-    expect(body.reasons).toContain('Simulation status must be COMPLETED.');
+    expect(repRes.statusCode).toBe(200);
+    const repBody = JSON.parse(repRes.body);
+    expect(repBody.success).toBe(true);
+    expect(repBody.summary.roas).toBeDefined();
   });
 });

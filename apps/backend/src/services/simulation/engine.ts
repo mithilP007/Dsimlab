@@ -363,12 +363,25 @@ export async function processSimulationRound(simulationId: string): Promise<any>
   let metaCost = 0;
   let metaConversions = 0;
 
-  const allowed = sim.class?.scenario?.allowedPlatforms
-    ? JSON.parse(sim.class.scenario.allowedPlatforms)
-    : ["SEO", "GOOGLE_ADS", "META_ADS"];
-  const hasSEO = allowed.includes("SEO");
-  const hasGoogle = allowed.includes("GOOGLE_ADS");
-  const hasMeta = allowed.includes("META_ADS");
+  const mode = sim.simulationMode || sim.class?.scenario?.simulationMode;
+  let hasSEO = false;
+  let hasGoogle = false;
+  let hasMeta = false;
+  let allowed: string[] = [];
+
+  if (mode) {
+    hasSEO = mode === 'SEO';
+    hasGoogle = mode === 'GOOGLE_ADS';
+    hasMeta = mode === 'META_ADS';
+    allowed = [mode];
+  } else {
+    allowed = sim.class?.scenario?.allowedPlatforms
+      ? JSON.parse(sim.class.scenario.allowedPlatforms)
+      : ["SEO", "GOOGLE_ADS", "META_ADS"];
+    hasSEO = allowed.includes("SEO");
+    hasGoogle = allowed.includes("GOOGLE_ADS");
+    hasMeta = allowed.includes("META_ADS");
+  }
 
   // Fetch previous SEO decisions
   const prevDecisions = await prisma.decision.findMany({
@@ -953,7 +966,85 @@ export async function processSimulationRound(simulationId: string): Promise<any>
     reflectionQualityScore
   });
 
-  const compositeIndex = calculateCompositeIndex(dimensionScores, allowed);
+  let compositeIndex = calculateCompositeIndex(dimensionScores, allowed);
+
+  const isSandbox = !!mode;
+  if (isSandbox) {
+    if (mode === 'GOOGLE_ADS') {
+      const ctr = googleImpressions > 0 ? googleClicks / googleImpressions : 0;
+      const ctrScore = Math.min(100, (ctr / 0.05) * 100);
+      const cpc = googleClicks > 0 ? googleCost / googleClicks : 0;
+      const cpcScore = cpc > 0 ? Math.max(10, Math.min(100, 100 - (cpc - 1.50) * 20)) : 50;
+      const cpa = googleConversions > 0 ? googleCost / googleConversions : 0;
+      const cpaScore = googleConversions > 0 ? (cpa <= 25 ? 100 : Math.max(10, 100 - (cpa - 25) * 2)) : 0;
+      const cvr = googleClicks > 0 ? googleConversions / googleClicks : 0;
+      const cvrScore = Math.min(100, (cvr / 0.03) * 100);
+      const roas = googleCost > 0 ? (googleConversions * averagePricePoint) / googleCost : 0;
+      const roasScore = roas >= 3.0 ? 100 : Math.max(0, (roas / 3.0) * 100);
+      let qs = 7.0;
+      try {
+        const camps = JSON.parse(decision.googleCampaigns);
+        if (camps.length > 0 && camps[0].creativeQuality !== undefined) {
+          qs = camps[0].creativeQuality;
+        } else if (camps.length > 0 && camps[0].adCopy) {
+          qs = Math.min(10, 5 + (camps[0].adCopy.mediaQuality || 80) / 20);
+        }
+      } catch (e) {}
+      const qsScore = qs * 10;
+      const budgetLimit = sim.class.scenario.budgetPerRound;
+      const budgetScore = budgetLimit > 0 ? Math.max(0, 100 - Math.abs(1.0 - googleCost / budgetLimit) * 100) : 100;
+      const hardViolations = await prisma.hardViolation.count({ where: { simulationId, roundNumber: currentRound } });
+      const policyScore = Math.max(0, 100 - (hardViolations * 50));
+      compositeIndex = parseFloat(((ctrScore + cpcScore + cpaScore + cvrScore + roasScore + qsScore + budgetScore + policyScore) / 8).toFixed(2));
+    } else if (mode === 'META_ADS') {
+      const cpm = metaImpressions > 0 ? (metaCost / metaImpressions) * 1000 : 0;
+      const cpmScore = cpm > 0 ? Math.max(10, Math.min(100, 100 - (cpm - 8.00) * 5)) : 50;
+      const ctr = metaImpressions > 0 ? metaClicks / metaImpressions : 0;
+      const ctrScore = Math.min(100, (ctr / 0.015) * 100);
+      const frequency = metaImpressions > 0 ? metaImpressions / Math.max(1, metaImpressions * 0.6) : 1.0;
+      const freqScore = frequency <= 2.5 ? 100 : Math.max(10, 100 - (frequency - 2.5) * 30);
+      const cpa = metaConversions > 0 ? metaCost / metaConversions : 0;
+      const cpaScore = metaConversions > 0 ? (cpa <= 30 ? 100 : Math.max(10, 100 - (cpa - 30) * 2)) : 0;
+      let fatigueScore = 100;
+      if (currentRound > 1 && prevDecisions.length > 0) {
+        const lastDec = prevDecisions[prevDecisions.length - 1];
+        try {
+          const prevMeta = JSON.parse(lastDec.metaCampaigns)[0];
+          const currMeta = metaCampaigns[0];
+          if (prevMeta && currMeta && prevMeta.creative && currMeta.creative) {
+            const sameCreative = (prevMeta.creative.headline === currMeta.creative.headline &&
+                                  prevMeta.creative.primaryText === currMeta.creative.primaryText);
+            if (sameCreative) fatigueScore = 70;
+          }
+        } catch (e) {}
+      }
+      const cvr = metaClicks > 0 ? metaConversions / metaClicks : 0;
+      const cvrScore = Math.min(100, (cvr / 0.02) * 100);
+      const roas = metaCost > 0 ? (metaConversions * averagePricePoint) / metaCost : 0;
+      const roasScore = roas >= 3.0 ? 100 : Math.max(0, (roas / 3.0) * 100);
+      const relevanceScoreVal = metaCampaigns.some((c: any) => c.audienceInterest === sim.class.scenario.industry) ? 100 : 70;
+      compositeIndex = parseFloat(((cpmScore + ctrScore + freqScore + cpaScore + fatigueScore + cvrScore + roasScore + relevanceScoreVal) / 8).toFixed(2));
+    } else if (mode === 'SEO') {
+      const avgRank = keywordsRanks.length > 0 ? keywordsRanks.reduce((a, b) => a + b, 0) / keywordsRanks.length : 50;
+      const rankScore = Math.max(10.0, 100.0 - (avgRank - 1.0) * 1.8);
+      const contentScore = contentQualityScore * 10;
+      const techScore = technicalHealthScore;
+      const kwRelevanceScore = relevanceScore * 100;
+      const ctr = totalOrganicImpressions > 0 ? totalOrganicClicks / totalOrganicImpressions : 0;
+      const ctrScore = Math.min(100, (ctr / 0.04) * 100);
+      let growthScore = 80;
+      if (prevDecisions.length > 0) {
+        const prevMetrics = await prisma.dailyMetric.findMany({ where: { simulationId, round: currentRound - 1 } });
+        const prevClicks = prevMetrics.reduce((sum, m) => sum + m.organicClicks, 0);
+        if (totalOrganicClicks > prevClicks) growthScore = 100;
+        else if (totalOrganicClicks < prevClicks) growthScore = 50;
+      }
+      const daScore = Math.min(100, studentDA * 2.0);
+      const cvr = totalOrganicClicks > 0 ? totalOrganicConversions / totalOrganicClicks : 0;
+      const cvrScore = Math.min(100, (cvr / 0.015) * 100);
+      compositeIndex = parseFloat(((rankScore + contentScore + techScore + kwRelevanceScore + ctrScore + growthScore + daScore + cvrScore) / 8).toFixed(2));
+    }
+  }
 
   // Write Score Breakdown to DB
   const allDecisions = await prisma.decision.findMany({
@@ -1011,8 +1102,12 @@ export async function processSimulationRound(simulationId: string): Promise<any>
   validateStateTransition(SimulationStatus.PROCESSING, SimulationStatus.RESULTS_READY);
 
   // Validate and transition RESULTS_READY -> DECISION_OPEN or SCORE_LOCKED
-  const finalStatus = nextState.isCompleted ? SimulationStatus.SCORE_LOCKED : SimulationStatus.DECISION_OPEN;
-  validateStateTransition(SimulationStatus.RESULTS_READY, finalStatus);
+  const finalStatus = nextState.isCompleted 
+    ? SimulationStatus.SCORE_LOCKED 
+    : (isSandbox ? SimulationStatus.RESULTS_READY : SimulationStatus.DECISION_OPEN);
+  if (finalStatus !== SimulationStatus.RESULTS_READY) {
+    validateStateTransition(SimulationStatus.RESULTS_READY, finalStatus);
+  }
 
   await prisma.simulationState.update({
     where: { id: simulationId },

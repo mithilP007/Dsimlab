@@ -17,6 +17,7 @@ import { SimulationResultsPage } from "@/pages/simulation/SimulationResultsPage"
 import { MarketEventsPage } from "@/pages/simulation/MarketEventsPage"
 import { MarketAnalysisPage } from "@/pages/simulation/MarketAnalysisPage"
 import { MandatoryCheckpointPage } from "@/pages/simulation/MandatoryCheckpointPage"
+import { SandboxWorkspace } from "@/pages/simulation/SandboxWorkspace"
 import { LoginScreen } from "@/pages/auth/LoginScreen"
 import { LeaderboardPage } from "@/pages/LeaderboardPage"
 import { ProgressDashboardPage } from "@/pages/ProgressDashboardPage"
@@ -141,6 +142,7 @@ export function AppRouter() {
           <Route path="/simulation/results" element={<SimulationResultsPage />} />
           <Route path="/simulation/checkpoint" element={<MandatoryCheckpointPage />} />
           <Route path="/simulation/events" element={<MarketEventsPage />} />
+          <Route path="/sandbox/workspace" element={<SandboxWorkspace />} />
           
           {/* Daily Campaign Simulation Routes */}
           <Route path="/campaign" element={<CampaignDashboard />} />

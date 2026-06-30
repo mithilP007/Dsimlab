@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react"
-import { Link } from "react-router"
-import { useSimulationStore } from "@/stores/simulationStore"
+import { useNavigate } from "react-router"
 import { useAuthStore } from "@/stores/authStore"
 import { Button } from "@/components/ui/button"
 import { Card, CardTitle } from "@/components/ui/card"
@@ -10,41 +9,42 @@ import { toast } from "sonner"
 import { 
   Play, Activity, Award, BookOpen, 
   MapPin, CheckCircle, RefreshCw, ShieldAlert,
-  Settings, Clock, Sparkles, Download
+  Settings, Clock, Sparkles, Download, ArrowRight,
+  TrendingUp
 } from "lucide-react"
 
 export function SimulationHomePage() {
   const { user } = useAuthStore()
-  const { fetchLatestState } = useSimulationStore()
+  const navigate = useNavigate()
+
   const [loading, setLoading] = useState(true)
   const [fullState, setFullState] = useState<any>(null)
   const [progressState, setProgressState] = useState<any>(null)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
-  const [checkpointSubmitted, setCheckpointSubmitted] = useState(true)
   const [isInitializingPath, setIsInitializingPath] = useState(false)
-  const [selectedSimType, setSelectedSimType] = useState<'SEO' | 'GOOGLE_ADS' | 'META_ADS' | 'DISPLAY' | 'VIDEO' | 'SHOPPING' | 'FULL'>('FULL')
-  const [selectedPath, setSelectedPath] = useState<'beginner' | 'intermediate' | 'advanced' | 'custom'>('intermediate')
-  const [optionsData, setOptionsData] = useState<any>(null)
 
-  // Custom scenario form states
-  const [scenarioName, setScenarioName] = useState("My Custom Sandbox")
-  const [industry, setIndustry] = useState("B2B Software")
-  const [targetAudience, setTargetAudience] = useState("business owners")
-  const [location, setLocation] = useState("Global")
-  const [totalBudget, setTotalBudget] = useState(5000)
-  const [dailyBudget, setDailyBudget] = useState(150)
-  const [campaignDuration, setCampaignDuration] = useState(30)
-  const [simulationRounds, setSimulationRounds] = useState(10)
-  const [seoEnabled, setSeoEnabled] = useState(true)
-  const [googleAdsEnabled, setGoogleAdsEnabled] = useState(true)
-  const [metaAdsEnabled, setMetaAdsEnabled] = useState(true)
-  const [displayVideoShoppingEnabled, setDisplayVideoShoppingEnabled] = useState(true)
-  const [difficulty, setDifficulty] = useState("medium")
-  const [targetKPI, setTargetKPI] = useState("revenue")
-  const [checkpointRequired, setCheckpointRequired] = useState(true)
-  const [certificateEnabled, setCertificateEnabled] = useState(true)
-  const [timingRuleType, setTimingRuleType] = useState("instant")
+  // Onboarding Setup Steps
+  const [selectedMode, setSelectedMode] = useState<"GOOGLE_ADS" | "META_ADS" | "SEO">("GOOGLE_ADS")
+  const [scenarioChoice, setScenarioChoice] = useState<"sample" | "custom">("sample")
+  
+  // Preset scenarios list
+  const [sampleScenarios, setSampleScenarios] = useState<any[]>([])
+  const [selectedScenarioId, setSelectedScenarioId] = useState("")
+
+  // Custom Scenario States
+  const [scenarioName, setScenarioName] = useState("Custom Campaign Sandbox")
+  const [industry, setIndustry] = useState("Technology")
+  const [businessType, setBusinessType] = useState("B2B SaaS")
+  const [targetAudience, setTargetAudience] = useState("tech professionals")
+  const [targetLocation, setTargetLocation] = useState("Global")
+  const [objectiveKPI, setObjectiveKPI] = useState("revenue") // revenue, clicks, conversions
+  const [competitionLevel, setCompetitionLevel] = useState("medium") // easy, medium, hard
+  const [productDescription, setProductDescription] = useState("Collaborative team cloud pipeline manager tool.")
+
+  // Timing/Duration States
+  const [timingMode, setTimingMode] = useState<"instant" | "24h" | "custom">("instant")
   const [customHours, setCustomHours] = useState(24)
+  const [durationDays, setDurationDays] = useState(15) // number of days / rounds
 
   // Certificate check states
   const [certEligible, setCertEligible] = useState<any>(null)
@@ -54,47 +54,37 @@ export function SimulationHomePage() {
     setLoading(true)
     setErrorMsg(null)
     try {
-      await fetchLatestState()
-      
-      // Load sandbox/state
       const res = await api.get<{ success: boolean; hasState: boolean; state: any; progress?: any }>('/api/v1/sandbox/state')
       if (res.data?.success && res.data.hasState) {
         setFullState(res.data.state)
         setProgressState(res.data.progress)
         
-        // Check for student checkpoint justifications if college student
-        const isCollegeStudent = user?.role === "student-college"
-        if (isCollegeStudent && res.data.state.currentRound > 1) {
-          const checkRes = await api.get<{ success: boolean; checkpoints: any[] }>(`/api/v1/simulation/checkpoint/${res.data.state.id}`)
-          if (checkRes.data?.success) {
-            const hasPrevCheckpoint = checkRes.data.checkpoints.some(
-              cp => cp.roundNumber === res.data.state.currentRound - 1
-            )
-            setCheckpointSubmitted(hasPrevCheckpoint)
-          } else {
-            setCheckpointSubmitted(false)
-          }
-        } else {
-          setCheckpointSubmitted(true)
-        }
-
-        // Fetch certificate check if completed
         if (res.data.state.isCompleted || res.data.state.status === 'COMPLETED' || res.data.state.status === 'SCORE_LOCKED') {
           await loadCertCheck()
         }
       } else {
-        // Fetch preset choices options
-        const optsRes = await api.get<any>('/api/v1/sandbox/options')
-        if (optsRes.data?.success) {
-          setOptionsData(optsRes.data)
-        }
         setFullState(null)
+        await loadSampleScenarios(selectedMode)
       }
     } catch (err: any) {
       console.error(err)
       setErrorMsg(err.response?.data?.message || "Please start a new sandbox simulation.")
     } finally {
       setLoading(false)
+    }
+  }
+
+  const loadSampleScenarios = async (mode: string) => {
+    try {
+      const res = await api.get<any>(`/api/v1/sandbox/sample-scenarios?mode=${mode}`)
+      if (res.data?.success) {
+        setSampleScenarios(res.data.presetScenarios || [])
+        if (res.data.presetScenarios?.length > 0) {
+          setSelectedScenarioId(res.data.presetScenarios[0].id)
+        }
+      }
+    } catch (e) {
+      console.error("Failed to load sample scenarios", e)
     }
   }
 
@@ -128,102 +118,74 @@ export function SimulationHomePage() {
     }
   }
 
-  useEffect(() => {
-    loadData()
-  }, [])
-
-  const handleSetupSandbox = async (pathType: 'beginner' | 'intermediate' | 'advanced' | 'custom') => {
+  const handleStartSimulation = async () => {
     setIsInitializingPath(true)
-    const tid = toast.loading(`Provisioning ${pathType} ${selectedSimType} sandbox track...`)
+    const tid = toast.loading(`Starting ${selectedMode} simulation...`)
     try {
-      let scenarioId = ""
-
-      if (pathType === 'custom') {
-        const timingRuleVal = timingRuleType === 'custom' ? `custom_${customHours}` : timingRuleType
-        const customRes = await api.post<any>('/api/v1/sandbox/scenario/custom', {
-          scenarioName,
-          industry,
-          targetAudience,
-          location,
-          totalBudget,
-          dailyBudget,
-          campaignDuration,
-          simulationRounds,
-          seoEnabled,
-          googleAdsEnabled,
-          metaAdsEnabled,
-          displayVideoShoppingEnabled,
-          difficulty,
-          targetKPI,
-          checkpointRequired,
-          certificateEnabled,
-          timingRule: timingRuleVal
-        })
-        if (customRes.data?.success) {
-          scenarioId = customRes.data.scenarioId
-        } else {
-          throw new Error("Failed to create custom scenario.")
-        }
-      } else {
-        // Resolve preset from options preset list
-        const presetList = optionsData?.presetScenarios || []
-        let match = presetList[0]
-
-        if (pathType === 'beginner') {
-          match = presetList.find((s: any) => s.name.toLowerCase().includes('saas')) || presetList[0]
-        } else if (pathType === 'intermediate') {
-          match = presetList.find((s: any) => s.name.toLowerCase().includes('saas')) || presetList[0]
-        } else if (pathType === 'advanced') {
-          match = presetList.find((s: any) => s.name.toLowerCase().includes('fashion')) || presetList[0]
-        }
-        
-        if (!match) {
-          throw new Error("No matching preset scenario found.")
-        }
-        scenarioId = match.id
+      const isAdmin = user?.role === "admin";
+      
+      const payload: any = {
+        simulationMode: selectedMode,
+        scenarioType: scenarioChoice === "custom" ? "CUSTOM" : "SAMPLE",
+        durationDays: durationDays,
       }
 
-      // Start simulation
-      const startRes = await api.post<any>('/api/v1/sandbox/start', { scenarioId })
-      if (startRes.data?.success) {
-        toast.success(`Successfully initialized sandbox track!`, { id: tid })
-        await loadData()
+      if (scenarioChoice === "custom") {
+        payload.customScenario = {
+          scenarioName,
+          industry,
+          businessType,
+          targetAudience,
+          location: targetLocation,
+          objectiveKPI,
+          competitionLevel,
+          productDescription
+        }
+        payload.resultCycleHours = timingMode === "instant" ? 0 : (timingMode === "custom" ? customHours : 24)
+        payload.timingMode = timingMode
       } else {
-        toast.error("Failed to start sandbox.", { id: tid })
+        payload.scenarioId = selectedScenarioId
+        payload.timingMode = isAdmin ? "instant" : "24h"
+      }
+
+      const startRes = await api.post<any>('/api/v1/sandbox/start', payload)
+      if (startRes.data?.success) {
+        toast.success(`Successfully initialized sandbox simulation!`, { id: tid })
+        navigate(`/sandbox/workspace?mode=${selectedMode}`)
+      } else {
+        toast.error("Failed to start sandbox simulation.", { id: tid })
       }
     } catch (err: any) {
       console.error(err)
-      toast.error(err.response?.data?.message || err.message || "Failed to setup sandbox.", { id: tid })
+      toast.error(err.response?.data?.message || err.message || "Failed to start simulation.", { id: tid })
     } finally {
       setIsInitializingPath(false)
     }
   }
 
-  const handleFastForward = async () => {
-    const tid = toast.loading("Fast-forwarding round processing...")
-    try {
-      const res = await api.post<any>('/api/v1/sandbox/fast-forward')
-      if (res.data?.success) {
-        toast.success("Round advanced successfully!", { id: tid })
-        await loadData()
-      } else {
-        toast.error("Failed to fast forward round.", { id: tid })
+  const handleResetSandbox = async () => {
+    if (confirm("Are you sure you want to delete current progress and restart sandbox?")) {
+      const tid = toast.loading("Clearing simulation workspace...")
+      try {
+        // We delete by starting a fresh onboarding flow
+        setFullState(null)
+        setProgressState(null)
+        await loadSampleScenarios(selectedMode)
+        toast.success("Workspace cleared. Ready to configure new campaign.", { id: tid })
+      } catch (e) {
+        toast.error("Failed to reset sandbox.", { id: tid })
       }
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || "Failed to fast forward.", { id: tid })
     }
   }
 
-  const handleResetSandbox = async () => {
-    if (confirm("Are you sure you want to delete current progress and restart sandbox?")) {
-      setFullState(null)
-      setProgressState(null)
-      const optsRes = await api.get<any>('/api/v1/sandbox/options')
-      if (optsRes.data?.success) {
-        setOptionsData(optsRes.data)
-      }
-    }
-  }
+  // Reload presets if mode changes
+  useEffect(() => {
+    loadSampleScenarios(selectedMode)
+  }, [selectedMode])
+
+  useEffect(() => {
+    loadData()
+  }, [])
 
   if (loading) {
     return (
@@ -234,715 +196,427 @@ export function SimulationHomePage() {
     )
   }
 
-  const isIndividualOrStaff = user?.role === "individual" || user?.role === "instructor" || user?.role === "admin";
+  const isAdmin = user?.role === "admin";
+  const isIndividual = user?.role === "individual" || user?.role === "instructor" || user?.role === "admin";
 
-  if (errorMsg || !fullState) {
+  // --- ACTIVE WORKSPACE PREVIEW CARD ---
+  if (fullState) {
+    const activeMode = fullState.simulationMode || "GOOGLE_ADS"
+    const scenario = fullState.class?.scenario
+    const progress = progressState || fullState.progress
+    const currentRound = fullState.currentRound || 1
+    const maxRounds = scenario?.maxRounds || 10
+    const isCompleted = fullState.isCompleted || fullState.status === "COMPLETED" || fullState.status === "SCORE_LOCKED"
+    const isProcessing = fullState.status === "PROCESSING" || progress?.status === "PROCESSING"
+
     return (
-      <div className="max-w-5xl mx-auto p-4 sm:p-6 md:p-8 space-y-8 animate-in fade-in duration-300">
-        <div className="text-left space-y-2">
-          <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest bg-indigo-50 px-2.5 py-1 rounded-full w-max block">
-            Sandbox Onboarding
-          </span>
+      <div className="max-w-4xl mx-auto p-4 sm:p-6 md:p-8 space-y-6 animate-in fade-in duration-300">
+        <div className="text-left space-y-2 border-b border-neutral-100 pb-5">
+          <Badge className="bg-indigo-50 text-indigo-900 border-none uppercase text-[9px] font-black tracking-widest px-2.5 py-1">
+            Sandbox Manager
+          </Badge>
           <h1 className="text-2xl sm:text-3xl font-black text-neutral-900">
-            Welcome to the Digital Marketing Sandbox
+            Your Simulation Session is Active
           </h1>
-          <p className="text-xs sm:text-sm text-neutral-500 font-semibold max-w-2xl">
-            Choose your learning track, simulation type, and budget plan, or customize scenarios completely to run campaign cycles.
+          <p className="text-xs sm:text-sm text-neutral-500 font-semibold">
+            You have an ongoing sandbox campaign run. Open your workspace to configure bids, upload ad copy, or optimize search keywords.
           </p>
         </div>
 
-        {isIndividualOrStaff ? (
-          <div className="space-y-6">
-            {/* Simulation Type Selector */}
-            <Card className="p-5 border-neutral-200/80 shadow-sm bg-white text-left space-y-3">
-              <span className="text-[10px] font-black text-neutral-405 uppercase tracking-wider block">1. Choose Simulation Type</span>
-              <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
-                {[
-                  { key: 'FULL', label: 'Full Digital Marketing', desc: 'SEO + Google Ads + Meta Ads' },
-                  { key: 'SEO', label: 'SEO Simulation', desc: 'Search engine optimization only' },
-                  { key: 'GOOGLE_ADS', label: 'Google Ads Simulation', desc: 'Google Search Ads bidding only' },
-                  { key: 'META_ADS', label: 'Meta Ads Simulation', desc: 'Meta Paid Social delivery only' },
-                  { key: 'DISPLAY', label: 'Display Ads Simulation', desc: 'Google Display Network CPM only' },
-                  { key: 'VIDEO', label: 'Video Ads Simulation', desc: 'YouTube Video CPV delivery only' },
-                  { key: 'SHOPPING', label: 'Shopping Ads Simulation', desc: 'Merchant Center product bids only' },
-                ].map(t => (
-                  <button
-                    key={t.key}
-                    onClick={() => setSelectedSimType(t.key as any)}
-                    className={`p-3.5 rounded-xl border-2 text-left transition-all flex flex-col justify-between ${
-                      selectedSimType === t.key ? "border-indigo-600 bg-indigo-50/25 text-indigo-900 font-extrabold" : "border-neutral-200 hover:border-neutral-300 bg-white"
-                    }`}
-                  >
-                    <span className="text-xs font-black block">{t.label}</span>
-                    <span className="text-[9px] text-neutral-400 font-semibold leading-snug mt-1 block">{t.desc}</span>
-                  </button>
-                ))}
+        {/* Sandbox Simulation Status Summary */}
+        <Card className="p-6 border-neutral-200/80 shadow-md bg-white text-left space-y-6">
+          <div className="flex justify-between items-start">
+            <div>
+              <span className="text-[9px] font-black text-neutral-400 uppercase block">Active Scenario</span>
+              <CardTitle className="text-lg font-black text-neutral-900 mt-0.5">
+                {scenario?.name}
+              </CardTitle>
+            </div>
+            <Button variant="outline" size="sm" onClick={handleResetSandbox} className="text-xs border-neutral-200 rounded-xl">
+              Reset Session
+            </Button>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 pt-4 border-t border-neutral-150 text-xs">
+            <div>
+              <span className="text-[10px] text-neutral-450 font-semibold block">Selected Simulation Type</span>
+              <span className="text-neutral-800 font-black block mt-0.5">{activeMode.replace('_', ' ')}</span>
+            </div>
+            <div>
+              <span className="text-[10px] text-neutral-450 font-semibold block">Selected Scenario</span>
+              <span className="text-neutral-850 font-black block mt-0.5 truncate max-w-[150px]">{scenario?.name}</span>
+            </div>
+            <div>
+              <span className="text-[10px] text-neutral-450 font-semibold block">Timing / Duration</span>
+              <span className="text-neutral-800 font-black block mt-0.5">{maxRounds} days total</span>
+            </div>
+            <div>
+              <span className="text-[10px] text-neutral-450 font-semibold block">Current Round / Day</span>
+              <span className="text-indigo-650 font-black block mt-0.5">Round {currentRound} of {maxRounds}</span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 text-xs pt-4 border-t border-neutral-100">
+            <div>
+              <span className="text-[10px] text-neutral-450 font-semibold block">Status</span>
+              {isProcessing ? (
+                <span className="text-amber-600 font-bold block mt-0.5 animate-pulse">Processing settings...</span>
+              ) : isCompleted ? (
+                <span className="text-rose-600 font-bold block mt-0.5">Completed</span>
+              ) : (
+                <span className="text-emerald-600 font-bold block mt-0.5">Ready for Decisions</span>
+              )}
+            </div>
+            <div>
+              <span className="text-[10px] text-neutral-450 font-semibold block">Score</span>
+              <span className="text-neutral-800 font-black block mt-0.5">{fullState.score || 0}%</span>
+            </div>
+            {progress?.nextResultAt && (
+              <div className="col-span-2">
+                <span className="text-[10px] text-neutral-450 font-semibold block">Next Result Time</span>
+                <span className="text-indigo-650 font-black block mt-0.5">{new Date(progress.nextResultAt).toLocaleString()}</span>
               </div>
-            </Card>
-
-            {/* Path Selection Cards */}
-            <div className="space-y-2 text-left">
-              <span className="text-[10px] font-black text-neutral-405 uppercase tracking-wider block">2. Select Learning Path & Budget Level</span>
-            </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 text-left">
-              {/* Beginner Card */}
-              <Card className={`border shadow-md hover:shadow-lg transition-all flex flex-col justify-between overflow-hidden bg-white ${selectedPath === 'beginner' ? 'border-indigo-600 ring-2 ring-indigo-150' : 'border-neutral-200'}`}>
-                <div className="p-5 space-y-4">
-                  <div className="flex justify-between items-start">
-                    <Badge className="bg-emerald-50 text-emerald-800 border border-emerald-200 font-black text-[10px] uppercase">
-                      Beginner
-                    </Badge>
-                    <span className="text-xs font-black text-neutral-400">Easy Mode</span>
-                  </div>
-                  <h3 className="text-base font-black text-neutral-900">SaaS Marketing Basics</h3>
-                  <p className="text-xs text-neutral-500 font-medium leading-relaxed">
-                    Start with a large budget envelope to explore basic SEO density weights and target CPC bidding.
-                  </p>
-                  <div className="divide-y divide-neutral-100 text-[11px] pt-2">
-                    <div className="py-2 flex justify-between font-semibold">
-                      <span className="text-neutral-450">Round Budget</span>
-                      <span className="text-emerald-600 font-black">$8,000 / round</span>
-                    </div>
-                  </div>
-                </div>
-                <div className="p-5 bg-neutral-50 border-t border-neutral-100">
-                  <Button 
-                    onClick={() => { setSelectedPath('beginner'); handleSetupSandbox('beginner'); }}
-                    disabled={isInitializingPath}
-                    className="w-full bg-slate-900 hover:bg-slate-950 text-white font-black text-xs h-9 rounded-xl"
-                  >
-                    Start Beginner
-                  </Button>
-                </div>
-              </Card>
-
-              {/* Intermediate Card */}
-              <Card className={`border shadow-md hover:shadow-lg transition-all flex flex-col justify-between overflow-hidden bg-white ${selectedPath === 'intermediate' ? 'border-indigo-600 ring-2 ring-indigo-150' : 'border-neutral-200'}`}>
-                <div className="p-5 space-y-4">
-                  <div className="flex justify-between items-start">
-                    <Badge className="bg-indigo-50 text-indigo-850 border border-indigo-200 font-black text-[10px] uppercase">
-                      Intermediate
-                    </Badge>
-                    <span className="text-xs font-black text-neutral-455">Medium Mode</span>
-                  </div>
-                  <h3 className="text-base font-black text-neutral-900">SaaS Challenge</h3>
-                  <p className="text-xs text-neutral-500 font-medium leading-relaxed">
-                    Balanced budgets and competitive ad bidding settings in B2B SaaS space.
-                  </p>
-                  <div className="divide-y divide-neutral-100 text-[11px] pt-2">
-                    <div className="py-2 flex justify-between font-semibold">
-                      <span className="text-neutral-450">Round Budget</span>
-                      <span className="text-indigo-650 font-black">$5,000 / round</span>
-                    </div>
-                  </div>
-                </div>
-                <div className="p-5 bg-neutral-50 border-t border-neutral-100">
-                  <Button 
-                    onClick={() => { setSelectedPath('intermediate'); handleSetupSandbox('intermediate'); }}
-                    disabled={isInitializingPath}
-                    className="w-full bg-indigo-650 hover:bg-indigo-700 text-white font-black text-xs h-9 rounded-xl"
-                  >
-                    Start Intermediate
-                  </Button>
-                </div>
-              </Card>
-
-              {/* Advanced Card */}
-              <Card className={`border shadow-md hover:shadow-lg transition-all flex flex-col justify-between overflow-hidden bg-white ${selectedPath === 'advanced' ? 'border-indigo-600 ring-2 ring-indigo-150' : 'border-neutral-200'}`}>
-                <div className="p-5 space-y-4">
-                  <div className="flex justify-between items-start">
-                    <Badge className="bg-amber-50 text-amber-850 border border-amber-200 font-black text-[10px] uppercase">
-                      Advanced
-                    </Badge>
-                    <span className="text-xs font-black text-neutral-400">Hard Mode</span>
-                  </div>
-                  <h3 className="text-base font-black text-neutral-900">E-Commerce App Blitz</h3>
-                  <p className="text-xs text-neutral-500 font-medium leading-relaxed">
-                    A high-volatility retail simulation. Stretch tight budgets to convert visitors.
-                  </p>
-                  <div className="divide-y divide-neutral-100 text-[11px] pt-2">
-                    <div className="py-2 flex justify-between font-semibold">
-                      <span className="text-neutral-450">Round Budget</span>
-                      <span className="text-amber-700 font-black">$3,500 / round</span>
-                    </div>
-                  </div>
-                </div>
-                <div className="p-5 bg-neutral-50 border-t border-neutral-100">
-                  <Button 
-                    onClick={() => { setSelectedPath('advanced'); handleSetupSandbox('advanced'); }}
-                    disabled={isInitializingPath}
-                    className="w-full bg-slate-900 hover:bg-slate-950 text-white font-black text-xs h-9 rounded-xl"
-                  >
-                    Start Advanced
-                  </Button>
-                </div>
-              </Card>
-
-              {/* Custom Card */}
-              <Card className={`border shadow-md hover:shadow-lg transition-all flex flex-col justify-between overflow-hidden bg-white ${selectedPath === 'custom' ? 'border-violet-600 ring-2 ring-violet-150' : 'border-neutral-200'}`}>
-                <div className="p-5 space-y-4">
-                  <div className="flex justify-between items-start">
-                    <Badge className="bg-violet-50 text-violet-850 border border-violet-200 font-black text-[10px] uppercase">
-                      Custom
-                    </Badge>
-                    <span className="text-xs font-black text-neutral-400">Configurable</span>
-                  </div>
-                  <h3 className="text-base font-black text-neutral-900">Custom Setup</h3>
-                  <p className="text-xs text-neutral-500 font-medium leading-relaxed">
-                    Create a scenario with custom budgets, rounds, difficulty and timing rules.
-                  </p>
-                  <div className="divide-y divide-neutral-100 text-[11px] pt-2">
-                    <div className="py-2 flex justify-between font-semibold">
-                      <span className="text-neutral-450">KPI Target</span>
-                      <span className="text-violet-650 font-black">Choose KPI</span>
-                    </div>
-                  </div>
-                </div>
-                <div className="p-5 bg-neutral-50 border-t border-neutral-100">
-                  <Button 
-                    onClick={() => setSelectedPath('custom')}
-                    className="w-full bg-violet-650 hover:bg-violet-700 text-white font-black text-xs h-9 rounded-xl"
-                  >
-                    Configure Custom
-                  </Button>
-                </div>
-              </Card>
-            </div>
-
-            {/* Custom Scenario Form */}
-            {selectedPath === 'custom' && (
-              <Card className="p-6 border-violet-200/80 shadow-md bg-white text-left space-y-6 animate-in slide-in-from-top-4 duration-300">
-                <div className="flex items-center gap-2 border-b border-neutral-100 pb-3">
-                  <Settings className="h-5 w-5 text-violet-600" />
-                  <h2 className="text-base font-black text-neutral-900">Custom Scenario Configuration</h2>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {/* Basic Metadata */}
-                  <div className="space-y-4">
-                    <h3 className="text-xs font-black text-neutral-400 uppercase tracking-wider">Basic Information</h3>
-                    <div className="space-y-3">
-                      <div>
-                        <label className="text-[10px] font-black text-neutral-600 uppercase block mb-1">Scenario Name</label>
-                        <input 
-                          type="text" 
-                          value={scenarioName} 
-                          onChange={(e) => setScenarioName(e.target.value)}
-                          className="w-full px-3 py-1.5 text-xs font-bold border border-neutral-200 rounded-lg focus:outline-none focus:border-indigo-500" 
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-black text-neutral-600 uppercase block mb-1">Industry</label>
-                        <input 
-                          type="text" 
-                          value={industry} 
-                          onChange={(e) => setIndustry(e.target.value)}
-                          className="w-full px-3 py-1.5 text-xs font-bold border border-neutral-200 rounded-lg focus:outline-none focus:border-indigo-500" 
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-black text-neutral-600 uppercase block mb-1">Target Audience</label>
-                        <input 
-                          type="text" 
-                          value={targetAudience} 
-                          onChange={(e) => setTargetAudience(e.target.value)}
-                          className="w-full px-3 py-1.5 text-xs font-bold border border-neutral-200 rounded-lg focus:outline-none focus:border-indigo-500" 
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-black text-neutral-600 uppercase block mb-1">Location</label>
-                        <input 
-                          type="text" 
-                          value={location} 
-                          onChange={(e) => setLocation(e.target.value)}
-                          className="w-full px-3 py-1.5 text-xs font-bold border border-neutral-200 rounded-lg focus:outline-none focus:border-indigo-500" 
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Budget & Target Rules */}
-                  <div className="space-y-4">
-                    <h3 className="text-xs font-black text-neutral-400 uppercase tracking-wider">Budgets & Targets</h3>
-                    <div className="space-y-3">
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="text-[10px] font-black text-neutral-600 uppercase block mb-1">Total Budget ($)</label>
-                          <input 
-                            type="number" 
-                            value={totalBudget} 
-                            onChange={(e) => setTotalBudget(Number(e.target.value))}
-                            className="w-full px-3 py-1.5 text-xs font-bold border border-neutral-200 rounded-lg focus:outline-none focus:border-indigo-500" 
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[10px] font-black text-neutral-600 uppercase block mb-1">Daily Cap ($)</label>
-                          <input 
-                            type="number" 
-                            value={dailyBudget} 
-                            onChange={(e) => setDailyBudget(Number(e.target.value))}
-                            className="w-full px-3 py-1.5 text-xs font-bold border border-neutral-200 rounded-lg focus:outline-none focus:border-indigo-500" 
-                          />
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="text-[10px] font-black text-neutral-600 uppercase block mb-1">Duration (Days)</label>
-                          <input 
-                            type="number" 
-                            value={campaignDuration} 
-                            onChange={(e) => setCampaignDuration(Number(e.target.value))}
-                            className="w-full px-3 py-1.5 text-xs font-bold border border-neutral-200 rounded-lg focus:outline-none focus:border-indigo-500" 
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[10px] font-black text-neutral-600 uppercase block mb-1">Rounds</label>
-                          <input 
-                            type="number" 
-                            value={simulationRounds} 
-                            onChange={(e) => setSimulationRounds(Number(e.target.value))}
-                            className="w-full px-3 py-1.5 text-xs font-bold border border-neutral-200 rounded-lg focus:outline-none focus:border-indigo-500" 
-                          />
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="text-[10px] font-black text-neutral-600 uppercase block mb-1">Difficulty</label>
-                          <select 
-                            value={difficulty} 
-                            onChange={(e) => setDifficulty(e.target.value)}
-                            className="w-full px-3 py-1.5 text-xs font-bold border border-neutral-200 rounded-lg bg-white focus:outline-none"
-                          >
-                            <option value="easy">Easy</option>
-                            <option value="medium">Medium</option>
-                            <option value="hard">Hard</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label className="text-[10px] font-black text-neutral-600 uppercase block mb-1">KPI Target</label>
-                          <select 
-                            value={targetKPI} 
-                            onChange={(e) => setTargetKPI(e.target.value)}
-                            className="w-full px-3 py-1.5 text-xs font-bold border border-neutral-200 rounded-lg bg-white focus:outline-none"
-                          >
-                            <option value="revenue">Revenue</option>
-                            <option value="conversions">Conversions</option>
-                            <option value="clicks">Clicks</option>
-                            <option value="ctr">CTR</option>
-                          </select>
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="text-[10px] font-black text-neutral-600 uppercase block mb-1">Timing Rule</label>
-                        <select 
-                          value={timingRuleType} 
-                          onChange={(e) => setTimingRuleType(e.target.value)}
-                          className="w-full px-3 py-1.5 text-xs font-bold border border-neutral-200 rounded-lg bg-white focus:outline-none"
-                        >
-                          <option value="instant">Instant (Dev/Admin default)</option>
-                          <option value="24h">24 Hours (Overnight processing)</option>
-                          <option value="custom">Custom hours delay</option>
-                        </select>
-                      </div>
-
-                      {timingRuleType === 'custom' && (
-                        <div>
-                          <label className="text-[10px] font-black text-neutral-600 uppercase block mb-1">Delay Duration (Hours)</label>
-                          <input 
-                            type="number" 
-                            value={customHours} 
-                            onChange={(e) => setCustomHours(Number(e.target.value))}
-                            className="w-full px-3 py-1.5 text-xs font-bold border border-neutral-200 rounded-lg focus:outline-none focus:border-indigo-500" 
-                          />
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Channels & Rule Toggles */}
-                  <div className="space-y-4">
-                    <h3 className="text-xs font-black text-neutral-400 uppercase tracking-wider">Channels & Policy Rules</h3>
-                    <div className="space-y-3 bg-neutral-50 p-4 rounded-xl border border-neutral-200/60">
-                      <div className="flex items-center gap-2">
-                        <input 
-                          type="checkbox" 
-                          id="seo" 
-                          checked={seoEnabled} 
-                          onChange={(e) => setSeoEnabled(e.target.checked)} 
-                        />
-                        <label htmlFor="seo" className="text-xs font-bold text-neutral-700">SEO Channel</label>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <input 
-                          type="checkbox" 
-                          id="google" 
-                          checked={googleAdsEnabled} 
-                          onChange={(e) => setGoogleAdsEnabled(e.target.checked)} 
-                        />
-                        <label htmlFor="google" className="text-xs font-bold text-neutral-700">Google Ads (Search)</label>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <input 
-                          type="checkbox" 
-                          id="meta" 
-                          checked={metaAdsEnabled} 
-                          onChange={(e) => setMetaAdsEnabled(e.target.checked)} 
-                        />
-                        <label htmlFor="meta" className="text-xs font-bold text-neutral-700">Meta Ads (Paid Social)</label>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <input 
-                          type="checkbox" 
-                          id="displayVideo" 
-                          checked={displayVideoShoppingEnabled} 
-                          onChange={(e) => setDisplayVideoShoppingEnabled(e.target.checked)} 
-                        />
-                        <label htmlFor="displayVideo" className="text-xs font-bold text-neutral-700">Display, Video & Shopping</label>
-                      </div>
-
-                      <div className="border-t border-neutral-200 my-2 pt-2" />
-
-                      <div className="flex items-center gap-2">
-                        <input 
-                          type="checkbox" 
-                          id="checkpoint" 
-                          checked={checkpointRequired} 
-                          onChange={(e) => setCheckpointRequired(e.target.checked)} 
-                        />
-                        <label htmlFor="checkpoint" className="text-xs font-bold text-neutral-700">Required Checkpoint Reflection</label>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <input 
-                          type="checkbox" 
-                          id="cert" 
-                          checked={certificateEnabled} 
-                          onChange={(e) => setCertificateEnabled(e.target.checked)} 
-                        />
-                        <label htmlFor="cert" className="text-xs font-bold text-neutral-700">Enable Graduation Certificate</label>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex justify-end pt-3">
-                  <Button 
-                    onClick={() => handleSetupSandbox('custom')}
-                    disabled={isInitializingPath}
-                    className="bg-violet-650 hover:bg-violet-700 text-white font-black text-xs px-6 h-10 rounded-xl"
-                  >
-                    Start Custom Simulation
-                  </Button>
-                </div>
-              </Card>
             )}
           </div>
-        ) : (
-          <Card className="max-w-md mx-auto p-6 bg-white border border-neutral-200 rounded-2xl shadow-sm text-center space-y-4">
-            <ShieldAlert className="h-12 w-12 text-rose-500 mx-auto" />
-            <h2 className="text-lg font-black text-neutral-900">Simulation Not Started</h2>
-            <p className="text-xs text-neutral-500 font-semibold leading-relaxed">
-              {errorMsg || "No active simulation class cohort has been found for your account."}
-            </p>
+
+          <div className="flex justify-end pt-4">
+            <Button 
+              onClick={() => navigate(`/sandbox/workspace?mode=${activeMode}`)}
+              className="bg-indigo-650 hover:bg-indigo-700 text-white font-black text-xs px-6 h-10 rounded-xl flex items-center gap-1"
+            >
+              Open Campaign Workspace
+              <ArrowRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </Card>
+
+        {/* Certificate Section */}
+        {isCompleted && certEligible && (
+          <Card className="p-6 border-violet-200 shadow-md bg-violet-50/20 text-left space-y-4 animate-in fade-in duration-300">
+            <div className="flex items-start justify-between flex-col sm:flex-row gap-4">
+              <div className="space-y-1">
+                <span className="text-[10px] font-black text-violet-650 uppercase tracking-widest bg-violet-55 px-2.5 py-1 rounded-full flex items-center gap-1.5 w-max">
+                  <Sparkles className="h-3.5 w-3.5 fill-violet-650" />
+                  Graduation Certificate Status
+                </span>
+                <h2 className="text-sm font-black text-neutral-900 mt-2">
+                  {certEligible.eligible ? `Eligible: ${certEligible.band} Certification` : 'Graduation Check'}
+                </h2>
+                <p className="text-[11px] text-neutral-500 font-medium">
+                  Certificates are awarded based on campaign performance score $\ge 60\%$ and adaptability index $\ge 50\%$.
+                </p>
+              </div>
+
+              {certEligible.eligible ? (
+                <Button onClick={handleGenerateCert} className="bg-violet-650 hover:bg-violet-755 text-white font-black text-xs px-6 h-10 rounded-xl shrink-0 flex items-center gap-2">
+                  <Download className="h-4 w-4" />
+                  Download Certificate PDF
+                </Button>
+              ) : (
+                <Badge className="bg-rose-50 text-rose-800 border border-rose-200 font-black text-[10px]">
+                  Not Eligible
+                </Badge>
+              )}
+            </div>
+
+            {!certEligible.eligible && certEligible.reasons && certEligible.reasons.length > 0 && (
+              <div className="bg-white/80 border border-rose-100 rounded-xl p-3 text-[11px] space-y-1">
+                <span className="text-[10px] font-black text-rose-500 uppercase tracking-wider block">Remaining Requirements:</span>
+                <ul className="list-disc pl-4 space-y-0.5 text-neutral-600 font-semibold">
+                  {certEligible.reasons.map((r: string, index: number) => (
+                    <li key={index}>{r}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </Card>
         )}
       </div>
     )
   }
 
-  // --- RENDERING ACTIVE WORKSPACE CONSOLE ---
-  const allowed = fullState?.class?.scenario?.allowedPlatforms
-    ? JSON.parse(fullState.class.scenario.allowedPlatforms)
-    : ["SEO", "GOOGLE_ADS", "META_ADS"];
-
-  const getFirstStrategyPath = () => {
-    if (allowed.includes("SEO")) return "/simulation/seo";
-    if (allowed.includes("GOOGLE_ADS")) return "/simulation/google-ads";
-    if (allowed.includes("META_ADS")) return "/simulation/meta-ads";
-    return "/simulation/results";
-  }
-
-  const scenario = fullState.class?.scenario
-  const progress = progressState || fullState.progress
-
-  // Calculated values
-  const currentRound = fullState.currentRound || 1
-  const maxRounds = scenario?.maxRounds || 10
-  const progressPct = Math.round(((currentRound - 1) / maxRounds) * 100)
-
-  const isCompleted = fullState.isCompleted || fullState.status === "SCORE_LOCKED" || fullState.status === "COMPLETED"
-  const isProcessing = fullState.status === "PROCESSING" || progress?.status === "PROCESSING"
-
+  // --- ONBOARDING FORM VIEW ---
   return (
-    <div className="p-4 sm:p-6 md:p-8 max-w-5xl mx-auto space-y-6 animate-in fade-in duration-300">
-      
-      {/* Top Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 text-left border-b border-neutral-200 pb-5">
-        <div>
-          <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest bg-indigo-50 px-2.5 py-1 rounded-full flex items-center gap-1.5 w-max">
-            <Activity className="h-3.5 w-3.5" />
-            Sandbox Workspace Console
-          </span>
-          <h1 className="text-2xl sm:text-3xl font-black text-neutral-900 mt-2">
-            Active Digital Marketing Sandbox
-          </h1>
-          <p className="text-xs sm:text-sm text-neutral-500 font-semibold mt-1">
-            Running Mode: <span className="text-neutral-800 font-bold">Personal Sandbox</span>
-          </p>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <Button variant="outline" size="sm" onClick={handleResetSandbox} className="text-xs border-neutral-200">
-            Reset Sandbox
-          </Button>
-          {isProcessing ? (
-            <Badge className="bg-indigo-50 text-indigo-850 border border-indigo-200 font-black text-[10px] animate-pulse">
-              Processing Campaign...
-            </Badge>
-          ) : (
-            <Badge className="bg-emerald-50 text-emerald-805 border border-emerald-200 font-black text-[10px]">
-              Ready for Decision
-            </Badge>
-          )}
-        </div>
+    <div className="max-w-5xl mx-auto p-4 sm:p-6 md:p-8 space-y-8 animate-in fade-in duration-305">
+      <div className="text-left space-y-2 border-b border-neutral-100 pb-5">
+        <Badge className="bg-indigo-50 text-indigo-900 border-none uppercase text-[9px] font-black tracking-widest px-2.5 py-1">
+          Sandbox Live Console
+        </Badge>
+        <h1 className="text-2xl sm:text-3xl font-black text-neutral-900 mt-2">
+          Digital Marketing Sandbox Setup
+        </h1>
+        <p className="text-xs sm:text-sm text-neutral-500 font-semibold max-w-2xl mt-1">
+          Configure campaign settings, match types, ad groups, or SEO content densities. Bypasses classroom limits and cohorts.
+        </p>
       </div>
 
-      {/* Processing State Card */}
-      {isProcessing && (
-        <Card className="p-6 border-indigo-200 shadow-md bg-indigo-50/20 text-left space-y-4">
-          <div className="flex items-center gap-3">
-            <Clock className="h-6 w-6 text-indigo-650 animate-spin" />
-            <div>
-              <h2 className="text-sm font-black text-neutral-900">Campaign Processing in Progress</h2>
-              <p className="text-xs text-neutral-500 font-medium">
-                Your settings are locked and being modeled against rival bids and trend index behaviors.
-              </p>
-            </div>
-          </div>
-          {progress?.nextResultAt && (
-            <div className="text-xs text-neutral-600 font-bold bg-white/80 p-3 rounded-lg border border-indigo-100 flex justify-between items-center">
-              <span>Estimated results unlock time:</span>
-              <span className="text-indigo-650">{new Date(progress.nextResultAt).toLocaleString()}</span>
-            </div>
-          )}
-          {process.env.NODE_ENV !== 'production' && (
-            <div className="pt-2">
-              <Button onClick={handleFastForward} className="bg-indigo-650 hover:bg-indigo-700 text-white text-xs font-black h-9 px-4 rounded-xl">
-                Fast-Forward processing (Dev Mode)
-              </Button>
-            </div>
-          )}
-        </Card>
-      )}
-
-      {/* Main Workspace Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-
-        {/* Left Card: Active Scenario Details */}
-        <Card className="md:col-span-2 border-neutral-200/80 shadow-md bg-white text-left flex flex-col justify-between overflow-hidden">
-          <div className="p-6 space-y-4">
-            <div className="flex justify-between items-start">
-              <div>
-                <span className="text-[10px] font-black uppercase text-indigo-600 tracking-wider">Active Configuration</span>
-                <CardTitle className="text-lg sm:text-xl font-black text-neutral-900 mt-1">
-                  {scenario?.name || "Marketing Challenge"}
-                </CardTitle>
-              </div>
-              <Badge className="bg-slate-100 text-slate-800 border-none font-bold text-[10px] capitalize">
-                {scenario?.industry || "B2B Software"}
-              </Badge>
-            </div>
+      {isIndividual ? (
+        <div className="space-y-8 text-left">
+          
+          {/* STEP 1: SELECT SIMULATION TYPE */}
+          <div className="space-y-3">
+            <span className="text-[10px] font-black text-neutral-400 uppercase tracking-wider block">Step 1: Choose Live Simulation Mode</span>
             
-            <p className="text-xs sm:text-sm text-neutral-500 leading-relaxed font-semibold">
-              {scenario?.description}
-            </p>
-
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 pt-2 border-t border-neutral-100">
-              <div>
-                <span className="text-[9px] font-black text-neutral-400 uppercase tracking-wider block">Difficulty</span>
-                <span className="text-xs font-black text-neutral-800 block capitalize mt-0.5">{scenario?.difficulty || "Medium"}</span>
-              </div>
-              <div>
-                <span className="text-[9px] font-black text-neutral-400 uppercase tracking-wider block">Target KPI</span>
-                <span className="text-xs font-black text-indigo-600 block capitalize mt-0.5">{scenario?.targetKPI || "Revenue"}</span>
-              </div>
-              <div className="col-span-2 sm:col-span-1">
-                <span className="text-[9px] font-black text-neutral-400 uppercase tracking-wider block">Target Location</span>
-                <span className="text-xs font-black text-neutral-800 block flex items-center gap-1 mt-0.5">
-                  <MapPin className="h-3 w-3 text-neutral-400" />
-                  {scenario?.location || 'Global'}
-                </span>
-              </div>
-            </div>
-
-            <div className="pt-2 border-t border-neutral-100">
-              <span className="text-[9px] font-black text-neutral-400 uppercase tracking-wider block mb-1.5">Enabled Channels</span>
-              <div className="flex flex-wrap gap-1.5">
-                {allowed.map((plat: string) => (
-                  <Badge key={plat} className="bg-indigo-50 text-indigo-800 border-none font-bold text-[9px] uppercase px-2 py-0.5">
-                    {plat.replace('_', ' ')}
-                  </Badge>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-neutral-50 border-t border-neutral-100 p-5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
-            <div className="text-left">
-              <span className="text-[9px] font-black text-neutral-400 uppercase block">Round Duration</span>
-              <span className="text-xs font-bold text-neutral-700 block mt-0.5">{scenario?.durationDays || 30} campaign days</span>
-            </div>
-            
-            <div className="flex gap-2">
-              <Link to="/simulation/briefing">
-                <Button variant="outline" className="text-xs font-bold h-9 border-neutral-200">
-                  <BookOpen className="mr-1.5 h-4 w-4" />
-                  Briefing
-                </Button>
-              </Link>
-              
-              {!isCompleted && !isProcessing && (
-                checkpointSubmitted ? (
-                  <Link to={getFirstStrategyPath()}>
-                    <Button className="bg-indigo-650 hover:bg-indigo-700 text-white text-xs font-black h-9 px-4 rounded-xl flex items-center gap-1">
-                      Continue Setup
-                      <Play className="h-3.5 w-3.5 fill-white" />
-                    </Button>
-                  </Link>
-                ) : (
-                  <Link to="/simulation/checkpoint">
-                    <Button className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-black h-9 px-4 rounded-xl flex items-center gap-1">
-                      Checkpoint Reflection
-                      <ShieldAlert className="h-3.5 w-3.5 shrink-0" />
-                    </Button>
-                  </Link>
-                )
-              )}
-
-              {(isCompleted || currentRound > 1) && (
-                <Link to="/simulation/results">
-                  <Button className="bg-slate-900 hover:bg-slate-950 text-white text-xs font-black h-9 px-4 rounded-xl flex items-center gap-1">
-                    View Results
-                    <Award className="h-3.5 w-3.5" />
-                  </Button>
-                </Link>
-              )}
-            </div>
-          </div>
-        </Card>
-
-        {/* Right Card: Progress & Decision Checklist */}
-        <div className="space-y-6 text-left">
-          {/* Progress Card */}
-          <Card className="border-neutral-200/80 shadow-md bg-white p-6 space-y-4">
-            <span className="text-[10px] font-black uppercase tracking-wider text-neutral-400">Current Progress</span>
-            
-            <div className="space-y-1">
-              <div className="flex justify-between text-xs font-bold">
-                <span className="text-neutral-500">Round {currentRound} of {maxRounds}</span>
-                <span className="text-indigo-600">{progressPct}% Complete</span>
-              </div>
-              <div className="h-2.5 bg-neutral-100 rounded-full overflow-hidden">
-                <div 
-                  className="h-full bg-indigo-650 rounded-full transition-all duration-500" 
-                  style={{ width: `${progressPct}%` }}
-                />
-              </div>
-            </div>
-
-            <div className="divide-y divide-neutral-100 text-xs">
-              <div className="py-2.5 flex justify-between items-center font-semibold">
-                <span className="text-neutral-500">Total Budget Limit</span>
-                <span className="text-neutral-800 font-black">${(scenario?.budgetPerRound || 5000.0).toLocaleString()}</span>
-              </div>
-              <div className="py-2.5 flex justify-between items-center font-semibold">
-                <span className="text-neutral-500">Cumulative Score</span>
-                <span className="text-indigo-650 font-black">{fullState.score || 0}%</span>
-              </div>
-            </div>
-          </Card>
-
-          {/* Quick Links Checklist */}
-          <Card className="border-neutral-200/80 shadow-md bg-white p-6 space-y-4">
-            <span className="text-[10px] font-black uppercase tracking-wider text-neutral-400">Decision Channels</span>
-            
-            <div className="space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {[
-                { label: "SEO Settings & Keywords", path: "/simulation/seo", key: "SEO" },
-                { label: "Google Ads Campaigns", path: "/simulation/google-ads", key: "GOOGLE_ADS" },
-                { label: "Meta Ads Creatives", path: "/simulation/meta-ads", key: "META_ADS" },
-              ].map((item, idx) => {
-                const isPlatAllowed = allowed.includes(item.key);
-                return (
-                  <div key={idx}>
-                    {isPlatAllowed ? (
-                      <Link to={isProcessing ? "#" : item.path} className={`flex items-start gap-2.5 group ${isProcessing ? 'pointer-events-none opacity-50' : ''}`}>
-                        <CheckCircle className="h-4.5 w-4.5 text-indigo-500 shrink-0 mt-0.5 transition-colors" />
-                        <span className="text-xs font-bold text-neutral-600 group-hover:text-indigo-600 leading-snug transition-colors">
-                          {item.label}
-                        </span>
-                      </Link>
-                    ) : (
-                      <div className="flex items-start gap-2.5 opacity-40">
-                        <CheckCircle className="h-4.5 w-4.5 text-neutral-300 shrink-0 mt-0.5" />
-                        <span className="text-xs font-bold text-neutral-400 leading-snug line-through">
-                          {item.label} (Disabled)
-                        </span>
-                      </div>
-                    )}
+                { 
+                  key: "GOOGLE_ADS", 
+                  label: "Google Ads Simulation", 
+                  desc: "Practice real Google Ads campaign setup, bidding, keyword targeting, ad copy, CPC, CTR, CPA, ROAS." 
+                },
+                { 
+                  key: "META_ADS", 
+                  label: "Meta Ads Simulation", 
+                  desc: "Practice Meta/Facebook/Instagram ads setup, audience targeting, creatives, placements, CPM, CTR, conversions." 
+                },
+                { 
+                  key: "SEO", 
+                  label: "SEO Simulation", 
+                  desc: "Practice keyword research, technical SEO, content optimization, backlink strategy, ranking, organic traffic." 
+                }
+              ].map(t => (
+                <button
+                  key={t.key}
+                  onClick={() => setSelectedMode(t.key as any)}
+                  className={`p-5 rounded-2xl border-2 text-left transition-all flex flex-col justify-between ${
+                    selectedMode === t.key 
+                      ? "border-indigo-650 bg-indigo-50/25 text-indigo-950 font-black shadow-md" 
+                      : "border-neutral-200 hover:border-neutral-300 bg-white"
+                  }`}
+                >
+                  <div>
+                    <span className="text-xs font-black block">{t.label}</span>
+                    <p className="text-[11px] text-neutral-400 leading-relaxed font-semibold mt-2.5">{t.desc}</p>
                   </div>
-                );
-              })}
+                  
+                  {selectedMode === t.key && (
+                    <div className="flex justify-end pt-4">
+                      <Badge className="bg-indigo-650 text-white text-[9px] border-none font-bold uppercase py-0.5">Selected</Badge>
+                    </div>
+                  )}
+                </button>
+              ))}
             </div>
-          </Card>
-        </div>
-      </div>
+          </div>
 
-      {/* Graduation Certificate Download Panel */}
-      {isCompleted && certEligible && (
-        <Card className="p-6 border-violet-200 shadow-md bg-violet-50/20 text-left space-y-4 animate-in fade-in duration-300">
-          <div className="flex items-start justify-between flex-col sm:flex-row gap-4">
-            <div className="space-y-1">
-              <span className="text-[10px] font-black text-violet-650 uppercase tracking-widest bg-violet-55 px-2.5 py-1 rounded-full flex items-center gap-1.5 w-max">
-                <Sparkles className="h-3.5 w-3.5 fill-violet-650" />
-                Graduation Certificate Status
-              </span>
-              <h2 className="text-lg font-black text-neutral-900 mt-2">
-                {certEligible.eligible ? `Eligible: ${certEligible.band} Certification Level` : 'Certificate Eligibility Check'}
-              </h2>
-              <p className="text-xs text-neutral-500 font-medium">
-                Platform certificates are awarded to sandbox campaigns reaching a score of at least 60% and demonstrating adaptability of at least 50%.
-              </p>
-            </div>
+          {/* STEP 2: CHOOSE SCENARIO */}
+          <div className="space-y-4">
+            <span className="text-[10px] font-black text-neutral-400 uppercase tracking-wider block">Step 2: Define Scenario Pathway</span>
             
-            {certEligible.eligible ? (
-              <Button onClick={handleGenerateCert} className="bg-violet-650 hover:bg-violet-750 text-white font-black text-xs px-6 h-10 rounded-xl shrink-0 flex items-center gap-2">
-                <Download className="h-4 w-4" />
-                Download Certificate PDF
-              </Button>
+            <div className="flex gap-2 bg-neutral-100 p-1.5 rounded-xl w-max">
+              <button 
+                onClick={() => setScenarioChoice("sample")}
+                className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${scenarioChoice === 'sample' ? 'bg-white text-neutral-850 shadow-sm' : 'text-neutral-500'}`}
+              >
+                Use Pre-Seeded Sample Scenario
+              </button>
+              <button 
+                onClick={() => setScenarioChoice("custom")}
+                className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${scenarioChoice === 'custom' ? 'bg-white text-neutral-850 shadow-sm' : 'text-neutral-500'}`}
+              >
+                Create Custom Campaign Details
+              </button>
+            </div>
+
+            {scenarioChoice === "sample" ? (
+              <Card className="p-5 border border-neutral-200 bg-white space-y-3">
+                <label className="text-[10px] font-black text-neutral-500 block uppercase">Available Scenario Presets</label>
+                {sampleScenarios.length > 0 ? (
+                  <select 
+                    value={selectedScenarioId} 
+                    onChange={(e) => setSelectedScenarioId(e.target.value)}
+                    className="w-full px-3 py-2 text-xs font-bold border border-neutral-200 rounded-xl bg-white focus:outline-none focus:border-indigo-500"
+                  >
+                    {sampleScenarios.map((s: any) => (
+                      <option key={s.id} value={s.id}>{s.name} ({s.industry} - {s.difficulty} difficulty)</option>
+                    ))}
+                  </select>
+                ) : (
+                  <span className="text-xs text-neutral-450 font-semibold block">Loading scenario list...</span>
+                )}
+              </Card>
             ) : (
-              <Badge className="bg-rose-50 text-rose-800 border border-rose-200 font-black text-[10px]">
-                Not Eligible
-              </Badge>
+              <Card className="p-6 border border-neutral-200 bg-white space-y-4">
+                <span className="text-[10px] font-black text-neutral-400 uppercase tracking-wider block mb-2 border-b border-neutral-50 pb-2">Custom Configuration Parameters</span>
+                
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="space-y-3">
+                    <div>
+                      <label className="text-[10px] font-black text-neutral-600 block uppercase mb-1">Scenario Name</label>
+                      <input 
+                        type="text" 
+                        value={scenarioName} 
+                        onChange={(e) => setScenarioName(e.target.value)}
+                        className="w-full px-3 py-1.5 text-xs font-semibold border border-neutral-200 rounded-lg focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black text-neutral-600 block uppercase mb-1">Industry Sector</label>
+                      <input 
+                        type="text" 
+                        value={industry} 
+                        onChange={(e) => setIndustry(e.target.value)}
+                        className="w-full px-3 py-1.5 text-xs font-semibold border border-neutral-200 rounded-lg focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black text-neutral-600 block uppercase mb-1">Business Type</label>
+                      <input 
+                        type="text" 
+                        value={businessType} 
+                        onChange={(e) => setBusinessType(e.target.value)}
+                        className="w-full px-3 py-1.5 text-xs font-semibold border border-neutral-200 rounded-lg focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div>
+                      <label className="text-[10px] font-black text-neutral-600 block uppercase mb-1">Target Audience</label>
+                      <input 
+                        type="text" 
+                        value={targetAudience} 
+                        onChange={(e) => setTargetAudience(e.target.value)}
+                        className="w-full px-3 py-1.5 text-xs font-semibold border border-neutral-200 rounded-lg focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black text-neutral-600 block uppercase mb-1">Target Location</label>
+                      <input 
+                        type="text" 
+                        value={targetLocation} 
+                        onChange={(e) => setTargetLocation(e.target.value)}
+                        className="w-full px-3 py-1.5 text-xs font-semibold border border-neutral-200 rounded-lg focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black text-neutral-600 block uppercase mb-1">Objective / Target KPI</label>
+                      <select 
+                        value={objectiveKPI} 
+                        onChange={(e) => setObjectiveKPI(e.target.value)}
+                        className="w-full px-3 py-1.5 text-xs font-semibold border border-neutral-200 rounded-lg bg-white"
+                      >
+                        <option value="revenue">Revenue Scale</option>
+                        <option value="conversions">Conversion Volume</option>
+                        <option value="clicks">Traffic Clicks</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div>
+                      <label className="text-[10px] font-black text-neutral-600 block uppercase mb-1">Competition / Difficulty</label>
+                      <select 
+                        value={competitionLevel} 
+                        onChange={(e) => setCompetitionLevel(e.target.value)}
+                        className="w-full px-3 py-1.5 text-xs font-semibold border border-neutral-200 rounded-lg bg-white"
+                      >
+                        <option value="easy">Easy (Low CPC Rivalry)</option>
+                        <option value="medium">Medium</option>
+                        <option value="hard">Hard (High CPM Bid Pressure)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black text-neutral-600 block uppercase mb-1">Product/Service Description</label>
+                      <textarea 
+                        value={productDescription} 
+                        onChange={(e) => setProductDescription(e.target.value)}
+                        rows={3}
+                        className="w-full px-3 py-1.5 text-xs font-semibold border border-neutral-200 rounded-lg focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </Card>
             )}
           </div>
 
-          {!certEligible.eligible && certEligible.reasons && certEligible.reasons.length > 0 && (
-            <div className="bg-white/80 border border-rose-100 rounded-xl p-4 text-xs space-y-1.5">
-              <span className="text-[10px] font-black text-rose-500 uppercase tracking-wider block">Remaining Requirements:</span>
-              <ul className="list-disc pl-4 space-y-0.5 text-neutral-600 font-semibold">
-                {certEligible.reasons.map((r: string, index: number) => (
-                  <li key={index}>{r}</li>
-                ))}
-              </ul>
-            </div>
-          )}
+          {/* STEP 3: SELECT TIMING / DURATION */}
+          <div className="space-y-3">
+            <span className="text-[10px] font-black text-neutral-400 uppercase tracking-wider block">Step 3: Duration & Bidding cycle timing</span>
+            
+            <Card className="p-6 border border-neutral-200 bg-white space-y-4">
+              {isAdmin ? (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div>
+                    <label className="text-[10px] font-black text-neutral-600 block uppercase mb-1">Bidding Cycle Timing (Admin Control)</label>
+                    <select 
+                      value={timingMode} 
+                      onChange={(e) => setTimingMode(e.target.value as any)}
+                      className="w-full px-3 py-2 text-xs font-bold border border-neutral-200 rounded-xl bg-white"
+                    >
+                      <option value="instant">Instant Test Mode</option>
+                      <option value="24h">24 Hours (Standard lockout)</option>
+                      <option value="custom">Custom Hours</option>
+                    </select>
+                  </div>
+                  
+                  {timingMode === "custom" && (
+                    <div>
+                      <label className="text-[10px] font-black text-neutral-600 block uppercase mb-1">Cycle Duration (Hours)</label>
+                      <input 
+                        type="number" 
+                        value={customHours} 
+                        onChange={(e) => setCustomHours(Number(e.target.value))}
+                        className="w-full px-3 py-1.5 text-xs font-semibold border border-neutral-200 rounded-lg focus:outline-none"
+                      />
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="text-[10px] font-black text-neutral-600 block uppercase mb-1">Campaign Duration (Total Rounds)</label>
+                    <input 
+                      type="number" 
+                      value={durationDays} 
+                      onChange={(e) => setDurationDays(Number(e.target.value))}
+                      className="w-full px-3 py-1.5 text-xs font-semibold border border-neutral-200 rounded-lg focus:outline-none"
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="text-[10px] font-black text-neutral-600 block uppercase mb-1">Package Subscription Cycle Duration</label>
+                    <select 
+                      value={durationDays} 
+                      onChange={(e) => setDurationDays(Number(e.target.value))}
+                      className="w-full px-3 py-2 text-xs font-bold border border-neutral-200 rounded-xl bg-white"
+                    >
+                      <option value={15}>15 Days Campaign (12h cycle locks)</option>
+                      <option value={30}>30 Days Campaign (24h cycle locks)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-black text-neutral-400 block uppercase mb-1">Subscription Timing Lock</span>
+                    <p className="text-xs text-neutral-500 font-semibold leading-relaxed mt-1">
+                      Individual Learners run campaign rounds with standard locks to match pacing and realistic trend movements.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </Card>
+          </div>
+
+          {/* ACTION SUBMIT */}
+          <div className="flex justify-end pt-4">
+            <Button 
+              onClick={handleStartSimulation}
+              disabled={isInitializingPath}
+              className="bg-indigo-650 hover:bg-indigo-700 text-white font-black text-xs px-8 h-11 rounded-xl flex items-center gap-2 shadow-md"
+            >
+              Start Sandbox Simulation
+              <ArrowRight className="h-4.5 w-4.5" />
+            </Button>
+          </div>
+
+        </div>
+      ) : (
+        <Card className="max-w-md mx-auto p-6 bg-white border border-neutral-200 rounded-2xl shadow-sm text-center space-y-4">
+          <ShieldAlert className="h-12 w-12 text-rose-500 mx-auto" />
+          <h2 className="text-lg font-black text-neutral-900">Sandbox Unplayable</h2>
+          <p className="text-xs text-neutral-500 font-semibold leading-relaxed">
+            {errorMsg || "Only Individual Learners or administrators can access sandbox mode."}
+          </p>
         </Card>
       )}
 
