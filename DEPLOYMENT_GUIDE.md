@@ -165,3 +165,28 @@ Back up your database using PostgreSQL `pg_dump`:
 ```bash
 docker exec -t <postgres-container-id> pg_dump -U postgres dmsimlab > backup.sql
 ```
+
+---
+
+## 5. Production Operational Notes (Redis Quota Limits)
+
+If using hosted Redis services like **Upstash** in a free or quota-limited tier, you may encounter request limits resulting in the following startup or runtime exception:
+`ERR max requests limit exceeded. Limit: 500000, Usage: 500001`
+
+### Fail-Safe Fallbacks
+Our backend implements connection checks and fault-tolerant fallbacks to guarantee uptime:
+- If Redis is unavailable or quota-limited, the system automatically falls back to:
+  - **In-memory cache service** (local key-value map).
+  - **In-memory background job queues** (running jobs synchronously on the main thread).
+  - **In-memory Socket.io adapter** (local WebSockets).
+- The server will boot up cleanly and remain operational. For multi-instance production environments, Redis connectivity should be restored for shared queues/socket scaling.
+
+### Resolution Steps when Quota is Exceeded
+1. **Create a new Upstash Redis database** or **upgrade/reset your database quota**.
+2. **Retrieve the new REDIS_URL** and update your backend `.env` variables.
+3. Restart your backend server application on Render.
+
+### Env Configuration Controls
+We provide the following environment variables to manage Redis connections:
+- `REDIS_REQUIRED`: Set to `false` (default) to allow the application server to boot up even if Redis is completely down or quota-limited. Set to `true` if you want to strictly fail startup when Redis is offline.
+- `ENABLE_REDIS_ADAPTER`: Set to `true` (default) to attempt attaching the Socket.io Redis adapter. Set to `false` to skip the Redis adapter and run Socket.io in single-node in-memory mode.

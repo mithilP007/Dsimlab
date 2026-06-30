@@ -1,42 +1,45 @@
 import Redis from 'ioredis';
 import { config } from '../config';
 import { logger } from './logger';
+import { isRedisAvailable, getRedisOptions } from './redis-service';
 
 export class CacheService {
   private redis: Redis | null = null;
   private memoryCache = new Map<string, { value: any; expiresAt: number }>();
   private active = false;
+  private checkAttempted = false;
 
-  constructor() {
-    if (config.REDIS_URL && config.NODE_ENV !== 'test') {
-      try {
-        this.redis = new Redis(config.REDIS_URL, {
-          maxRetriesPerRequest: 1,
-          connectTimeout: 2000,
-        });
-
-        this.redis.ping()
-          .then(() => {
-            this.active = true;
-            logger.info('Redis connection verified. Caching enabled.');
-          })
-          .catch((err) => {
-            logger.warn(`Redis is offline for caching: ${err.message}. Falling back to in-memory caching.`);
-            this.redis = null;
-          });
-      } catch (err) {
-        logger.warn('Redis configuration failure. Falling back to in-memory caching.');
-        this.redis = null;
-      }
-    } else {
-      logger.info('Redis caching disabled. Using in-memory fallback caching.');
+  private async getRedisClient(): Promise<Redis | null> {
+    if (this.checkAttempted) {
+      return this.redis;
     }
+    
+    if (config.NODE_ENV === 'test') {
+      this.checkAttempted = true;
+      return null;
+    }
+
+    const available = await isRedisAvailable();
+    if (available && config.REDIS_URL) {
+      try {
+        this.redis = new Redis(config.REDIS_URL, getRedisOptions('caching'));
+        this.active = true;
+        logger.info('Lazy Redis caching client initialized successfully.');
+      } catch (err) {
+        logger.warn('Redis caching initialization failed. Falling back to in-memory caching.');
+        this.redis = null;
+        this.active = false;
+      }
+    }
+    this.checkAttempted = true;
+    return this.redis;
   }
 
   async get<T>(key: string): Promise<T | null> {
-    if (this.active && this.redis) {
+    const client = await this.getRedisClient();
+    if (this.active && client) {
       try {
-        const raw = await this.redis.get(key);
+        const raw = await client.get(key);
         if (raw) return JSON.parse(raw) as T;
       } catch (err) {
         logger.warn({ err, key }, 'Failed to fetch value from Redis cache');
@@ -55,9 +58,10 @@ export class CacheService {
   }
 
   async set(key: string, value: any, ttlSeconds = 300): Promise<void> {
-    if (this.active && this.redis) {
+    const client = await this.getRedisClient();
+    if (this.active && client) {
       try {
-        await this.redis.set(key, JSON.stringify(value), 'EX', ttlSeconds);
+        await client.set(key, JSON.stringify(value), 'EX', ttlSeconds);
       } catch (err) {
         logger.warn({ err, key }, 'Failed to write value to Redis cache');
       }
@@ -70,9 +74,10 @@ export class CacheService {
   }
 
   async del(key: string): Promise<void> {
-    if (this.active && this.redis) {
+    const client = await this.getRedisClient();
+    if (this.active && client) {
       try {
-        await this.redis.del(key);
+        await client.del(key);
       } catch (err) {
         logger.warn({ err, key }, 'Failed to delete key from Redis cache');
       }
@@ -82,11 +87,12 @@ export class CacheService {
   }
 
   async invalidatePattern(pattern: string): Promise<void> {
-    if (this.active && this.redis) {
+    const client = await this.getRedisClient();
+    if (this.active && client) {
       try {
-        const keys = await this.redis.keys(pattern);
+        const keys = await client.keys(pattern);
         if (keys.length > 0) {
-          await this.redis.del(...keys);
+          await client.del(...keys);
           logger.info({ pattern, count: keys.length }, 'Invalidated Redis cache keys by pattern');
         }
       } catch (err) {

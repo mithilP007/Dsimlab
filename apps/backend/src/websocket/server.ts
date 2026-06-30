@@ -5,6 +5,7 @@ import Redis from 'ioredis';
 import { config } from '../config';
 import { logger } from '../utils/logger';
 import { auth } from '../auth/better-auth';
+import { isRedisAvailable, getRedisOptions } from '../utils/redis-service';
 
 export let io: SocketServer | null = null;
 
@@ -28,7 +29,7 @@ function extractToken(socket: Socket): string | null {
  * Initializes the Socket.io WebSocket server attached to Fastify's HTTP server.
  * Attaches a Redis adapter when REDIS_URL is configured; falls back to in-memory adapter.
  */
-export function initSocketServer(server: HttpServer): void {
+export async function initSocketServer(server: HttpServer): Promise<void> {
   try {
     io = new SocketServer(server, {
       cors: {
@@ -40,28 +41,74 @@ export function initSocketServer(server: HttpServer): void {
       pingTimeout: 60_000,
     });
 
-    // ── Redis Adapter (optional) ─────────────────────────────────────────────
-    if (config.REDIS_URL) {
-      try {
-        const pubClient = new Redis(config.REDIS_URL, {
-          maxRetriesPerRequest: null,
-        });
-        const subClient = pubClient.duplicate();
+    const redisOk = config.ENABLE_REDIS_ADAPTER ? await isRedisAvailable() : false;
 
-        pubClient.on('error', (err) =>
-          logger.warn({ err }, 'Socket.io Redis pub-client error')
-        );
-        subClient.on('error', (err) =>
-          logger.warn({ err }, 'Socket.io Redis sub-client error')
-        );
+    // ── Redis Adapter (optional) ─────────────────────────────────────────────
+    if (redisOk && config.REDIS_URL) {
+      let pubClient: Redis | null = null;
+      let subClient: Redis | null = null;
+      try {
+        pubClient = new Redis(config.REDIS_URL, getRedisOptions('socket-pub'));
+        subClient = new Redis(config.REDIS_URL, getRedisOptions('socket-sub'));
+
+        let failed = false;
+        const handleFatalRedisError = async (err: Error, role: string) => {
+          const errMsg = err.message || '';
+          logger.warn({ err }, `Socket.io Redis ${role}-client error: ${errMsg}`);
+          if (
+            errMsg.includes('max requests limit exceeded') ||
+            errMsg.includes('ERR max requests limit exceeded') ||
+            errMsg.includes('NOAUTH') ||
+            errMsg.includes('ECONNREFUSED') ||
+            errMsg.includes('ETIMEDOUT') ||
+            errMsg.includes('ENOTFOUND')
+          ) {
+            if (!failed) {
+              failed = true;
+              logger.warn(`Redis adapter encountered quota/fatal error in ${role}. Disconnecting and falling back to in-memory adapter.`);
+              try {
+                if (pubClient) {
+                  await pubClient.quit();
+                }
+              } catch {
+                if (pubClient) pubClient.disconnect();
+              }
+              try {
+                if (subClient) {
+                  await subClient.quit();
+                }
+              } catch {
+                if (subClient) subClient.disconnect();
+              }
+              // Reset adapter back to default (in-memory)
+              if (io) {
+                // @ts-ignore
+                io.adapter(new (require('socket.io-adapter').Adapter)(io.of('/')));
+              }
+            }
+          }
+        };
+
+        pubClient.on('error', (err) => handleFatalRedisError(err, 'pub'));
+        subClient.on('error', (err) => handleFatalRedisError(err, 'sub'));
+
+        // Test connection
+        await pubClient.connect();
+        await subClient.connect();
 
         io.adapter(createAdapter(pubClient, subClient));
         logger.info('Socket.io Redis adapter attached successfully.');
       } catch (adapterErr) {
         logger.warn({ adapterErr }, 'Redis adapter failed to initialise — using in-memory adapter.');
+        try {
+          if (pubClient) pubClient.disconnect();
+        } catch {}
+        try {
+          if (subClient) subClient.disconnect();
+        } catch {}
       }
     } else {
-      logger.warn('REDIS_URL not set — Socket.io running with in-memory adapter (single-node only).');
+      logger.info('Redis adapter disabled or unavailable — Socket.io running with in-memory adapter (single-node only).');
     }
 
     // ── Connection Handler ───────────────────────────────────────────────────

@@ -4,9 +4,16 @@ import { logger } from './utils/logger';
 import { initSocketServer } from './websocket/server';
 import { startQueueWorker } from './jobs/queue';
 import { checkExpiredSubscriptions } from './jobs/schedulers/round-scheduler';
+import { isRedisAvailable } from './utils/redis-service';
 
 const start = async () => {
   try {
+    const redisOk = await isRedisAvailable();
+    if (!redisOk && config.REDIS_REQUIRED) {
+      logger.error('REDIS_REQUIRED is set to true, but Redis is not available. Exiting.');
+      process.exit(1);
+    }
+
     const address = await app.listen({ port: config.PORT, host: '0.0.0.0' });
     logger.info(`HTTP Server listening on ${address}`);
 
@@ -15,11 +22,11 @@ const start = async () => {
     logger.info(`CORS Startup Config: stable FRONTEND_URL=${config.FRONTEND_URL}, explicit CORS_ORIGINS count=${corsCount}, preview pattern enabled=true`);
 
     // Initialize WebSockets attached to Fastify's HTTP server
-    initSocketServer(app.server);
+    await initSocketServer(app.server);
     logger.info('WebSocket Server initialized successfully');
 
     // Start background BullMQ queue worker
-    startQueueWorker();
+    await startQueueWorker();
     logger.info('Background Queue worker started');
 
     // Run expired subscription sweep on startup and schedule hourly

@@ -10,6 +10,8 @@ const envSchema = z.object({
   BETTER_AUTH_SECRET: z.string().min(32, 'BETTER_AUTH_SECRET must be at least 32 characters'),
   BETTER_AUTH_URL: z.string().url().default('http://localhost:5000'),
   REDIS_URL: z.string().optional(),
+  REDIS_REQUIRED: z.preprocess((val) => val === 'true' || val === true, z.boolean()).default(false),
+  ENABLE_REDIS_ADAPTER: z.preprocess((val) => val === undefined ? true : (val === 'true' || val === true), z.boolean()).default(true),
   OLLAMA_HOST: z.string().url().default('http://127.0.0.1:11434'),
   OLLAMA_MODEL: z.string().default('qwen2.5:7b'),
   FRONTEND_URL: z.string().default('http://localhost:5173').transform((val) => val.trim().replace(/\/+$/, '')),
@@ -46,11 +48,11 @@ const envSchema = z.object({
   RAZORPAY_WEBHOOK_SECRET: z.string().optional(),
 }).superRefine((data, ctx) => {
   if (data.NODE_ENV === 'production') {
-    if (!data.REDIS_URL || data.REDIS_URL.trim() === '') {
+    if (data.REDIS_REQUIRED && (!data.REDIS_URL || data.REDIS_URL.trim() === '')) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['REDIS_URL'],
-        message: 'REDIS_URL is required in production mode',
+        message: 'REDIS_URL is required in production mode when REDIS_REQUIRED is true',
       });
     }
     if (!data.CORS_ORIGINS || data.CORS_ORIGINS.trim() === '') {

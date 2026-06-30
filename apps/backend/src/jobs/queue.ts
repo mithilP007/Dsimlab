@@ -6,6 +6,7 @@ import { processSimulationRound } from '../services/simulation/engine';
 import { notifyRoundComplete } from '../websocket/handlers/round-complete';
 import { generateCertificatePDF } from '../services/certificate/generator';
 import { createNotification } from '../utils/audit';
+import { isRedisAvailable, getRedisOptions } from '../utils/redis-service';
 
 // Queue Names
 const ROUND_QUEUE = 'daily-round-queue';
@@ -25,140 +26,127 @@ export let analyticsQueue: Queue | null = null;
 
 const workers: Worker[] = [];
 
-const redisConfig = {
-  maxRetriesPerRequest: null,
-  enableReadyCheck: false,
-};
+/**
+ * Initializes all queues if Redis is available.
+ */
+export async function initializeQueues(): Promise<void> {
+  if (config.NODE_ENV === 'test') return;
 
-// Initialize Queues if Redis is online
-if (config.REDIS_URL && config.NODE_ENV !== 'test') {
-  const checkClient = new Redis(config.REDIS_URL, {
-    maxRetriesPerRequest: 1,
-    connectTimeout: 1000,
-  });
+  const available = await isRedisAvailable();
+  if (available && config.REDIS_URL) {
+    logger.info('Redis connection verified. Booting BullMQ production pipelines...');
+    
+    // We pass our standard ioredis options configured for BullMQ (maxRetriesPerRequest must be null)
+    const queueConnection = new Redis(config.REDIS_URL, getRedisOptions('queue', true)) as any;
 
-  checkClient.ping()
-    .then(() => {
-      logger.info('Redis connection verified. Booting BullMQ production pipelines...');
-      
-      const connectionOpts = { url: config.REDIS_URL, ...redisConfig };
-
-      dailyRoundQueue = new Queue(ROUND_QUEUE, { connection: connectionOpts });
-      certificateQueue = new Queue(CERT_QUEUE, { connection: connectionOpts });
-      reportExportQueue = new Queue(REPORT_QUEUE, { connection: connectionOpts });
-      notificationQueue = new Queue(NOTIF_QUEUE, { connection: connectionOpts });
-      emailQueue = new Queue(EMAIL_QUEUE, { connection: connectionOpts });
-      analyticsQueue = new Queue(ANALYTICS_QUEUE, { connection: connectionOpts });
-    })
-    .catch((err) => {
-      logger.warn(`Redis is offline: ${err.message}. Queues running in local/in-memory mode.`);
-    })
-    .finally(() => {
-      checkClient.disconnect();
-    });
+    dailyRoundQueue = new Queue(ROUND_QUEUE, { connection: queueConnection });
+    certificateQueue = new Queue(CERT_QUEUE, { connection: queueConnection });
+    reportExportQueue = new Queue(REPORT_QUEUE, { connection: queueConnection });
+    notificationQueue = new Queue(NOTIF_QUEUE, { connection: queueConnection });
+    emailQueue = new Queue(EMAIL_QUEUE, { connection: queueConnection });
+    analyticsQueue = new Queue(ANALYTICS_QUEUE, { connection: queueConnection });
+  } else {
+    logger.warn('Redis is offline. Queues running in local/in-memory mode.');
+  }
 }
 
 /**
  * Boots background workers for all queues
  */
-export function startQueueWorker(): void {
-  if (!config.REDIS_URL || config.NODE_ENV === 'test') {
+export async function startQueueWorker(): Promise<void> {
+  // Ensure queues are initialized
+  if (!dailyRoundQueue && config.NODE_ENV !== 'test') {
+    await initializeQueues();
+  }
+
+  if (config.NODE_ENV === 'test') {
     logger.warn('BullMQ workers disabled: Running in-memory synchronous channels.');
     return;
   }
 
-  const checkClient = new Redis(config.REDIS_URL, {
-    maxRetriesPerRequest: 1,
-    connectTimeout: 1000,
-  });
+  const available = await isRedisAvailable();
+  if (!available || !config.REDIS_URL) {
+    logger.warn('Redis is offline. Background workers disabled.');
+    return;
+  }
 
-  checkClient.ping()
-    .then(() => {
-      const connectionOpts = { url: config.REDIS_URL, ...redisConfig };
+  // BullMQ connection opts
+  const workerConnection = new Redis(config.REDIS_URL, getRedisOptions('worker', true)) as any;
 
-      // 1. Simulation Round Worker
-      const roundWorker = new Worker(ROUND_QUEUE, async (job: Job) => {
-        if (job.name === 'overnight-sweep-job') {
-          const { executeOvernightBatchSweep } = await import('./schedulers/round-scheduler');
-          return await executeOvernightBatchSweep();
-        }
-        if (job.name === 'hourly-campaign-sweep-job') {
-          const { executeHourlyCampaignSweep } = await import('./schedulers/round-scheduler');
-          return await executeHourlyCampaignSweep();
-        }
-        if (job.name === 'data-retention-pruning-job') {
-          const { executeDataRetentionPruning } = await import('./schedulers/data-retention');
-          return await executeDataRetentionPruning();
-        }
+  // 1. Simulation Round Worker
+  const roundWorker = new Worker(ROUND_QUEUE, async (job: Job) => {
+    if (job.name === 'overnight-sweep-job') {
+      const { executeOvernightBatchSweep } = await import('./schedulers/round-scheduler');
+      return await executeOvernightBatchSweep();
+    }
+    if (job.name === 'hourly-campaign-sweep-job') {
+      const { executeHourlyCampaignSweep } = await import('./schedulers/round-scheduler');
+      return await executeHourlyCampaignSweep();
+    }
+    if (job.name === 'data-retention-pruning-job') {
+      const { executeDataRetentionPruning } = await import('./schedulers/data-retention');
+      return await executeDataRetentionPruning();
+    }
 
-        const { simulationId, userId } = job.data;
-        logger.info({ jobId: job.id, simulationId }, 'Processing background round simulation');
-        const result = await processSimulationRound(simulationId);
-        notifyRoundComplete(userId, result);
-        return result;
-      }, { connection: connectionOpts, concurrency: 2 });
+    const { simulationId, userId } = job.data;
+    logger.info({ jobId: job.id, simulationId }, 'Processing background round simulation');
+    const result = await processSimulationRound(simulationId);
+    notifyRoundComplete(userId, result);
+    return result;
+  }, { connection: workerConnection, concurrency: 2 });
 
-      // 2. Certificate Generation Worker
-      const certWorker = new Worker(CERT_QUEUE, async (job: Job) => {
-        const { recipientName, industry, band, skills, verificationId, issueDate } = job.data;
-        logger.info({ jobId: job.id, verificationId }, 'Generating background certificate PDF');
-        return await generateCertificatePDF(
-          recipientName,
-          industry,
-          band,
-          skills,
-          verificationId,
-          new Date(issueDate)
-        );
-      }, { connection: connectionOpts, concurrency: 3 });
+  // 2. Certificate Generation Worker
+  const certWorker = new Worker(CERT_QUEUE, async (job: Job) => {
+    const { recipientName, industry, band, skills, verificationId, issueDate } = job.data;
+    logger.info({ jobId: job.id, verificationId }, 'Generating background certificate PDF');
+    return await generateCertificatePDF(
+      recipientName,
+      industry,
+      band,
+      skills,
+      verificationId,
+      new Date(issueDate)
+    );
+  }, { connection: workerConnection, concurrency: 3 });
 
-      // 3. Report Export Worker
-      const reportWorker = new Worker(REPORT_QUEUE, async (job: Job) => {
-        const { userId, type, format } = job.data;
-        logger.info({ jobId: job.id, userId, type, format }, 'Compiling background report export');
-        // Stub to support async exports
-        return { success: true, url: `/downloads/reports/export-${job.id}.${format === 'csv' ? 'csv' : 'pdf'}` };
-      }, { connection: connectionOpts, concurrency: 2 });
+  // 3. Report Export Worker
+  const reportWorker = new Worker(REPORT_QUEUE, async (job: Job) => {
+    const { userId, type, format } = job.data;
+    logger.info({ jobId: job.id, userId, type, format }, 'Compiling background report export');
+    return { success: true, url: `/downloads/reports/export-${job.id}.${format === 'csv' ? 'csv' : 'pdf'}` };
+  }, { connection: workerConnection, concurrency: 2 });
 
-      // 4. Notification Dispatch Worker
-      const notifWorker = new Worker(NOTIF_QUEUE, async (job: Job) => {
-        const { userId, type, title, message, actor, link } = job.data;
-        logger.info({ jobId: job.id, userId, title }, 'Dispatching notification in background');
-        // Fall back directly to the local helper inside the worker process
-        await createNotification(userId, type, title, message, actor, link);
-      }, { connection: connectionOpts, concurrency: 5 });
+  // 4. Notification Dispatch Worker
+  const notifWorker = new Worker(NOTIF_QUEUE, async (job: Job) => {
+    const { userId, type, title, message, actor, link } = job.data;
+    logger.info({ jobId: job.id, userId, title }, 'Dispatching notification in background');
+    await createNotification(userId, type, title, message, actor, link);
+  }, { connection: workerConnection, concurrency: 5 });
 
-      // 5. Email Dispatch Worker
-      const emailWorker = new Worker(EMAIL_QUEUE, async (job: Job) => {
-        const { to, subject, html } = job.data;
-        logger.info({ jobId: job.id, to, subject }, 'Sending background email dispatch');
-        return { success: true, messageId: `msg-${job.id}-${Date.now()}` };
-      }, { connection: connectionOpts, concurrency: 5 });
+  // 5. Email Dispatch Worker
+  const emailWorker = new Worker(EMAIL_QUEUE, async (job: Job) => {
+    const { to, subject, html } = job.data;
+    logger.info({ jobId: job.id, to, subject }, 'Sending background email dispatch');
+    return { success: true, messageId: `msg-${job.id}-${Date.now()}` };
+  }, { connection: workerConnection, concurrency: 5 });
 
-      // 6. Analytics Aggregation Worker
-      const analyticsWorker = new Worker(ANALYTICS_QUEUE, async (job: Job) => {
-        const { classId, round } = job.data;
-        logger.info({ jobId: job.id, classId, round }, 'Aggregating class-wide metrics in background');
-        return { success: true };
-      }, { connection: connectionOpts, concurrency: 1 });
+  // 6. Analytics Aggregation Worker
+  const analyticsWorker = new Worker(ANALYTICS_QUEUE, async (job: Job) => {
+    const { classId, round } = job.data;
+    logger.info({ jobId: job.id, classId, round }, 'Aggregating class-wide metrics in background');
+    return { success: true };
+  }, { connection: workerConnection, concurrency: 1 });
 
-      workers.push(roundWorker, certWorker, reportWorker, notifWorker, emailWorker, analyticsWorker);
+  workers.push(roundWorker, certWorker, reportWorker, notifWorker, emailWorker, analyticsWorker);
 
-      workers.forEach(worker => {
-        worker.on('completed', (job) => {
-          logger.info({ queue: worker.name, jobId: job.id }, 'Background job completed successfully.');
-        });
-        worker.on('failed', (job, err) => {
-          logger.error({ queue: worker.name, jobId: job?.id, err }, 'Background job failed after attempts.');
-        });
-      });
-    })
-    .catch((err) => {
-      logger.warn(`Redis is offline: ${err.message}. Background workers disabled.`);
-    })
-    .finally(() => {
-      checkClient.disconnect();
+  workers.forEach(worker => {
+    worker.on('completed', (job) => {
+      logger.info({ queue: worker.name, jobId: job.id }, 'Background job completed successfully.');
     });
+    worker.on('failed', (job, err) => {
+      logger.error({ queue: worker.name, jobId: job?.id, err }, 'Background job failed after attempts.');
+    });
+  });
 }
 
 // Global job retry standards (3 attempts, exponential backoff)
@@ -226,7 +214,6 @@ export async function scheduleCertificateGeneration(
     );
     return { queued: true, jobId: job.id };
   } else {
-    // Run synchronously on the main thread if Redis is offline
     const buffer = await generateCertificatePDF(recipientName, industry, band, skills, verificationId, issueDate);
     return { queued: false, success: true, length: buffer.length };
   }

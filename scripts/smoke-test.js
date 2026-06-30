@@ -218,6 +218,102 @@ async function runAccount(account) {
 
 async function main() {
   console.log(`\n================================================================================`);
+  console.log(`🔍 RUNNING LOCAL REDIS-FAILURE FALLBACK SMOKE TEST`);
+  console.log(`================================================================================`);
+  
+  const { spawn } = require('child_process');
+  const env = { 
+    ...process.env, 
+    PORT: '5001', 
+    REDIS_URL: 'redis://127.0.0.1:9999', 
+    REDIS_REQUIRED: 'false',
+    ENABLE_REDIS_ADAPTER: 'true',
+    CORS_ORIGINS: process.env.CORS_ORIGINS || 'http://localhost:5173',
+    NODE_ENV: 'production' 
+  };
+
+  console.log('Spawning backend child process on port 5001 with failing Redis URL...');
+  const child = spawn('node', ['dist/index.js'], { 
+    cwd: 'apps/backend',
+    env 
+  });
+
+  let serverOutput = '';
+  child.stdout.on('data', (data) => {
+    serverOutput += data.toString();
+  });
+  child.stderr.on('data', (data) => {
+    serverOutput += data.toString();
+  });
+
+  // Wait 6 seconds for backend to start up and log warning
+  await sleep(6000);
+
+  // Verify /health returns 200
+  let healthStatus = 0;
+  try {
+    const res = await new Promise((resolve, reject) => {
+      const req = http.get('http://127.0.0.1:5001/health', (res) => {
+        let data = '';
+        res.on('data', c => data += c);
+        res.on('end', () => resolve({ status: res.statusCode }));
+      });
+      req.on('error', reject);
+      req.end();
+    });
+    healthStatus = res.status;
+  } catch (e) {
+    console.error('Failed to query local /health:', e.message);
+  }
+
+  console.log(`Local /health status with failing Redis: ${healthStatus}`);
+
+  // Verify Socket.io connects locally
+  let socketConnected = false;
+  try {
+    const { io } = require('socket.io-client');
+    const socket = io('http://127.0.0.1:5001', {
+      transports: ['websocket'],
+      autoConnect: false,
+      timeout: 3000
+    });
+    socket.connect();
+    await new Promise((resolve) => {
+      socket.on('connect', () => {
+        socketConnected = true;
+        socket.disconnect();
+        resolve();
+      });
+      socket.on('connect_error', (e) => {
+        console.error('Socket connect_error:', e.message);
+        resolve();
+      });
+      setTimeout(resolve, 3000);
+    });
+  } catch (e) {
+    console.error('Socket.io client local connection failed:', e.message);
+  }
+
+  console.log(`Local Socket.io client connection status: ${socketConnected ? 'CONNECTED' : 'FAILED'}`);
+
+  // Kill child process
+  child.kill('SIGTERM');
+
+  if (healthStatus !== 200 || !socketConnected) {
+    console.error('\n❌ Local Redis fallback smoke test failed!');
+    console.error('--- Server Output Log ---');
+    console.error(serverOutput);
+    console.error('-------------------------');
+    process.exit(1);
+  }
+  console.log('✅ Local Redis fallback smoke test passed!\n');
+
+  if (BASE_URL.includes(':5001')) {
+    console.log('Smoke test completed successfully (Redis fallback check only).');
+    process.exit(0);
+  }
+
+  console.log(`\n================================================================================`);
   console.log(`🔍 SIMLAB PRODUCTION TELEMETRY AND ACCESSIBILITY SMOKE TEST`);
   console.log(`================================================================================`);
   console.log(`Target Backend Base URL : ${BASE_URL}`);
