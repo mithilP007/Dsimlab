@@ -9,9 +9,10 @@ import { toast } from "sonner"
 import { 
   Play, Activity, Award, BookOpen, 
   MapPin, CheckCircle, RefreshCw, ShieldAlert,
-  Settings, Clock, Sparkles, Download, ArrowRight,
+  Settings, Clock, Sparkles, Download, ArrowRight, ArrowLeft,
   TrendingUp, BarChart3, AlertCircle, Plus, Trash2, HelpCircle
 } from "lucide-react"
+import { getSafeDashboardRoute, exitSandboxWorkspace } from "@/lib/navigation"
 
 export function SandboxWorkspace() {
   const { user } = useAuthStore()
@@ -317,8 +318,8 @@ export function SandboxWorkspace() {
           }
         }
       } else {
-        toast.error("No active sandbox simulation found. Redirecting...")
-        navigate("/simulation")
+        toast.error("No active sandbox simulation found.")
+        setState(null)
       }
     } catch (e) {
       console.error(e)
@@ -540,7 +541,50 @@ export function SandboxWorkspace() {
     )
   }
 
-  if (!state) return null
+  const isValidMode = ["GOOGLE_ADS", "META_ADS", "SEO"].includes(mode)
+
+  if (!isValidMode || !state) {
+    const dashboardRoute = getSafeDashboardRoute(user?.role)
+    return (
+      <div className="min-h-[60vh] flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-300">
+        <div className="bg-white border border-neutral-200 rounded-2xl p-10 max-w-md w-full shadow-xl space-y-6">
+          <div className="flex justify-center">
+            <div className="h-20 w-20 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center relative">
+              <ShieldAlert className="h-10 w-10 text-indigo-600 animate-bounce" />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <span className="text-xs font-bold text-indigo-650 uppercase tracking-widest block">
+              Sandbox Workspace Guard
+            </span>
+            <h1 className="text-2xl font-black text-neutral-900 tracking-tight">
+              Invalid or Missing Workspace
+            </h1>
+            <p className="text-xs text-neutral-500 leading-relaxed max-w-[280px] mx-auto font-semibold">
+              The requested sandbox simulation workspace is invalid or no active session was found. You can start a new simulation or return to your dashboard.
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-2 pt-2">
+            <Button 
+              onClick={() => navigate("/simulation")} 
+              className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold flex items-center justify-center gap-2 py-5 shadow-sm"
+            >
+              Go to Simulation Console
+            </Button>
+            <Button 
+              variant="outline" 
+              onClick={() => navigate(dashboardRoute)}
+              className="border-neutral-200 hover:bg-neutral-50 rounded-lg font-bold flex items-center justify-center gap-2 py-5 text-neutral-700"
+            >
+              Go to Dashboard
+            </Button>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   const isCompleted = state.isCompleted || state.status === "COMPLETED" || state.status === "SCORE_LOCKED"
   const isProcessing = state.status === "PROCESSING" || progress?.status === "PROCESSING"
@@ -549,6 +593,35 @@ export function SandboxWorkspace() {
   return (
     <div className="p-4 sm:p-6 md:p-8 max-w-6xl mx-auto space-y-8 animate-in fade-in duration-300">
       
+      {/* Navigation Header */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-2 border-b border-neutral-100/50">
+        <button 
+          onClick={() => exitSandboxWorkspace(navigate, user?.role)}
+          className="inline-flex items-center gap-2 text-xs font-bold text-neutral-500 hover:text-neutral-900 transition-colors focus:outline-none"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to Simulation Console
+        </button>
+        <div className="flex items-center gap-2">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={() => navigate(getSafeDashboardRoute(user?.role))}
+            className="text-xs border-neutral-205 rounded-xl px-4 h-8 font-bold"
+          >
+            Return to Dashboard
+          </Button>
+          <Button 
+            variant="destructive" 
+            size="sm" 
+            onClick={() => exitSandboxWorkspace(navigate, user?.role)}
+            className="text-xs rounded-xl px-4 h-8 font-black bg-rose-600 hover:bg-rose-700 text-white border-none"
+          >
+            Exit Sandbox Workspace
+          </Button>
+        </div>
+      </div>
+
       {/* Console Details */}
       <div className="bg-white border border-neutral-200/80 rounded-2xl p-6 shadow-sm text-left flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="space-y-2">

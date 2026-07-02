@@ -1,8 +1,13 @@
 import { Link } from "react-router"
 import { Compass, MoveLeft, HelpCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { useAuthStore } from "@/stores/authStore"
+import { getSafeDashboardRoute } from "@/lib/navigation"
 
 export function NotFound() {
+  const { user } = useAuthStore()
+  const dashboardRoute = getSafeDashboardRoute(user?.role)
+
   return (
     <div className="min-h-screen w-screen bg-gray-50 flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-300">
       <div className="bg-white border border-neutral-200/80 rounded-2xl p-10 max-w-md w-full shadow-xl space-y-6">
@@ -19,7 +24,7 @@ export function NotFound() {
 
         {/* Text descriptions */}
         <div className="space-y-2">
-          <span className="text-xs font-bold text-indigo-600 uppercase tracking-widest block">
+          <span className="text-xs font-bold text-indigo-650 uppercase tracking-widest block">
             404 Error - Campaign Lost
           </span>
           <h1 className="text-2xl font-black text-neutral-900 tracking-tight">
@@ -33,7 +38,7 @@ export function NotFound() {
         {/* Action Buttons */}
         <div className="flex flex-col gap-2 pt-2">
           <Button asChild className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold flex items-center justify-center gap-2 py-5 shadow-sm">
-            <Link to="/">
+            <Link to={dashboardRoute}>
               <MoveLeft className="h-4 w-4" />
               <span>Return to Dashboard</span>
             </Link>

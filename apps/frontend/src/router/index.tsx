@@ -142,6 +142,7 @@ export function AppRouter() {
           <Route path="/simulation/results" element={<SimulationResultsPage />} />
           <Route path="/simulation/checkpoint" element={<MandatoryCheckpointPage />} />
           <Route path="/simulation/events" element={<MarketEventsPage />} />
+          <Route path="/sandbox" element={<Navigate to="/simulation" replace />} />
           <Route path="/sandbox/workspace" element={<SandboxWorkspace />} />
           
           {/* Daily Campaign Simulation Routes */}
