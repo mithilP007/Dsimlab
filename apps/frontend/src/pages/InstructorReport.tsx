@@ -170,7 +170,7 @@ export function InstructorReport() {
             </CardHeader>
             <CardContent className="h-[340px]">
               {activeTab === "class" && (
-                <ResponsiveContainer width="100%" height="100%" minHeight={300}>
+                <ResponsiveContainer width="100%" height={300}>
                   <BarChart data={classChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E5E5" />
                     <XAxis dataKey="name" stroke="#888888" fontSize={10} tickLine={false} />
@@ -184,7 +184,7 @@ export function InstructorReport() {
               )}
 
               {activeTab === "semester" && (
-                <ResponsiveContainer width="100%" height="100%" minHeight={300}>
+                <ResponsiveContainer width="100%" height={300}>
                   <BarChart data={semesterChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E5E5" />
                     <XAxis dataKey="name" stroke="#888888" fontSize={10} tickLine={false} />
@@ -196,7 +196,7 @@ export function InstructorReport() {
               )}
 
               {activeTab === "industry" && (
-                <ResponsiveContainer width="100%" height="100%" minHeight={300}>
+                <ResponsiveContainer width="100%" height={300}>
                   <BarChart data={industryChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E5E5" />
                     <XAxis dataKey="name" stroke="#888888" fontSize={10} tickLine={false} />
@@ -208,7 +208,7 @@ export function InstructorReport() {
               )}
 
               {activeTab === "scenario" && (
-                <ResponsiveContainer width="100%" height="100%" minHeight={300}>
+                <ResponsiveContainer width="100%" height={300}>
                   <BarChart data={scenarioChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E5E5" />
                     <XAxis dataKey="name" stroke="#888888" fontSize={10} tickLine={false} />

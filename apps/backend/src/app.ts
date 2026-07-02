@@ -90,6 +90,9 @@ app.register(rateLimit, {
 
 // Request Correlation ID Context Hook
 app.addHook('onRequest', (request, reply, done) => {
+  if (request.raw.url && request.raw.url.startsWith('/v1/') && !request.raw.url.startsWith('/api/v1/')) {
+    request.raw.url = '/api' + request.raw.url;
+  }
   const correlationId = (request.headers['x-correlation-id'] as string) || crypto.randomUUID();
   reply.header('x-correlation-id', correlationId);
   asyncLocalStorage.enterWith({ correlationId });

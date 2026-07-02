@@ -106,7 +106,7 @@ export const useDailyCampaignStore = create<DailyCampaignState>((set, get) => ({
   fetchState: async () => {
     set({ loading: true });
     try {
-      const res = await apiClient.get<{ success: boolean; run: CampaignRun }>("/v1/campaign/state");
+      const res = await apiClient.get<{ success: boolean; run: CampaignRun }>("/api/v1/campaign/state");
       if (res.data?.success && res.data.run) {
         set({ activeRun: res.data.run });
       }
@@ -121,7 +121,7 @@ export const useDailyCampaignStore = create<DailyCampaignState>((set, get) => ({
   startCampaign: async () => {
     set({ loading: true });
     try {
-      const res = await apiClient.post<{ success: boolean; campaignRunId: string }>("/v1/campaign/start");
+      const res = await apiClient.post<{ success: boolean; campaignRunId: string }>("/api/v1/campaign/start");
       if (res.data?.success) {
         toast.success("Daily campaign initialized!");
         const { fetchState } = get();
@@ -143,7 +143,7 @@ export const useDailyCampaignStore = create<DailyCampaignState>((set, get) => ({
 
     set({ loading: true });
     try {
-      const res = await apiClient.post<{ success: boolean; decision: DailyDecision }>("/v1/campaign/decision", {
+      const res = await apiClient.post<{ success: boolean; decision: DailyDecision }>("/api/v1/campaign/decision", {
         campaignRunId: activeRun.id,
         dayNumber,
         seoSettings,
@@ -168,7 +168,7 @@ export const useDailyCampaignStore = create<DailyCampaignState>((set, get) => ({
   fetchResults: async (campaignRunId) => {
     try {
       const res = await apiClient.get<{ success: boolean; results: DailyResult[] }>(
-        `/v1/campaign/results?campaignRunId=${campaignRunId}`
+        `/api/v1/campaign/results?campaignRunId=${campaignRunId}`
       );
       if (res.data?.success) {
         set({ results: res.data.results });
@@ -181,7 +181,7 @@ export const useDailyCampaignStore = create<DailyCampaignState>((set, get) => ({
   fetchRecommendations: async (campaignRunId, dayNumber) => {
     try {
       const res = await apiClient.get<{ success: boolean; recommendations: any[] }>(
-        `/v1/campaign/recommendations?campaignRunId=${campaignRunId}&dayNumber=${dayNumber}`
+        `/api/v1/campaign/recommendations?campaignRunId=${campaignRunId}&dayNumber=${dayNumber}`
       );
       if (res.data?.success) {
         set({ recommendations: res.data.recommendations });
@@ -198,7 +198,7 @@ export const useDailyCampaignStore = create<DailyCampaignState>((set, get) => ({
     set({ loading: true });
     try {
       const res = await apiClient.post<{ success: boolean; currentDay: number; status: string }>(
-        "/v1/campaign/fast-forward",
+        "/api/v1/campaign/fast-forward",
         {
           campaignRunId: activeRun.id,
         }

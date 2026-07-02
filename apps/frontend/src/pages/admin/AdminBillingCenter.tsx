@@ -359,7 +359,7 @@ export function AdminBillingCenter() {
           <div className="lg:col-span-2 bg-slate-900/40 backdrop-blur-md p-6 rounded-3xl border border-slate-800/80 shadow-xl">
             <h3 className="text-lg font-bold text-white mb-6">Revenue Growth Trends (Last 6 Months)</h3>
             <div className="h-72 w-full">
-              <ResponsiveContainer width="100%" height="100%" minHeight={300}>
+              <ResponsiveContainer width="100%" height={300}>
                 <LineChart data={revenueTrends} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
                   <XAxis dataKey="month" stroke="#94a3b8" fontSize={11} />
@@ -387,7 +387,7 @@ export function AdminBillingCenter() {
           <div className="lg:col-span-1 bg-slate-900/40 backdrop-blur-md p-6 rounded-3xl border border-slate-800/80 shadow-xl flex flex-col justify-between">
             <h3 className="text-lg font-bold text-white mb-6">Active Plan Distribution</h3>
             <div className="h-56 w-full flex justify-center items-center">
-              <ResponsiveContainer width="100%" height="100%" minHeight={220}>
+              <ResponsiveContainer width="100%" height={220}>
                 <PieChart>
                   <Pie
                     data={planDistribution}

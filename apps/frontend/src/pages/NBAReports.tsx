@@ -280,7 +280,7 @@ export function NBAReports() {
                 <CardDescription>Average performance vs target attainment percentage.</CardDescription>
               </CardHeader>
               <CardContent className="h-[280px]">
-                <ResponsiveContainer width="100%" height="100%" minHeight={250}>
+                <ResponsiveContainer width="100%" height={250}>
                   <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E5E5" />
                     <XAxis dataKey="name" stroke="#888888" fontSize={10} tickLine={false} />

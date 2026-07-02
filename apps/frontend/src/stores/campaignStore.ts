@@ -259,7 +259,7 @@ export const useCampaignStore = create<CampaignState>((set, get) => ({
 
     set({ isSubmitting: true })
     try {
-      await apiClient.post("/v1/seo/decision", {
+      await apiClient.post("/api/v1/seo/decision", {
         seoTargetKeywords: selectedKeywords,
         // Map our 0-100 score to the backend's 1-10 quality scale
         seoContentQuality: Math.max(1, Math.round(totalSeoScore / 10)),

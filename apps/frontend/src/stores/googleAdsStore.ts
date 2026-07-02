@@ -463,7 +463,7 @@ export const useGoogleAdsStore = create<GoogleAdsState>((set, get) => ({
 
     set({ isSubmitting: true })
     try {
-      await apiClient.post("/v1/google-ads/decision", {
+      await apiClient.post("/api/v1/google-ads/decision", {
         campaigns: [
           {
             name: campaignName,

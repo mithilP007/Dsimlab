@@ -431,7 +431,7 @@ export function ProgressDashboardPage() {
         <CardContent className="p-6">
           {chartData.length > 0 ? (
             <div className="h-72 w-full">
-              <ResponsiveContainer width="100%" height="100%" minHeight={280}>
+              <ResponsiveContainer width="100%" height={280}>
                 <LineChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                   <XAxis dataKey="round" stroke="#888888" fontSize={11} fontWeight={600} />

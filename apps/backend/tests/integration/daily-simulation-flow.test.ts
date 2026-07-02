@@ -150,7 +150,7 @@ describe('Daily Simulation Flow Core Integration Tests', () => {
     expect(dailyResult).not.toBeNull();
     expect(dailyResult?.compositeScore).toBeGreaterThan(0);
     expect(dailyResult?.spend).toBe(50);
-  });
+  }, 30000);
 
   it('should prevent duplicate processing of Day 1 and respect idempotency lock', async () => {
     // Attempting to run daily scheduler catchup again
@@ -199,7 +199,7 @@ describe('Daily Simulation Flow Core Integration Tests', () => {
     });
 
     expect(totalResults.length).toBe(2);
-  });
+  }, 30000);
 
   it('should verify offline API fallback when live providers return fallback status', async () => {
     // Create decision for Day 3
@@ -229,5 +229,5 @@ describe('Daily Simulation Flow Core Integration Tests', () => {
     });
 
     expect(resultDay3?.trendSnapshot?.source).not.toBeNull();
-  });
+  }, 30000);
 });

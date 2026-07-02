@@ -360,7 +360,7 @@ export const useMetaAdsStore = create<MetaAdsState>((set, get) => ({
 
     set({ isSubmitting: true })
     try {
-      await apiClient.post("/v1/meta-ads/decision", {
+      await apiClient.post("/api/v1/meta-ads/decision", {
         campaigns: [
           {
             name: campaignName,

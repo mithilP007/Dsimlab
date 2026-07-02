@@ -219,7 +219,7 @@ export function OBEReports() {
                 </div>
               </CardHeader>
               <CardContent className="h-[320px] flex items-center justify-center pt-2">
-                <ResponsiveContainer width="100%" height="100%" minHeight={280}>
+                <ResponsiveContainer width="100%" height={280}>
                   <RadarChart cx="50%" cy="50%" outerRadius="80%" data={activeRadarData}>
                     <PolarGrid stroke="#E5E5E5" />
                     <PolarAngleAxis dataKey="subject" tick={{ fill: '#404040', fontSize: 10, fontWeight: 'semibold' }} />
@@ -230,7 +230,7 @@ export function OBEReports() {
                 </ResponsiveContainer>
               </CardContent>
             </Card>
-
+ 
             {/* Assessment Distribution Bar Chart */}
             <Card className="border-neutral-200/60 shadow-sm print:border-none print:shadow-none">
               <CardHeader>
@@ -238,7 +238,7 @@ export function OBEReports() {
                 <CardDescription>Number of students across performance grading bands.</CardDescription>
               </CardHeader>
               <CardContent className="h-[320px] pt-2">
-                <ResponsiveContainer width="100%" height="100%" minHeight={280}>
+                <ResponsiveContainer width="100%" height={280}>
                   <BarChart data={distributionData} margin={{ top: 10, right: 10, left: -25, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E5E5" />
                     <XAxis dataKey="name" stroke="#888888" fontSize={9} tickLine={false} />

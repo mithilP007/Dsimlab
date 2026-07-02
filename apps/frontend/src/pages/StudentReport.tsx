@@ -166,7 +166,7 @@ export function StudentReport() {
               <CardDescription>Visual progression of channel scores across completed rounds.</CardDescription>
             </CardHeader>
             <CardContent className="h-[320px] pt-2">
-              <ResponsiveContainer width="100%" height="100%" minHeight={250}>
+              <ResponsiveContainer width="100%" height={250}>
                 <LineChart data={historyData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E5E5" />
                   <XAxis dataKey="round" tickFormatter={(r) => `Round ${r}`} stroke="#888888" fontSize={10} tickLine={false} />
@@ -191,7 +191,7 @@ export function StudentReport() {
                 <CardDescription>Organic + Paid Click volumes acquired round-by-round.</CardDescription>
               </CardHeader>
               <CardContent className="h-[280px] pt-2">
-                <ResponsiveContainer width="100%" height="100%" minHeight={250}>
+                <ResponsiveContainer width="100%" height="250">
                   <AreaChart data={historyData} margin={{ top: 10, right: 10, left: -15, bottom: 0 }}>
                     <defs>
                       <linearGradient id="colorClicks" x1="0" y1="0" x2="0" y2="1">
@@ -216,7 +216,7 @@ export function StudentReport() {
                 <CardDescription>Aggregated conversion revenue generated round-by-round.</CardDescription>
               </CardHeader>
               <CardContent className="h-[280px] pt-2">
-                <ResponsiveContainer width="100%" height="100%" minHeight={250}>
+                <ResponsiveContainer width="100%" height="250">
                   <AreaChart data={historyData} margin={{ top: 10, right: 10, left: -15, bottom: 0 }}>
                     <defs>
                       <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">

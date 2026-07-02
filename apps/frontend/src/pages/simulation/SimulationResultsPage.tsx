@@ -640,9 +640,9 @@ export function SimulationResultsPage() {
             </div>
 
             {/* Recharts Container */}
-            <div className="h-[280px] min-h-[250px] min-w-0 w-full pt-2">
+            <div className="min-w-0 min-h-[260px] h-[280px] w-full pt-2">
               {chartData.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%" minHeight={250}>
+                <ResponsiveContainer width="100%" height={250}>
                   {activeChartTab === "revenue" && (
                     <AreaChart data={chartData}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
